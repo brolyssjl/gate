@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { parseArgs } from "./cli/args.js";
 import { GateError, UsageError } from "./cli/output.js";
+import { readVersion } from "./core/version.js";
 import { cmdInit } from "./commands/init.js";
 import { cmdStart } from "./commands/start.js";
 import { cmdStatus } from "./commands/status.js";
@@ -11,8 +12,6 @@ import { cmdTrust } from "./commands/trust.js";
 import { cmdApprove } from "./commands/approve.js";
 import { cmdSkip } from "./commands/skip.js";
 import { cmdLog } from "./commands/log.js";
-
-const VERSION = "0.0.0";
 
 const HELP = `gate — an agent-agnostic quality harness (umpire, not a driver).
 
@@ -63,7 +62,7 @@ function main(argv: string[]): void {
     return;
   }
   if (args.flags.version === true || args.flags.v === true || args.command === "version") {
-    process.stdout.write(VERSION + "\n");
+    process.stdout.write(readVersion() + "\n");
     return;
   }
   if (!args.command) {

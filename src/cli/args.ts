@@ -10,7 +10,10 @@ export interface ParsedArgs {
  * the agent hot path.
  */
 export function parseArgs(argv: string[]): ParsedArgs {
-  const [command = null, ...rest] = argv;
+  const rest = [...argv];
+  // The command is the first token only when it isn't a flag; `gate --version`
+  // and `gate -h` have no command, just global flags.
+  const command = rest[0] !== undefined && !rest[0].startsWith("-") ? rest.shift()! : null;
   const positionals: string[] = [];
   const flags: Record<string, string | boolean> = {};
 
@@ -30,6 +33,9 @@ export function parseArgs(argv: string[]): ParsedArgs {
           flags[body] = true;
         }
       }
+    } else if (arg.startsWith("-") && arg.length > 1) {
+      // Short boolean flag, e.g. -v / -h.
+      flags[arg.slice(1)] = true;
     } else {
       positionals.push(arg);
     }

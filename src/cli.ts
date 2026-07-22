@@ -7,6 +7,10 @@ import { cmdStatus } from "./commands/status.js";
 import { cmdCheck } from "./commands/check.js";
 import { cmdNext } from "./commands/next.js";
 import { cmdPlaybook } from "./commands/playbook.js";
+import { cmdTrust } from "./commands/trust.js";
+import { cmdApprove } from "./commands/approve.js";
+import { cmdSkip } from "./commands/skip.js";
+import { cmdLog } from "./commands/log.js";
 
 const VERSION = "0.0.0";
 
@@ -16,10 +20,15 @@ Usage: gate <command> [options]
 
 Commands:
   init [--refresh]        Scaffold .gate/, infer commands, detect integrations
+  trust [--check] [--by]  Approve the config commands block (TOFU); required
+                          before gates will execute build/test/lint
   start "<title>"         Create a run, enter PLAN, print the plan playbook
+  approve [--by] [--reason]  Record PLAN sign-off, bound to the plan's content
   status                  Current run, phase, what the gate waits for
   check                   Run the current gate; exit code = verdict
   next                    Check + advance on pass; on fail, print what's missing
+  skip <phase> --reason   Human-authorized skip of the current phase (audited)
+  log <file>              Register an artifact against the current phase
   playbook [phase]        Print the active playbook for a phase
 
 Global options:
@@ -35,10 +44,14 @@ type Handler = (args: ReturnType<typeof parseArgs>) => void;
 
 const COMMANDS: Record<string, Handler> = {
   init: cmdInit,
+  trust: cmdTrust,
   start: cmdStart,
+  approve: cmdApprove,
   status: cmdStatus,
   check: cmdCheck,
   next: cmdNext,
+  skip: cmdSkip,
+  log: cmdLog,
   playbook: cmdPlaybook,
 };
 

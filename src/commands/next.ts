@@ -1,8 +1,8 @@
-import { clearCurrentRunId } from "../core/current.js";
 import { resolvePlaybook } from "../core/playbooks.js";
-import { nowIso, writeRun } from "../core/run.js";
-import { isTerminal, nextPhase } from "../core/stateMachine.js";
+import { nowIso } from "../core/run.js";
+import { isTerminal } from "../core/stateMachine.js";
 import { runGate } from "../gates/index.js";
+import { advance } from "./advance.js";
 import { renderGate } from "./gateRun.js";
 import { requireActiveRun, type ParsedArgs } from "./shared.js";
 
@@ -21,18 +21,10 @@ export function cmdNext(args: ParsedArgs): void {
   }
 
   const from = run.phase;
-  const to = nextPhase(from);
   run.history.push({ phase: from, event: "passed", at: nowIso(), detail: `${from} gate passed` });
-
-  if (to) {
-    run.phase = to;
-    run.history.push({ phase: to, event: "entered", at: nowIso() });
-    if (isTerminal(to)) run.status = "done";
-  }
-  writeRun(root, run);
+  advance(root, run);
 
   if (isTerminal(run.phase)) {
-    clearCurrentRunId(root);
     renderGate(
       res,
       { advanced: true, from, to: run.phase, done: true },

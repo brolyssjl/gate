@@ -41,9 +41,11 @@ switching agents mid-task.
 
 ```bash
 gate init                     # scaffold .gate/, infer build/test/lint commands
+gate trust                    # review .gate/config.yml, then approve its commands (TOFU)
 gate start "add password reset"
 #   → enters PLAN, scaffolds .gate/runs/<id>/plan.md, prints the plan playbook
-# …fill in plan.md: goal, files, acceptance criteria (each with a verify), approved: true…
+# …fill in plan.md: goal, files, acceptance criteria (each with a verify)…
+gate approve                  # record sign-off (separate from writing the plan)
 gate next                     # PLAN gate: schema valid? ≥1 checkable criterion? approved?
 # …write code touching only declared files…
 gate next                     # IMPLEMENT gate: non-empty diff, in scope, build+lint green
@@ -52,6 +54,9 @@ gate next                     # TEST gate: suite exits 0, criteria mapped, no sk
 #   → DONE
 ```
 
+`gate skip <phase> --reason "…"` records a human-authorized skip of the current
+phase; `gate log <file>` registers an artifact against the current phase.
+
 `gate check` runs the current gate without advancing; **its exit code is the
 verdict** (0 pass, 1 fail), so it also drops straight into CI.
 
@@ -59,7 +64,7 @@ verdict** (0 pass, 1 fail), so it also drops straight into CI.
 
 | Phase | Deterministic checks |
 |---|---|
-| **PLAN** | `plan.md` schema valid; ≥1 acceptance criterion; each criterion declares a verify method; `approved: true` |
+| **PLAN** | `plan.md` schema valid; ≥1 acceptance criterion; each criterion declares a verify method; approved via `gate approve` (bound to the plan's content hash) |
 | **IMPLEMENT** | working diff is non-empty; every touched file is declared in `plan.md`; `build` exits 0; `lint` exits 0 |
 | **TEST** | `test` command exits 0; every `test:`-verified criterion maps to a named passing test; no skipped tests; diff coverage ≥ threshold |
 
@@ -92,6 +97,23 @@ Diff coverage understands istanbul `coverage/coverage-final.json` (jest, vitest)
 and a generic `coverage/gate-coverage.json` contract:
 `{ "files": [{ "path", "covered": [], "uncovered": [] }] }`.
 
+## Command trust (TOFU)
+
+Gate executes the commands in `config.yml` — the same trust class as npm
+scripts. Before any gate will run them, a human must review the config and run
+`gate trust`, which hashes the `commands:` block into `.gate/trust.json`. The
+IMPLEMENT and TEST gates **refuse to spawn a process** until the current hash
+matches; changing a command invalidates trust until you re-run `gate trust`.
+`.gate/trust.json` is committed, so CI inherits the pin and a command change +
+re-trust land in the same diff for review. `gate trust --check` reports status
+(exit 0/1) without writing.
+
+Approval is deliberately separate from writing the plan: `gate approve` records
+who signed off and the plan's content hash in `run.json`, so the author can't
+self-approve by flipping a flag, and editing the plan afterward voids it. A CLI
+can't prove a *human* ran `approve` — the mechanical guarantee is that approval
+is a distinct, hash-bound act.
+
 ## Output formats
 
 Human-readable by default. `--json` for CI and agents (stable schema). `--format
@@ -102,9 +124,8 @@ TOON is worse on small objects.
 ## Deliberately not in this milestone
 
 DEBUG / REVIEW / RETRO phases, run profiles (`bugfix`/`refactor`/`docs`),
-targets for multi-stack repos, `gate trust` (TOFU command hashing), `skip` /
-`report` / `prune`, Agnosgram/SDD write integration, and agent adapters
-(Claude skill, Cursor rules, `AGENTS.md`).
+targets for multi-stack repos, `gate report` / `gate prune`, Agnosgram/SDD write
+integration, and agent adapters (Claude skill, Cursor rules, `AGENTS.md`).
 
 ## Development
 

@@ -104,7 +104,7 @@ TOON is worse on small objects.
 DEBUG / REVIEW / RETRO phases, run profiles (`bugfix`/`refactor`/`docs`),
 targets for multi-stack repos, `gate trust` (TOFU command hashing), `skip` /
 `report` / `prune`, Agnosgram/SDD write integration, and agent adapters
-(Claude skill, Cursor rules, `AGENTS.md`). See `proposal-2-gate-devflow-quality_1.md`.
+(Claude skill, Cursor rules, `AGENTS.md`).
 
 ## Development
 

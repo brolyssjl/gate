@@ -17,14 +17,15 @@ is your job; Gate only checks structure.
    it to a real passing test. Use `manual` only when a machine genuinely cannot
    check it.
 5. List **risks** and **out-of-scope** items to hold the line against scope creep.
-6. Get sign-off, then set `approved: true`.
+6. Get sign-off, then run `gate approve`. Approval is a separate, deliberate
+   step recorded outside plan.md — you cannot self-approve by editing the plan,
+   and any later edit to plan.md voids the approval (re-run `gate approve`).
 
 ## plan.md schema
 
 ```markdown
 ---
 goal: One sentence describing done.
-approved: false            # flip to true after human/agent-of-record sign-off
 files:
   - src/**                 # every path/glob you intend to touch
 out_of_scope:
@@ -44,4 +45,5 @@ Free-form detail. Cite the SDD spec path here if one exists.
 
 ## Advance
 
-`gate check` to see what's missing, then `gate next` to enter IMPLEMENT.
+`gate check` to see what's missing → `gate approve` (after sign-off) →
+`gate next` to enter IMPLEMENT.

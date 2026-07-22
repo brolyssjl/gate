@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { parsePlan } from "../src/artifacts/plan.js";
+import { hashPlan, parsePlan } from "../src/artifacts/plan.js";
 
 const VALID = `---
 goal: Do the thing.
-approved: true
 files:
   - src/**
 criteria:
@@ -19,7 +18,6 @@ describe("plan parser", () => {
     const { plan, errors } = parsePlan(VALID);
     expect(errors).toEqual([]);
     expect(plan?.goal).toBe("Do the thing.");
-    expect(plan?.approved).toBe(true);
     expect(plan?.criteria).toHaveLength(1);
     expect(plan?.files).toEqual(["src/**"]);
   });
@@ -44,7 +42,6 @@ describe("plan parser", () => {
   it("requires each criterion to declare a verify method (checkability)", () => {
     const raw = `---
 goal: g
-approved: true
 files: [a.ts]
 criteria:
   - id: c1
@@ -57,7 +54,6 @@ criteria:
   it("rejects duplicate criterion ids", () => {
     const raw = `---
 goal: g
-approved: true
 files: [a.ts]
 criteria:
   - id: c1
@@ -71,8 +67,8 @@ criteria:
     expect(errors).toEqual(expect.arrayContaining([expect.stringMatching(/duplicated/)]));
   });
 
-  it("treats approved as false unless explicitly true", () => {
-    const { plan } = parsePlan(VALID.replace("approved: true", "approved: false"));
-    expect(plan?.approved).toBe(false);
+  it("computes a content hash that changes with the plan", () => {
+    expect(hashPlan(VALID)).toBe(hashPlan(VALID));
+    expect(hashPlan(VALID)).not.toBe(hashPlan(VALID + "\nextra"));
   });
 });

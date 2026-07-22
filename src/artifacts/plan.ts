@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { parse as parseYaml } from "yaml";
 
@@ -17,7 +18,6 @@ export interface Criterion {
 
 export interface Plan {
   goal: string;
-  approved: boolean;
   files: string[];
   out_of_scope: string[];
   criteria: Criterion[];
@@ -58,8 +58,6 @@ export function parsePlan(raw: string): PlanParse {
   const goal = typeof data.goal === "string" ? data.goal.trim() : "";
   if (!goal) errors.push("`goal` is required and must be a non-empty string");
 
-  const approved = data.approved === true;
-
   const files = asStringArray(data.files);
   if (files.length === 0) errors.push("`files` must list at least one path or glob");
 
@@ -93,7 +91,7 @@ export function parsePlan(raw: string): PlanParse {
 
   if (errors.length > 0) return { plan: null, errors };
   return {
-    plan: { goal, approved, files, out_of_scope, criteria, risks, body: (m[2] ?? "").trim() },
+    plan: { goal, files, out_of_scope, criteria, risks, body: (m[2] ?? "").trim() },
     errors: [],
   };
 }
@@ -101,4 +99,14 @@ export function parsePlan(raw: string): PlanParse {
 function asStringArray(v: unknown): string[] {
   if (!Array.isArray(v)) return [];
   return v.filter((x): x is string => typeof x === "string" && x.trim().length > 0).map((x) => x.trim());
+}
+
+/** Content hash of a plan, binding an approval to the exact plan it approved. */
+export function hashPlan(raw: string): string {
+  return "sha256:" + createHash("sha256").update(raw).digest("hex");
+}
+
+export function hashPlanFile(path: string): string | null {
+  if (!existsSync(path)) return null;
+  return hashPlan(readFileSync(path, "utf8"));
 }

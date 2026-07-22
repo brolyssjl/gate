@@ -1,15 +1,17 @@
 import { runPaths } from "../core/paths.js";
-import { parsePlanFile } from "../artifacts/plan.js";
+import { hashPlanFile, parsePlanFile } from "../artifacts/plan.js";
 import { type Check, type GateContext, type GateResult, fail, pass, result } from "./types.js";
 
 /**
  * PLAN gate — all deterministic:
  *  - plan.md exists and parses against the schema
  *  - ≥1 acceptance criterion, each with a declared verification method
- *  - approval flag set (`approved: true`)
+ *  - approved via `gate approve`, bound to the current plan's content hash
  *
- * Plan *quality* (are these the right criteria?) is judgment and lives in the
- * playbook, not here.
+ * Approval lives in run.json (written by `gate approve`), not in the
+ * agent-editable plan.md, so the author can't self-approve; editing the plan
+ * after approval voids it. Plan *quality* (are these the right criteria?) is
+ * judgment and lives in the playbook, not here.
  */
 export function planGate(ctx: GateContext): GateResult {
   const checks: Check[] = [];
@@ -32,13 +34,21 @@ export function planGate(ctx: GateContext): GateResult {
   checks.push(
     pass("plan.checkable", "every criterion declares a verification method"),
   );
-  checks.push(
-    plan.approved
-      ? pass("plan.approved", "plan approved")
-      : fail(
-          "plan.approved",
-          "plan not approved — set `approved: true` after human/agent-of-record sign-off",
-        ),
-  );
+  checks.push(approvalCheck(ctx, planPath));
   return result("PLAN", checks);
+}
+
+function approvalCheck(ctx: GateContext, planPath: string): Check {
+  const approval = ctx.run.approval;
+  if (!approval) {
+    return fail("plan.approved", "plan not approved — get sign-off, then run `gate approve`");
+  }
+  const currentHash = hashPlanFile(planPath);
+  if (currentHash !== approval.planHash) {
+    return fail(
+      "plan.approved",
+      "plan changed since approval — re-run `gate approve` on the current plan",
+    );
+  }
+  return pass("plan.approved", `plan approved${approval.by ? ` by ${approval.by}` : ""}`);
 }

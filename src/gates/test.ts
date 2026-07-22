@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { runPaths } from "../core/paths.js";
 import { changedLines } from "../core/git.js";
 import { runCommand } from "../core/exec.js";
+import { isCommandsTrusted } from "../core/trust.js";
 import { parsePlanFile } from "../artifacts/plan.js";
 import { parseTestReport, type NormalizedReport } from "./testReport.js";
 import { diffCoverage, loadCoverage } from "./coverage.js";
@@ -23,6 +24,13 @@ export function testGate(ctx: GateContext): GateResult {
   let stdout = "";
   if (!testCmd) {
     checks.push(fail("test.command", "no test command configured (commands.test)"));
+    return result("TEST", checks);
+  }
+  // Untrusted config never spawns a process (proposal §9).
+  if (!isCommandsTrusted(ctx.root)) {
+    checks.push(
+      fail("test.command", "test command not trusted — review .gate/config.yml and run `gate trust`"),
+    );
     return result("TEST", checks);
   }
   const run = runCommand(testCmd, ctx.root);

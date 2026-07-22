@@ -1,7 +1,7 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { beforeAll, describe, expect, it } from "vitest";
 import { makeRepo } from "./helpers.js";
 
@@ -49,15 +49,18 @@ describe("gate CLI end-to-end", () => {
     });
 
     expect(gate(repo, ["init"]).code).toBe(0);
+    expect(gate(repo, ["trust"]).code).toBe(0); // approve the inferred commands
     expect(gate(repo, ["start", "add greet"]).code).toBe(0);
 
     // PLAN gate fails on the empty scaffold.
     expect(gate(repo, ["check"]).code).toBe(1);
 
-    // Approve a real plan → PLAN passes, enter IMPLEMENT.
+    // Write a real plan; it still fails until a separate `gate approve`.
     // Run id is date-based; discover it via status --json instead of hardcoding.
     const runId = (gate(repo, ["status", "--json"]).json() as { id: string }).id;
     writeFileSync(join(repo, `.gate/runs/${runId}/plan.md`), PLAN);
+    expect(gate(repo, ["check"]).code).toBe(1); // schema ok now, but not approved
+    expect(gate(repo, ["approve"]).code).toBe(0);
     expect(gate(repo, ["next"]).code).toBe(0);
     expect((gate(repo, ["status", "--json"]).json() as { phase: string }).phase).toBe("IMPLEMENT");
 
@@ -101,4 +104,35 @@ describe("gate CLI end-to-end", () => {
     const check0 = (parsed.checks as Array<Record<string, unknown>>)[0]!;
     expect(Object.keys(check0).sort()).toEqual(["detail", "name", "ok"]);
   });
+
+  it("records a human-authorized skip and advances", () => {
+    const repo = makeRepo();
+    gate(repo, ["init"]);
+    gate(repo, ["start", "skip demo"]);
+
+    expect(gate(repo, ["skip", "PLAN"]).code).toBe(2); // --reason required
+    expect(gate(repo, ["skip", "PLAN", "--reason", "trivial doc tweak"]).code).toBe(0);
+
+    const status = gate(repo, ["status", "--json"]).json() as { phase: string };
+    expect(status.phase).toBe("IMPLEMENT");
+    const runId = "skip demo".replace(/[^a-z0-9]+/gi, "-").toLowerCase();
+    const run = JSON.parse(
+      readFileSync(join(repo, `.gate/runs/${todayPrefix()}-${runId}/run.json`), "utf8"),
+    ) as { overrides: Array<{ phase: string; reason: string }> };
+    expect(run.overrides).toEqual([expect.objectContaining({ phase: "PLAN", reason: "trivial doc tweak" })]);
+  });
+
+  it("registers an artifact with gate log", () => {
+    const repo = makeRepo();
+    gate(repo, ["init"]);
+    gate(repo, ["start", "log demo"]);
+    writeFileSync(join(repo, "notes.txt"), "hello\n");
+    expect(gate(repo, ["log", "notes.txt"]).code).toBe(0);
+    const status = gate(repo, ["status", "--json"]).json() as { artifacts: string[] };
+    expect(status.artifacts).toContain("notes.txt");
+  });
 });
+
+function todayPrefix(): string {
+  return new Date().toISOString().slice(0, 10);
+}

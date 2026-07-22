@@ -9,7 +9,6 @@ import { emit, GateError, requireRoot, UsageError, type ParsedArgs } from "./sha
 
 const PLAN_TEMPLATE = `---
 goal:
-approved: false
 files:
   -
 out_of_scope: []
@@ -61,6 +60,7 @@ export function cmdStart(args: ParsedArgs): void {
   const human = [
     `Started run "${id}" (profile: ${profile}) → phase PLAN`,
     `Edit the plan at: ${paths.plan}`,
+    "When it's ready and signed off, run `gate approve`, then `gate next`.",
     hints.length ? "\nHints:\n" + hints.map((h) => "  - " + h).join("\n") : "",
     "\n" + playbook,
   ]

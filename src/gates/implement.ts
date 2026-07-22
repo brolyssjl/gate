@@ -2,6 +2,7 @@ import { runPaths } from "../core/paths.js";
 import { changedFiles, isGitRepo } from "../core/git.js";
 import { matchesAny } from "../core/glob.js";
 import { runCommand } from "../core/exec.js";
+import { isCommandsTrusted } from "../core/trust.js";
 import { parsePlanFile } from "../artifacts/plan.js";
 import { type Check, type GateContext, type GateResult, fail, pass, result } from "./types.js";
 
@@ -44,15 +45,29 @@ export function implementGate(ctx: GateContext): GateResult {
         ),
   );
 
-  checks.push(commandCheck("implement.build", ctx.config.commands.build, ctx.root, "build"));
-  checks.push(commandCheck("implement.lint", ctx.config.commands.lint, ctx.root, "lint"));
+  const trusted = isCommandsTrusted(ctx.root);
+  checks.push(commandCheck("implement.build", ctx.config.commands.build, ctx.root, "build", trusted));
+  checks.push(commandCheck("implement.lint", ctx.config.commands.lint, ctx.root, "lint", trusted));
 
   return result("IMPLEMENT", checks);
 }
 
-/** Runs a configured command; a missing command passes with a skip note. */
-export function commandCheck(name: string, command: string | undefined, cwd: string, label: string): Check {
+/**
+ * Runs a configured command; a missing command passes with a skip note. When a
+ * command is set but the commands block is untrusted, it fails *without running*
+ * — untrusted config never spawns a process.
+ */
+export function commandCheck(
+  name: string,
+  command: string | undefined,
+  cwd: string,
+  label: string,
+  trusted: boolean,
+): Check {
   if (!command) return pass(name, `no ${label} command configured (skipped)`);
+  if (!trusted) {
+    return fail(name, `${label} command not trusted — review .gate/config.yml and run \`gate trust\``);
+  }
   const res = runCommand(command, cwd);
   if (res.code === 0) return pass(name, `${label} passed`);
   const tail = (res.stderr || res.stdout).trim().split("\n").slice(-3).join(" ⏎ ");

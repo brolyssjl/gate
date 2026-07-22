@@ -49,6 +49,7 @@ export function cmdInit(args: ParsedArgs): void {
     `  runs:      ${paths.runs}`,
     detected.length ? `  detected:  ${detected.join(", ")}` : "  detected:  none",
     "",
+    "Review .gate/config.yml, then run `gate trust` to approve its commands.",
     "Next: gate start \"<title>\"",
   ].join("\n");
 

@@ -24,6 +24,15 @@ export interface ArtifactEntry {
   at: string;
 }
 
+export interface Approval {
+  /** Who approved (from --by or GATE_SESSION_ID); best-effort, not proof of a human. */
+  by: string | null;
+  at: string;
+  reason: string | null;
+  /** Hash of the plan at approval time; a later plan edit voids the approval. */
+  planHash: string;
+}
+
 export interface Run {
   /** Schema version of this run.json, for forward migration. */
   schema: 1;
@@ -42,6 +51,8 @@ export interface Run {
   overrides: OverrideEntry[];
   /** Registered artifacts keyed by relative filename within the run folder. */
   artifacts: Record<string, ArtifactEntry>;
+  /** PLAN approval, recorded by `gate approve` (absent until approved). */
+  approval?: Approval;
 }
 
 export function nowIso(): string {

@@ -1,0 +1,9 @@
+node_modules/
+dist/
+*.log
+.DS_Store
+coverage/
+
+# Gate's own ephemeral run folders (config + playbooks stay tracked)
+.gate/runs/
+.gate/current

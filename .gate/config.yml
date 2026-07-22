@@ -1,0 +1,15 @@
+# Gate configuration. Commands are the same trust class as npm scripts.
+commands:
+  build: "npm run build"
+  test: "npm test"
+  lint: "npm run lint"
+  # coverage: "<command>"
+thresholds:
+  # diff_coverage: 80   # uncomment once a coverage command is set
+phases:
+  plan: required
+  implement: required
+  test: required
+integrations:
+  agnosgram: off
+  sdd: off

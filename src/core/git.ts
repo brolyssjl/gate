@@ -36,6 +36,19 @@ export function changedFiles(root: string, baseRef: string | null): string[] {
 }
 
 /**
+ * Unified diff text since `baseRef` (committed + uncommitted), for the review
+ * packet. `.gate/` bookkeeping is excluded so the packet shows only real code.
+ * Returns "" when not a repo or there is nothing to show.
+ */
+export function diffText(root: string, baseRef: string | null): string {
+  if (!isGitRepo(root)) return "";
+  const args = baseRef
+    ? ["diff", "--no-color", baseRef, "--", ".", ":(exclude).gate/**"]
+    : ["diff", "--no-color", "HEAD", "--", ".", ":(exclude).gate/**"];
+  return git(root, args).stdout;
+}
+
+/**
  * Map of file → set of added/modified line numbers (new-file line numbers)
  * since `baseRef`, including uncommitted work. Used for diff coverage.
  */

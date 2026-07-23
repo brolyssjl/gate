@@ -33,6 +33,12 @@ export interface Approval {
   planHash: string;
 }
 
+export interface ReviewRequest {
+  /** Reviewer identity (from --by or GATE_SESSION_ID); best-effort, not proof of a human. */
+  reviewer: string | null;
+  requestedAt: string;
+}
+
 export interface Run {
   /** Schema version of this run.json, for forward migration. */
   schema: 1;
@@ -53,6 +59,8 @@ export interface Run {
   artifacts: Record<string, ArtifactEntry>;
   /** PLAN approval, recorded by `gate approve` (absent until approved). */
   approval?: Approval;
+  /** REVIEW packet request, recorded by `gate review` (absent until requested). */
+  review?: ReviewRequest;
 }
 
 export function nowIso(): string {

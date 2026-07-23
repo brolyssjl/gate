@@ -9,7 +9,7 @@ import { isTerminal, nextPhase, type Phase } from "../core/stateMachine.js";
  */
 export function advance(root: string, run: Run): { from: Phase; to: Phase } {
   const from = run.phase;
-  const to = nextPhase(from);
+  const to = nextPhase(from, run.profile);
   if (to) {
     run.phase = to;
     run.history.push({ phase: to, event: "entered", at: nowIso() });

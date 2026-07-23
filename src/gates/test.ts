@@ -91,7 +91,7 @@ export function testGate(ctx: GateContext): GateResult {
   return result("TEST", checks);
 }
 
-function loadReport(reportPath: string, stdout: string): NormalizedReport | null {
+export function loadReport(reportPath: string, stdout: string): NormalizedReport | null {
   if (existsSync(reportPath)) {
     const fromFile = parseTestReport(readFileSync(reportPath, "utf8"));
     if (fromFile) return fromFile;

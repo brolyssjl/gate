@@ -1,5 +1,5 @@
 import { resolvePlaybook } from "../core/playbooks.js";
-import { nowIso } from "../core/run.js";
+import { nowIso, writeRun } from "../core/run.js";
 import { isTerminal } from "../core/stateMachine.js";
 import { runGate } from "../gates/index.js";
 import { advance } from "./advance.js";
@@ -15,6 +15,11 @@ export function cmdNext(args: ParsedArgs): void {
   const res = runGate({ root, run, config });
 
   if (!res.ok) {
+    // Record the failed advancement attempt so `gate report` can show it. `gate
+    // check` stays side-effect free; `next` is the deliberate attempt to advance.
+    const failed = res.checks.filter((c) => !c.ok).map((c) => c.name).join(", ");
+    run.history.push({ phase: run.phase, event: "failed", at: nowIso(), detail: failed });
+    writeRun(root, run);
     renderGate(res, { advanced: false }, args.flags);
     process.exitCode = 1;
     return;

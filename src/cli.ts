@@ -12,6 +12,8 @@ import { cmdTrust } from "./commands/trust.js";
 import { cmdApprove } from "./commands/approve.js";
 import { cmdSkip } from "./commands/skip.js";
 import { cmdLog } from "./commands/log.js";
+import { cmdReview } from "./commands/review.js";
+import { cmdReport } from "./commands/report.js";
 
 const HELP = `gate — an agent-agnostic quality harness (umpire, not a driver).
 
@@ -22,10 +24,13 @@ Commands:
   trust [--check] [--by]  Approve the config commands block (TOFU); required
                           before gates will execute build/test/lint
   start "<title>"         Create a run, enter PLAN, print the plan playbook
+    [--profile <p>]       Phases to run: feature|bugfix|refactor|docs (default feature)
   approve [--by] [--reason]  Record PLAN sign-off, bound to the plan's content
   status                  Current run, phase, what the gate waits for
   check                   Run the current gate; exit code = verdict
   next                    Check + advance on pass; on fail, print what's missing
+  review [--fresh] [--by] Emit a self-contained review packet (REVIEW phase)
+  report [<run-id>]       Per-run summary: durations, gate failures, findings
   skip <phase> --reason   Human-authorized skip of the current phase (audited)
   log <file>              Register an artifact against the current phase
   playbook [phase]        Print the active playbook for a phase
@@ -49,6 +54,8 @@ const COMMANDS: Record<string, Handler> = {
   status: cmdStatus,
   check: cmdCheck,
   next: cmdNext,
+  review: cmdReview,
+  report: cmdReport,
   skip: cmdSkip,
   log: cmdLog,
   playbook: cmdPlaybook,

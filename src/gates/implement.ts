@@ -33,23 +33,30 @@ export function implementGate(ctx: GateContext): GateResult {
       : fail("implement.diff", "no code changes detected since the run started"),
   );
 
-  const { plan } = parsePlanFile(runPaths(ctx.root, ctx.run.id).plan);
-  const declared = plan?.files ?? [];
-  const undeclared = touched.filter((f) => !matchesAny(f, declared));
-  checks.push(
-    undeclared.length === 0
-      ? pass("implement.scope", "all touched files are declared in plan.md")
-      : fail(
-          "implement.scope",
-          `files touched but not declared in plan.md (add them or narrow scope): ${undeclared.join(", ")}`,
-        ),
-  );
+  checks.push(scopeCheck("implement.scope", ctx, touched));
 
   const trusted = isCommandsTrusted(ctx.root);
   checks.push(commandCheck("implement.build", ctx.config.commands.build, ctx.root, "build", trusted));
   checks.push(commandCheck("implement.lint", ctx.config.commands.lint, ctx.root, "lint", trusted));
 
   return result("IMPLEMENT", checks);
+}
+
+/**
+ * Scope discipline: every touched file (outside `.gate/`) must be covered by a
+ * `plan.files` glob. Shared by the IMPLEMENT and DEBUG gates, both of which
+ * produce a diff that must stay within the declared plan.
+ */
+export function scopeCheck(name: string, ctx: GateContext, touched: string[]): Check {
+  const { plan } = parsePlanFile(runPaths(ctx.root, ctx.run.id).plan);
+  const declared = plan?.files ?? [];
+  const undeclared = touched.filter((f) => !matchesAny(f, declared));
+  return undeclared.length === 0
+    ? pass(name, "all touched files are declared in plan.md")
+    : fail(
+        name,
+        `files touched but not declared in plan.md (add them or narrow scope): ${undeclared.join(", ")}`,
+      );
 }
 
 /**

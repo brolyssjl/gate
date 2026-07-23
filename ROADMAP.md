@@ -32,15 +32,15 @@ load-bearing; pointers, never copies.
 
 ## Milestone 2 — Full quality flow ⏳
 
-- [ ] DEBUG phase — enforced protocol (reproduce → hypothesize → predict → test →
+- [x] DEBUG phase — enforced protocol (reproduce → hypothesize → predict → test →
       conclude) logged in `debug-log.md`; gate requires ≥1 completed cycle and the
       triggering test green with no regressions
-- [ ] REVIEW phase — `gate review --fresh` emits a self-contained packet
+- [x] REVIEW phase — `gate review --fresh` emits a self-contained packet
       (diff + plan + rubric); blocker/major findings resolved or human-waived;
       reviewer session id ≠ implementer when available
-- [ ] Run profiles — `--profile feature|bugfix|refactor|docs` (which phases run)
-- [ ] `gate report` — per-run summary (durations, gate failures, findings)
-- [ ] `--json` everywhere audit + schema snapshots
+- [x] Run profiles — `--profile feature|bugfix|refactor|docs` (which phases run)
+- [x] `gate report` — per-run summary (durations, gate failures, findings)
+- [x] `--json` everywhere audit + schema snapshots
 
 ## Milestone 3 — Ecosystem & publish ⏳
 

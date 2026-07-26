@@ -1,10 +1,10 @@
 # Gate
 
 An **agent-agnostic quality harness**. Gate turns the development flow —
-`PLAN → DEBUG → IMPLEMENT → TEST → REVIEW → DONE` — into an enforced state machine
-with deterministic quality gates. Any AI agent (or human) does the thinking; Gate
-holds the state, checks the evidence, and refuses to advance until the evidence
-is real.
+`PLAN → IMPLEMENT → TEST → REVIEW → DONE` (a bugfix run swaps IMPLEMENT for
+DEBUG) — into an enforced state machine with deterministic quality gates. Any AI
+agent (or human) does the thinking; Gate holds the state, checks the evidence,
+and refuses to advance until the evidence is real.
 
 > Gate is an **umpire, not a driver.** It never invokes agents or LLMs, makes no
 > network calls, and has no telemetry. It holds state, verifies evidence, and
@@ -52,8 +52,10 @@ gate next                     # IMPLEMENT gate: non-empty diff, in scope, build+
 # …write tests; each `test:`-verified criterion needs a named passing test…
 gate next                     # TEST gate: suite exits 0, criteria mapped, no skips, diff coverage
 gate review --fresh           # emit a self-contained review packet for a fresh reviewer
-# …reviewer records findings in review.md; resolve or waive every blocker/major…
-gate next                     # REVIEW gate: packet emitted, no blocking findings, distinct reviewer
+# …reviewer signs review.md (reviewer:) and records findings; resolve or waive every blocker/major…
+# …fixed something during review? re-run `gate review --fresh` so the reviewer sees the final code…
+gate next                     # REVIEW gate: packet matches current code, signed review, no blocking
+                              # findings; if code changed since TEST, build/lint/test re-verified here
 #   → DONE
 gate report                   # per-run summary: phase durations, gate failures, findings
 ```
@@ -62,21 +64,28 @@ A **bugfix** run routes through DEBUG instead of IMPLEMENT: fill in `debug-log.m
 with the enforced protocol (reproduce → hypothesize → predict → test → conclude)
 before the gate will pass.
 
-`gate skip <phase> --reason "…"` records a human-authorized skip of the current
-phase; `gate log <file>` registers an artifact against the current phase.
+`gate skip <phase> --reason "…" [--by …]` records an explicit skip of the
+current phase - who and why, surfaced by `gate report` (see the threat model:
+Gate audits overrides, it cannot prove a human made them). `gate log <file>`
+registers an artifact against the current phase (context for reviewers, never
+gate evidence).
 
 `gate check` runs the current gate without advancing; **its exit code is the
-verdict** (0 pass, 1 fail), so it also drops straight into CI.
+verdict** (0 pass, 1 fail), so scripts and agents can branch on it. Note for CI:
+`.gate/runs/` and `.gate/current` are gitignored by default, so a CI checkout has
+no run to check - commit your run folders (or re-create the run in CI) if you
+want `gate check` as a pipeline step. `config.yml` and `trust.json` are tracked,
+so CI always inherits the command pin.
 
 ## The gates
 
 | Phase | Deterministic checks |
 |---|---|
 | **PLAN** | `plan.md` schema valid; ≥1 acceptance criterion; each criterion declares a verify method; approved via `gate approve` (bound to the plan's content hash) |
-| **DEBUG** | `debug-log.md` valid; bug reproduced; ≥1 complete protocol cycle; touched files in scope; triggering test green and whole suite green (no regressions) |
+| **DEBUG** | `debug-log.md` valid; reproduction attested (`reproduced: true` - an agent claim; the mechanical proof is the test); ≥1 complete protocol cycle; touched files in scope; triggering test named in the run's report and whole suite green (no regressions) |
 | **IMPLEMENT** | working diff is non-empty; every touched file is declared in `plan.md`; `build` exits 0; `lint` exits 0 |
-| **TEST** | `test` command exits 0; every `test:`-verified criterion maps to a named passing test; no skipped tests; diff coverage ≥ threshold |
-| **REVIEW** | a fresh packet was emitted (`gate review --fresh`); no blocker/major finding left open (or waived with a rationale); reviewer session id ≠ implementer when both are known |
+| **TEST** | `build` and `lint` exit 0 (load-bearing for `bugfix`, which skips IMPLEMENT); `test` command exits 0; every `test:`-verified criterion maps to a named passing test; no skipped tests; diff coverage ≥ threshold |
+| **REVIEW** | packet emitted **and matches the current code** (tree fingerprint); review.md signed by a reviewer (≠ implementer when both known); no blocker/major finding left open (or waived with a rationale); if the code changed since the last gate passed, `build`/`lint`/`test` are re-run here and must be green |
 
 Plan *quality*, debugging *rigor*, and review *depth* are judgment, not code —
 they live in editable Markdown **playbooks** (`.gate/playbooks/*.md`) the CLI
@@ -95,14 +104,52 @@ serves to the agent, never in the gates.
 
 ## Review & report
 
-`gate review --fresh` writes `review-packet.md` (plan + rubric + full diff) so a
-reviewer needs no prior context, and scaffolds `review.md` for their findings. It
-records the reviewer's identity (`--by` or `GATE_SESSION_ID`) so the gate can
-check it differs from the implementer's.
+`gate review` writes `review-packet.md` (plan + rubric + the full diff,
+**including untracked files** - nothing in the flow requires committing) so a
+reviewer needs no prior context, and scaffolds `review.md` for their findings.
+The packet records a fingerprint of the tree it was generated from; the REVIEW
+gate refuses to pass while the code differs from it, so a reviewer always signs
+off on the code that ships. `--fresh` regenerates an existing packet - required
+after any review fix; without it an existing packet is never silently
+re-baselined.
+
+The reviewer signs off by filling in `reviewer:` in `review.md` - identity is
+claimed at sign-off, not at packet time, and the gate rejects an anonymous
+review and a reviewer equal to the implementer's session id.
+
+Fixes made during review change the code *after* IMPLEMENT/TEST certified it,
+so when the tree no longer matches the fingerprint recorded at the last gate
+pass, the REVIEW gate re-runs `build`/`lint`/`test` itself and requires them
+green before DONE.
 
 `gate report [<run-id>]` prints a per-run summary — phase durations, failed gate
-attempts, and a findings breakdown — defaulting to the active or most recent run.
-`--json` gives the machine-readable form.
+attempts, findings, and any skips (with who and why) — defaulting to the active
+or most recent run. `--json` gives the machine-readable form.
+
+## Evidence integrity
+
+If an agent could hand Gate the evidence, enforcement would be fiction. So
+machine evidence is produced by Gate itself:
+
+- Gate runs the configured `build`/`lint`/`test`/`coverage` commands and reads
+  their exit codes directly.
+- The test report comes from the run Gate just executed: JSON on the command's
+  stdout (Gate persists the normalized copy to the run folder), or a file the
+  command itself wrote during the run - runners can target
+  `$GATE_TEST_REPORT`, e.g. `vitest --reporter=json --outputFile=$GATE_TEST_REPORT`.
+  A report staged in advance (by hand or via `gate log`) is ignored.
+- `run.json` is written atomically, so a crash never corrupts run state.
+
+## Threat model
+
+Gate defends against **sloppiness, not malice**. An agent (or human) in the
+same shell can still `gate skip`, `gate trust`, or claim a false identity -
+a CLI cannot prove a human acted. What Gate guarantees is that every override
+is an explicit, separate, recorded act: skips carry a reason and an identity
+and surface in `gate report`; approval is hash-bound to the plan it approved;
+trust is hash-bound to the commands block it reviewed; the review packet is
+fingerprint-bound to the code it showed. Quiet drift is the failure mode Gate
+eliminates - loud, auditable overrides are the escape hatch it keeps.
 
 ## Configuration
 

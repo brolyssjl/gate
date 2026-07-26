@@ -47,10 +47,13 @@ Free-form narrative, links, stack traces.
 ## Gate checks
 
 - `debug-log.md` exists and matches the schema.
-- `reproduced: true`.
+- `reproduced: true` (your attestation - the test below is the mechanical proof).
 - At least one **complete** cycle (all five fields filled, `status: complete`).
 - Every touched file is declared in `plan.md` (scope discipline still applies).
 - The **triggering test passes** and the whole suite is green (no regressions).
+  The test must appear by name in the run's report: emit JSON on stdout or have
+  the runner write to `$GATE_TEST_REPORT`. No parseable report fails the gate -
+  exit 0 alone cannot name your fix.
 
 ## Advance
 

@@ -42,6 +42,27 @@ load-bearing; pointers, never copies.
 - [x] `gate report` — per-run summary (durations, gate failures, findings)
 - [x] `--json` everywhere audit + schema snapshots
 
+### Milestone 2 hardening ✅
+
+- [x] Staleness guard — tree fingerprint recorded at every gate pass and on the
+      review packet; REVIEW fails on a stale packet and re-runs build/lint/test
+      when the code changed since the last gate passed (review fixes cannot ship
+      unverified)
+- [x] Evidence integrity — test reports come only from the run Gate executes
+      (stdout, or a file the command wrote during the run via $GATE_TEST_REPORT);
+      pre-staged reports are ignored; Gate persists the normalized report
+- [x] Review packet includes untracked files in its diff (commit-less agent
+      flows no longer hide new files from the reviewer)
+- [x] Reviewer sign-off — review.md must name its reviewer; the untouched
+      scaffold cannot pass REVIEW
+- [x] TEST gate runs build+lint (bugfix profile skips IMPLEMENT and would
+      otherwise never build or lint)
+- [x] DEBUG triggering-test check fails closed without a parseable report
+- [x] Atomic run.json/trust/current writes (crash-safe state)
+- [x] run.json schema 2 with explicit migration from Milestone 1 runs
+- [x] Honest docs — threat model section (defends against sloppiness, not
+      malice), CI caveat for gitignored run state, report durations fixed
+
 ## Milestone 3 — Ecosystem & publish ⏳
 
 - [ ] RETRO phase + Agnosgram write integration (retro → journal, `source:` ids)

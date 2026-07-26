@@ -25,11 +25,14 @@ describe("diff coverage", () => {
     expect(diffCoverage(changed, coverage).percent).toBe(100);
   });
 
-  it("treats a wholly-new file (empty changed set) as all executable lines", () => {
+  it("treats an empty changed set (deletion-only diff) as nothing to measure", () => {
+    // Untracked/new files arrive with every line enumerated by changedLines();
+    // an empty set means no added lines and must not demand whole-file coverage.
     const changed = new Map([["src/a.ts", new Set<number>()]]);
     const dc = diffCoverage(changed, coverage);
-    expect(dc.changedExecutable).toBe(5); // 1,2,3 covered + 4,5 uncovered
-    expect(dc.covered).toBe(3);
+    expect(dc.changedExecutable).toBe(0);
+    expect(dc.percent).toBe(100);
+    expect(dc.gaps).toEqual([]);
   });
 
   it("reports 100% when nothing measurable changed", () => {

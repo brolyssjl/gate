@@ -109,8 +109,9 @@ export interface DiffCoverage {
 
 /**
  * Diff coverage: of the executable lines changed in this run, how many are
- * covered by the tests. `changed` maps file → changed new-file line numbers;
- * an empty set means a wholly-new file (all executable lines count as changed).
+ * covered by the tests. `changed` maps file → changed new-file line numbers
+ * (untracked files arrive with every line enumerated); an empty set means no
+ * added lines - e.g. a deletion-only diff - and contributes nothing.
  */
 export function diffCoverage(changed: Map<string, Set<number>>, coverage: CoverageMap): DiffCoverage {
   let changedExecutable = 0;
@@ -121,10 +122,7 @@ export function diffCoverage(changed: Map<string, Set<number>>, coverage: Covera
     const cov = coverage.get(file);
     if (!cov) continue; // no coverage data for this file (e.g. non-source) — skip
     const executable = new Set<number>([...cov.covered, ...cov.uncovered]);
-    const target =
-      changedSet.size === 0
-        ? executable // new file: all executable lines are "changed"
-        : new Set([...changedSet].filter((l) => executable.has(l)));
+    const target = new Set([...changedSet].filter((l) => executable.has(l)));
     const missed: number[] = [];
     for (const line of target) {
       changedExecutable++;

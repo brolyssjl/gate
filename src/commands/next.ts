@@ -1,3 +1,4 @@
+import { treeFingerprint } from "../core/git.js";
 import { resolvePlaybook } from "../core/playbooks.js";
 import { nowIso, writeRun } from "../core/run.js";
 import { isTerminal } from "../core/stateMachine.js";
@@ -26,7 +27,15 @@ export function cmdNext(args: ParsedArgs): void {
   }
 
   const from = run.phase;
-  run.history.push({ phase: from, event: "passed", at: nowIso(), detail: `${from} gate passed` });
+  // The fingerprint pins which tree this gate certified; the REVIEW gate
+  // re-verifies build/lint/test when the tree drifts afterward (staleness).
+  run.history.push({
+    phase: from,
+    event: "passed",
+    at: nowIso(),
+    detail: `${from} gate passed`,
+    treeHash: treeFingerprint(root) ?? undefined,
+  });
   advance(root, run);
 
   if (isTerminal(run.phase)) {

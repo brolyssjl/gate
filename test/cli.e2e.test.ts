@@ -88,10 +88,16 @@ describe("gate CLI end-to-end", () => {
     expect(gate(repo, ["next"]).code).toBe(0);
     expect((gate(repo, ["status", "--json"]).json() as { phase: string }).phase).toBe("REVIEW");
 
-    // REVIEW: the gate blocks until a fresh packet is emitted; then it passes
-    // with no findings and the run reaches DONE.
+    // REVIEW: blocks until a fresh packet is emitted, and the untouched
+    // scaffold must NOT pass - a reviewer has to sign review.md.
     expect(gate(repo, ["check"]).code).toBe(1);
     expect(gate(repo, ["review", "--fresh"]).code).toBe(0);
+    expect(gate(repo, ["next"]).code).toBe(1);
+    const reviewRunId = (gate(repo, ["status", "--json"]).json() as { id: string }).id;
+    writeFileSync(
+      join(repo, `.gate/runs/${reviewRunId}/review.md`),
+      `---\nreviewer: fresh-eyes\nfindings: []\n---\n# Review\n`,
+    );
     expect(gate(repo, ["next"]).code).toBe(0);
 
     const done = gate(repo, ["status", "--json"]).json() as { active: boolean };
@@ -156,6 +162,65 @@ describe("gate CLI end-to-end", () => {
     const repo = makeRepo();
     gate(repo, ["init"]);
     expect(gate(repo, ["start", "x", "--profile", "bogus"]).code).toBe(2);
+  });
+
+  it("refuses to reach DONE when a review fix breaks the code (staleness guard)", () => {
+    const repo = makeRepo({
+      "package.json": JSON.stringify({ name: "fx", scripts: { test: "node test.js" } }),
+      "greet.js": "module.exports = (n) => 'Hello, ' + n\n",
+      "test.js":
+        `const ok = require('./greet')('Sam') === 'Hello, Sam';\n` +
+        `console.log(JSON.stringify({tests:[{name:'greets by name',status:ok?'passed':'failed'}]}));\n` +
+        `process.exit(ok ? 0 : 1)\n`,
+    });
+    gate(repo, ["init"]);
+    gate(repo, ["trust"]);
+    gate(repo, ["start", "demo"]);
+    const runId = (gate(repo, ["status", "--json"]).json() as { id: string }).id;
+    writeFileSync(
+      join(repo, `.gate/runs/${runId}/plan.md`),
+      `---\ngoal: demo\nfiles:\n  - "greet.js"\n  - "test.js"\ncriteria:\n  - id: c1\n    text: greets\n    verify: "test: greets by name"\n---\n# Plan\n`,
+    );
+    gate(repo, ["approve", "--by", "human"]);
+    expect(gate(repo, ["next"]).code).toBe(0); // PLAN -> IMPLEMENT
+    writeFileSync(join(repo, "greet.js"), "module.exports = (n) => 'Hello, ' + n // touched\n");
+    expect(gate(repo, ["next"]).code).toBe(0); // IMPLEMENT -> TEST
+    expect(gate(repo, ["next"]).code).toBe(0); // TEST -> REVIEW
+    const review = gate(repo, ["review", "--fresh", "--json"]);
+    expect(Object.keys(review.json() as Record<string, unknown>).sort()).toEqual([
+      "diff",
+      "findingsFile",
+      "packet",
+      "phase",
+      "plan",
+      "regenerated",
+      "requestedBy",
+      "rubric",
+      "treeHash",
+    ]);
+
+    // Reviewer files a blocker; the implementer "fixes" it by breaking the
+    // suite and flips the finding to resolved.
+    writeFileSync(
+      join(repo, `.gate/runs/${runId}/review.md`),
+      `---\nreviewer: fresh-eyes\nfindings:\n  - id: f1\n    severity: blocker\n    status: resolved\n    note: crash on null\n---\n`,
+    );
+    writeFileSync(join(repo, "greet.js"), "throw new Error('boom')\n");
+
+    // Stale packet: the reviewer never saw the "fix".
+    expect(gate(repo, ["next"]).code).toBe(1);
+    // Without --fresh an existing packet is not re-baselined.
+    gate(repo, ["review"]);
+    expect(gate(repo, ["next"]).code).toBe(1);
+    // Even with a fresh packet, re-verification catches the red suite.
+    gate(repo, ["review", "--fresh"]);
+    expect(gate(repo, ["next"]).code).toBe(1);
+
+    // A real fix, re-packeted, goes green and reaches DONE.
+    writeFileSync(join(repo, "greet.js"), "module.exports = (n) => 'Hello, ' + n\n");
+    gate(repo, ["review", "--fresh"]);
+    expect(gate(repo, ["next"]).code).toBe(0);
+    expect((gate(repo, ["status", "--json"]).json() as { active: boolean }).active).toBe(false);
   });
 
   it("reports per-run durations, gate failures, and findings", () => {

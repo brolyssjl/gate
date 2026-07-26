@@ -4,13 +4,14 @@ import { runCommand } from "../core/exec.js";
 import { isCommandsTrusted } from "../core/trust.js";
 import { parseDebugLogFile, isCycleComplete } from "../artifacts/debugLog.js";
 import { scopeCheck } from "./implement.js";
-import { loadReport } from "./test.js";
+import { loadReport, statReport } from "./test.js";
 import { type Check, type GateContext, type GateResult, fail, pass, result } from "./types.js";
 
 /**
  * DEBUG gate — deterministic proof that a bug was diagnosed, not guessed at:
  *  - debug-log.md exists and follows the protocol schema
- *  - the bug was reproduced before diagnosing it
+ *  - reproduction is attested (`reproduced: true` — an agent claim, not proof;
+ *    the mechanical proof is the triggering test below)
  *  - at least one *complete* cycle (hypothesis → prediction → experiment →
  *    observation → conclusion) is recorded
  *  - the fix stayed within the declared plan scope
@@ -59,7 +60,9 @@ export function debugGate(ctx: GateContext): GateResult {
  * Runs the test suite and asserts the triggering test is now green with no
  * regressions: the command exits 0 (whole suite green) and the report contains a
  * passing test whose name matches the triggering test. Mirrors the TEST gate's
- * trust discipline — untrusted config never spawns a process.
+ * trust discipline — untrusted config never spawns a process — and its evidence
+ * discipline: the report must come from the run Gate just executed, and its
+ * absence fails closed (a bugfix whose fix cannot be named is not verified).
  */
 function triggeringTestCheck(ctx: GateContext, triggering: string, reportPath: string): Check {
   const testCmd = ctx.config.commands.test;
@@ -67,15 +70,20 @@ function triggeringTestCheck(ctx: GateContext, triggering: string, reportPath: s
   if (!isCommandsTrusted(ctx.root)) {
     return fail("debug.test-green", "test command not trusted — review .gate/config.yml and run `gate trust`");
   }
-  const run = runCommand(testCmd, ctx.root);
+  const { dir } = runPaths(ctx.root, ctx.run.id);
+  const reportBefore = statReport(reportPath);
+  const run = runCommand(testCmd, ctx.root, { GATE_RUN_DIR: dir, GATE_TEST_REPORT: reportPath });
   if (run.code !== 0) {
     const tail = (run.stderr || run.stdout).trim().split("\n").slice(-3).join(" ⏎ ");
     return fail("debug.test-green", `suite still red (exit ${run.code}) — no regressions allowed: ${tail}`);
   }
-  const report = loadReport(reportPath, run.stdout);
+  const report = loadReport(reportPath, run.stdout, reportBefore);
   if (!report) {
-    // Suite is green; we just can't confirm the specific test by name.
-    return pass("debug.test-green", "suite green (exit 0); no parseable report to name the triggering test");
+    return fail(
+      "debug.test-green",
+      "suite green, but no parseable report to confirm the triggering test — " +
+        "emit a JSON report on stdout or write it to $GATE_TEST_REPORT",
+    );
   }
   const needle = triggering.toLowerCase();
   const hit = report.tests.some((t) => t.status === "passed" && t.name.toLowerCase().includes(needle));

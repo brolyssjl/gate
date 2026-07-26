@@ -1,4 +1,5 @@
-import { existsSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, rmSync } from "node:fs";
+import { writeFileAtomic } from "./fsx.js";
 import { gatePaths } from "./paths.js";
 
 /**
@@ -14,7 +15,7 @@ export function readCurrentRunId(root: string): string | null {
 }
 
 export function setCurrentRunId(root: string, runId: string): void {
-  writeFileSync(gatePaths(root).current, runId + "\n");
+  writeFileAtomic(gatePaths(root).current, runId + "\n");
 }
 
 export function clearCurrentRunId(root: string): void {

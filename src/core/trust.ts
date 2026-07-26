@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { commandsBlockHashSource } from "./config.js";
+import { writeFileAtomic } from "./fsx.js";
 import { gatePaths } from "./paths.js";
 
 /**
@@ -48,7 +49,7 @@ export function writeTrust(root: string, by: string | null): TrustRecord {
     trustedAt: new Date().toISOString(),
     trustedBy: by,
   };
-  writeFileSync(trustPath(root), JSON.stringify(record, null, 2) + "\n");
+  writeFileAtomic(trustPath(root), JSON.stringify(record, null, 2) + "\n");
   return record;
 }
 

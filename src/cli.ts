@@ -29,9 +29,11 @@ Commands:
   status                  Current run, phase, what the gate waits for
   check                   Run the current gate; exit code = verdict
   next                    Check + advance on pass; on fail, print what's missing
-  review [--fresh] [--by] Emit a self-contained review packet (REVIEW phase)
+  review [--fresh] [--by] Emit a self-contained review packet (REVIEW phase);
+                          --fresh regenerates it from the current code
   report [<run-id>]       Per-run summary: durations, gate failures, findings
-  skip <phase> --reason   Human-authorized skip of the current phase (audited)
+  skip <phase> --reason [--by]  Human-authorized skip of the current phase
+                          (recorded with who and why; shown by \`gate report\`)
   log <file>              Register an artifact against the current phase
   playbook [phase]        Print the active playbook for a phase
 

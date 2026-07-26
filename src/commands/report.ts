@@ -28,7 +28,7 @@ export function cmdReport(args: ParsedArgs): void {
   const totalSeconds = phases.reduce((a, p) => a + p.seconds, 0);
   const gateFailures = phases.reduce((a, p) => a + p.gateFailures, 0);
   const findings = summarizeFindings(root, runId);
-  const overrides = run.overrides.map((o) => ({ phase: o.phase, reason: o.reason, at: o.at }));
+  const overrides = run.overrides.map((o) => ({ phase: o.phase, reason: o.reason, at: o.at, by: o.by ?? null }));
   const artifacts = Object.keys(run.artifacts);
 
   const data = {
@@ -62,7 +62,9 @@ export function cmdReport(args: ParsedArgs): void {
         `${findings.blocker} blocker, ${findings.major} major, ${findings.minor} minor, ${findings.nit} nit ` +
         `(${findings.open} open, ${findings.resolved} resolved, ${findings.waived} waived)`
       : "  Findings: (no review.md)",
-    overrides.length ? `  Overrides: ${overrides.map((o) => `${o.phase} (${o.reason})`).join(", ")}` : "  Overrides: none",
+    overrides.length
+      ? `  Overrides: ${overrides.map((o) => `${o.phase} (${o.reason}${o.by ? `, by ${o.by}` : ""})`).join(", ")}`
+      : "  Overrides: none",
     artifacts.length ? `  Artifacts: ${artifacts.join(", ")}` : "  Artifacts: none",
   ].join("\n");
 
@@ -70,13 +72,14 @@ export function cmdReport(args: ParsedArgs): void {
 }
 
 /** Per-phase wall-clock, summed across re-entries, plus failed-attempt counts. */
-function phaseReports(history: HistoryEntry[]): PhaseReport[] {
+export function phaseReports(history: HistoryEntry[]): PhaseReport[] {
   const seconds = new Map<string, number>();
   const failures = new Map<string, number>();
   const order: string[] = [];
   const note = (phase: string) => {
     if (!order.includes(phase)) order.push(phase);
   };
+  const lastAt = history[history.length - 1]?.at;
 
   for (let i = 0; i < history.length; i++) {
     const entry = history[i]!;
@@ -85,7 +88,16 @@ function phaseReports(history: HistoryEntry[]): PhaseReport[] {
       failures.set(entry.phase, (failures.get(entry.phase) ?? 0) + 1);
     }
     if (entry.event === "entered") {
-      const end = history[i + 1]?.at ?? entry.at;
+      // A phase spans from its `entered` event to the next phase entry (failed
+      // and passed attempts in between belong to it), or to the last recorded
+      // event while it is still the current phase.
+      let end = lastAt ?? entry.at;
+      for (let j = i + 1; j < history.length; j++) {
+        if (history[j]!.event === "entered") {
+          end = history[j]!.at;
+          break;
+        }
+      }
       const delta = (Date.parse(end) - Date.parse(entry.at)) / 1000;
       if (Number.isFinite(delta) && delta > 0) {
         seconds.set(entry.phase, (seconds.get(entry.phase) ?? 0) + delta);

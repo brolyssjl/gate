@@ -8,15 +8,17 @@ export interface ExecResult {
 
 /**
  * Run a configured command string through the shell, from `cwd`. Gate executes
- * commands from config.yml — the same trust class as npm scripts (proposal §9).
- * Milestone 1 runs them directly; trust-on-first-use hashing lands in M2.
+ * commands from config.yml — the same trust class as npm scripts (proposal §9)
+ * — and only after `gate trust` has pinned them. `env` entries are layered over
+ * the process env so gates can hand runners well-known paths (GATE_TEST_REPORT).
  */
-export function runCommand(command: string, cwd: string): ExecResult {
+export function runCommand(command: string, cwd: string, env?: Record<string, string>): ExecResult {
   const res = spawnSync(command, {
     cwd,
     shell: true,
     encoding: "utf8",
     maxBuffer: 32 * 1024 * 1024,
+    env: env ? { ...process.env, ...env } : process.env,
   });
   return {
     code: res.status ?? (res.error ? 127 : 1),

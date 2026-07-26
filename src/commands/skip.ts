@@ -25,7 +25,11 @@ export function cmdSkip(args: ParsedArgs): void {
   if (!canSkip(run.phase)) throw new GateError(`${run.phase} cannot be skipped`);
 
   const at = nowIso();
-  run.overrides.push({ phase: run.phase, action: "skip", reason, at });
+  const by =
+    (typeof args.flags.by === "string" ? args.flags.by : undefined) ??
+    process.env.GATE_SESSION_ID ??
+    null;
+  run.overrides.push({ phase: run.phase, action: "skip", reason, at, by });
   run.history.push({ phase: run.phase, event: "skipped", at, detail: reason });
   writeRun(root, run);
   const { from, to } = advance(root, run);

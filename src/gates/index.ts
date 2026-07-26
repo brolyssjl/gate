@@ -3,11 +3,15 @@ import type { Gate, GateContext, GateResult } from "./types.js";
 import { planGate } from "./plan.js";
 import { implementGate } from "./implement.js";
 import { testGate } from "./test.js";
+import { debugGate } from "./debug.js";
+import { reviewGate } from "./review.js";
 
 const GATES: Partial<Record<Phase, Gate>> = {
   PLAN: planGate,
+  DEBUG: debugGate,
   IMPLEMENT: implementGate,
   TEST: testGate,
+  REVIEW: reviewGate,
 };
 
 export function hasGate(phase: Phase): boolean {

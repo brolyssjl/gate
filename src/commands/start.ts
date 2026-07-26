@@ -4,6 +4,7 @@ import { headSha } from "../core/git.js";
 import { runPaths } from "../core/paths.js";
 import { resolvePlaybook } from "../core/playbooks.js";
 import { makeRunId, newRun, readRun, writeRun } from "../core/run.js";
+import { DEFAULT_PROFILE, isProfile, phaseSequence, PROFILES } from "../core/stateMachine.js";
 import { detect, planHints } from "../integrations/index.js";
 import { emit, GateError, requireRoot, UsageError, type ParsedArgs } from "./shared.js";
 
@@ -20,6 +21,22 @@ risks: []
 ---
 
 # Plan: %TITLE%
+
+`;
+
+const DEBUG_TEMPLATE = `---
+triggering_test:
+reproduced: false
+cycles:
+  - hypothesis:
+    prediction:
+    experiment:
+    observation:
+    conclusion:
+    status: in-progress
+---
+
+# Debug log: %TITLE%
 
 `;
 
@@ -40,7 +57,12 @@ export function cmdStart(args: ParsedArgs): void {
     clearCurrentRunId(root);
   }
 
-  const profile = typeof args.flags.profile === "string" ? args.flags.profile : "feature";
+  const profile = typeof args.flags.profile === "string" ? args.flags.profile : DEFAULT_PROFILE;
+  if (!isProfile(profile)) {
+    throw new UsageError(
+      `unknown profile "${profile}" (choose one of ${Object.keys(PROFILES).join(", ")})`,
+    );
+  }
   const sessionId =
     (typeof args.flags.session === "string" ? args.flags.session : undefined) ??
     process.env.GATE_SESSION_ID ??
@@ -51,14 +73,19 @@ export function cmdStart(args: ParsedArgs): void {
   writeRun(root, run);
   setCurrentRunId(root, id);
 
-  // Scaffold a plan.md for the agent to fill in.
+  // Scaffold a plan.md for the agent to fill in, plus a debug-log.md when the
+  // profile walks through DEBUG so the protocol template is waiting for them.
   const paths = runPaths(root, id);
   if (!existsSync(paths.plan)) writeFileSync(paths.plan, PLAN_TEMPLATE.replace("%TITLE%", title));
+  const sequence = phaseSequence(profile);
+  if (sequence.includes("DEBUG") && !existsSync(paths.debugLog)) {
+    writeFileSync(paths.debugLog, DEBUG_TEMPLATE.replace("%TITLE%", title));
+  }
 
   const hints = planHints(detect(root));
   const playbook = resolvePlaybook(root, "PLAN") ?? "(no PLAN playbook found)";
   const human = [
-    `Started run "${id}" (profile: ${profile}) → phase PLAN`,
+    `Started run "${id}" (profile: ${profile}, phases: ${sequence.join(" → ")}) → phase PLAN`,
     `Edit the plan at: ${paths.plan}`,
     "When it's ready and signed off, run `gate approve`, then `gate next`.",
     hints.length ? "\nHints:\n" + hints.map((h) => "  - " + h).join("\n") : "",
@@ -67,7 +94,7 @@ export function cmdStart(args: ParsedArgs): void {
     .filter(Boolean)
     .join("\n");
 
-  emit(human, { id, phase: run.phase, profile, plan: paths.plan, hints }, args.flags);
+  emit(human, { id, phase: run.phase, profile, phases: sequence, plan: paths.plan, hints }, args.flags);
 }
 
 function safeRead(root: string, id: string) {

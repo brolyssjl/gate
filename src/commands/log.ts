@@ -7,8 +7,10 @@ import { emit, GateError, requireActiveRun, UsageError, type ParsedArgs } from "
 /**
  * `gate log <file>` — register an artifact against the current phase. The file
  * is copied into the run folder under its basename (if not already there) and
- * recorded in run.artifacts, so gates and `gate report` can find it. Lets an
- * agent register e.g. a test-report.json produced elsewhere.
+ * recorded in run.artifacts, so gates and `gate report` can find it. Artifacts
+ * are context for humans and reviewers — never gate evidence: in particular a
+ * hand-registered test-report.json is ignored by the TEST/DEBUG gates, which
+ * only trust reports produced by the test run Gate executes itself.
  */
 export function cmdLog(args: ParsedArgs): void {
   const { root, run } = requireActiveRun();
@@ -25,5 +27,9 @@ export function cmdLog(args: ParsedArgs): void {
   run.artifacts[name] = { phase: run.phase, at: nowIso() };
   writeRun(root, run);
 
-  emit(`Registered artifact "${name}" against ${run.phase}`, { artifact: name, phase: run.phase }, args.flags);
+  const note =
+    name === "test-report.json"
+      ? " (note: gates ignore hand-registered test reports; evidence comes from the run Gate executes)"
+      : "";
+  emit(`Registered artifact "${name}" against ${run.phase}${note}`, { artifact: name, phase: run.phase }, args.flags);
 }

@@ -1,4 +1,5 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { writeFileAtomic } from "./fsx.js";
 import { runPaths } from "./paths.js";
 import type { Phase } from "./stateMachine.js";
 
@@ -10,6 +11,12 @@ export interface HistoryEntry {
   at: string;
   /** For failed/passed: short summary of the gate verdict. */
   detail?: string;
+  /**
+   * For passed: fingerprint of the working tree the gate certified. The REVIEW
+   * gate compares this against the current tree to detect code that changed
+   * after its evidence was gathered (staleness).
+   */
+  treeHash?: string;
 }
 
 export interface OverrideEntry {
@@ -17,6 +24,8 @@ export interface OverrideEntry {
   action: "skip";
   reason: string;
   at: string;
+  /** Who authorized (from --by or GATE_SESSION_ID); best-effort, not proof of a human. */
+  by?: string | null;
 }
 
 export interface ArtifactEntry {
@@ -33,9 +42,25 @@ export interface Approval {
   planHash: string;
 }
 
+export interface ReviewRequest {
+  /**
+   * Who emitted the packet (from --by or GATE_SESSION_ID); audit only. The
+   * reviewer of record is the `reviewer:` field the reviewer writes into
+   * review.md - identity is claimed at sign-off time, not at packet time.
+   */
+  requestedBy: string | null;
+  requestedAt: string;
+  /**
+   * Fingerprint of the working tree the packet was generated from. The REVIEW
+   * gate refuses to pass while the current tree differs - a reviewer must have
+   * seen the code that actually ships.
+   */
+  treeHash: string | null;
+}
+
 export interface Run {
   /** Schema version of this run.json, for forward migration. */
-  schema: 1;
+  schema: 2;
   id: string;
   title: string;
   profile: string;
@@ -53,6 +78,8 @@ export interface Run {
   artifacts: Record<string, ArtifactEntry>;
   /** PLAN approval, recorded by `gate approve` (absent until approved). */
   approval?: Approval;
+  /** REVIEW packet request, recorded by `gate review` (absent until requested). */
+  review?: ReviewRequest;
 }
 
 export function nowIso(): string {
@@ -80,7 +107,7 @@ export function newRun(params: {
 }): Run {
   const at = nowIso();
   return {
-    schema: 1,
+    schema: 2,
     id: params.id,
     title: params.title,
     profile: params.profile,
@@ -101,16 +128,40 @@ export function readRun(root: string, runId: string): Run {
   if (!existsSync(runJson)) {
     throw new Error(`Run "${runId}" not found (${runJson}).`);
   }
-  const parsed = JSON.parse(readFileSync(runJson, "utf8")) as Run;
-  if (parsed.schema !== 1) {
+  const parsed = JSON.parse(readFileSync(runJson, "utf8")) as Run & { schema: number };
+  return migrateRun(parsed, runId);
+}
+
+/**
+ * Migrate older run.json schemas in place. Schema 1 (Milestone 1) predates
+ * profiles and review requests: it gains `profile: "feature"` - deliberate:
+ * a legacy run past TEST now owes the REVIEW phase the feature profile added -
+ * and any schema-1 `review.reviewer` becomes `requestedBy`. The migrated run is
+ * persisted on the next writeRun.
+ */
+function migrateRun(raw: Run & { schema: number }, runId: string): Run {
+  const parsed = raw as Omit<Run, "schema"> & { schema: number };
+  if (parsed.schema === 1) {
+    parsed.profile = parsed.profile ?? "feature";
+    const legacy = parsed.review as (ReviewRequest & { reviewer?: string | null }) | undefined;
+    if (legacy) {
+      parsed.review = {
+        requestedBy: legacy.requestedBy ?? legacy.reviewer ?? null,
+        requestedAt: legacy.requestedAt,
+        treeHash: legacy.treeHash ?? null,
+      };
+    }
+    parsed.schema = 2;
+  }
+  if (parsed.schema !== 2) {
     throw new Error(`Unsupported run.json schema ${String(parsed.schema)} in ${runId}.`);
   }
-  return parsed;
+  return parsed as Run;
 }
 
 export function writeRun(root: string, run: Run): void {
-  const { dir, runJson } = runPaths(root, run.id);
-  mkdirSync(dir, { recursive: true });
+  const { runJson } = runPaths(root, run.id);
   run.updatedAt = nowIso();
-  writeFileSync(runJson, JSON.stringify(run, null, 2) + "\n");
+  // Atomic: a crash mid-write must never corrupt the run (all state on disk).
+  writeFileAtomic(runJson, JSON.stringify(run, null, 2) + "\n");
 }

@@ -40,5 +40,8 @@ export function runPaths(root: string, runId: string) {
     plan: join(dir, "plan.md"),
     worklog: join(dir, "worklog.md"),
     testReport: join(dir, "test-report.json"),
+    debugLog: join(dir, "debug-log.md"),
+    reviewPacket: join(dir, "review-packet.md"),
+    review: join(dir, "review.md"),
   };
 }

@@ -1,34 +1,66 @@
 /**
  * The Gate state machine.
  *
- * Milestone 1 implements the linear slice PLAN → IMPLEMENT → TEST → DONE.
- * The phase list is data-driven so later milestones can splice in DEBUG,
- * REVIEW and RETRO without touching transition logic. DONE is terminal.
+ * The phase *catalog* is data-driven and the *sequence* a run walks is chosen by
+ * its profile (feature/bugfix/refactor/docs). Profiles decide which phases run;
+ * the transition logic itself is profile-agnostic. DONE is always terminal.
  *
  * Gate is an umpire: it never advances a phase on its own. Advancement is the
  * result of a gate passing (`gate next`) or an explicit human skip; nothing
  * here calls an agent or an LLM.
  */
 
-export const PHASES = ["PLAN", "IMPLEMENT", "TEST", "DONE"] as const;
+/** Every phase Gate knows about. Not every run walks all of them (see profiles). */
+export const PHASES = ["PLAN", "DEBUG", "IMPLEMENT", "TEST", "REVIEW", "DONE"] as const;
 export type Phase = (typeof PHASES)[number];
 
+/**
+ * Run profiles select which phases run, in order. DONE is appended implicitly and
+ * is never listed here. Adding a profile is a pure data edit — no transition code
+ * changes. `feature` is the default (back-compatible with the Milestone 1 flow,
+ * now with a REVIEW gate before DONE).
+ */
+export const PROFILES = {
+  feature: ["PLAN", "IMPLEMENT", "TEST", "REVIEW"],
+  bugfix: ["PLAN", "DEBUG", "TEST", "REVIEW"],
+  refactor: ["PLAN", "IMPLEMENT", "TEST", "REVIEW"],
+  docs: ["PLAN", "IMPLEMENT"],
+} as const satisfies Record<string, readonly Phase[]>;
+
+export type Profile = keyof typeof PROFILES;
+export const DEFAULT_PROFILE: Profile = "feature";
+
 /** Phases that have a gate the agent must clear. DONE is terminal, no gate. */
-export const GATED_PHASES: readonly Phase[] = ["PLAN", "IMPLEMENT", "TEST"];
+export const GATED_PHASES: readonly Phase[] = ["PLAN", "DEBUG", "IMPLEMENT", "TEST", "REVIEW"];
 
 export function isPhase(value: string): value is Phase {
   return (PHASES as readonly string[]).includes(value);
+}
+
+export function isProfile(value: string): value is Profile {
+  return value in PROFILES;
 }
 
 export function isTerminal(phase: Phase): boolean {
   return phase === "DONE";
 }
 
-/** The phase that follows `phase`, or null if `phase` is terminal. */
-export function nextPhase(phase: Phase): Phase | null {
-  const idx = PHASES.indexOf(phase);
-  if (idx < 0 || idx >= PHASES.length - 1) return null;
-  return PHASES[idx + 1]!;
+/** The ordered phases a run of `profile` walks, ending at DONE. */
+export function phaseSequence(profile: string): Phase[] {
+  const base = (isProfile(profile) ? PROFILES[profile] : PROFILES[DEFAULT_PROFILE]) as readonly Phase[];
+  return [...base, "DONE"];
+}
+
+/**
+ * The phase that follows `phase` within `profile`'s sequence, or null if `phase`
+ * is terminal or not part of this profile. Defaults to the standard profile so
+ * callers without a run in hand (tests, tooling) still get a sensible answer.
+ */
+export function nextPhase(phase: Phase, profile: string = DEFAULT_PROFILE): Phase | null {
+  const seq = phaseSequence(profile);
+  const idx = seq.indexOf(phase);
+  if (idx < 0 || idx >= seq.length - 1) return null;
+  return seq[idx + 1]!;
 }
 
 /**

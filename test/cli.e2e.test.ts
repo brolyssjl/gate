@@ -1,7 +1,7 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { beforeAll, describe, expect, it } from "vitest";
 import { makeRepo } from "./helpers.js";
 
@@ -78,12 +78,25 @@ describe("gate CLI end-to-end", () => {
     );
     expect(gate(repo, ["check"]).code).toBe(1);
 
-    // Green suite → TEST passes and the run reaches DONE.
+    // Green suite → TEST passes and the run enters REVIEW (feature profile).
     writeFileSync(
       join(repo, "test.js"),
       `const {greet}=require('./greet');const ok=greet('Sam')==='Hello, Sam';` +
         `console.log(JSON.stringify({tests:[{name:'greets by name',status:ok?'passed':'failed'}]}));` +
         `process.exit(ok?0:1)`,
+    );
+    expect(gate(repo, ["next"]).code).toBe(0);
+    expect((gate(repo, ["status", "--json"]).json() as { phase: string }).phase).toBe("REVIEW");
+
+    // REVIEW: blocks until a fresh packet is emitted, and the untouched
+    // scaffold must NOT pass - a reviewer has to sign review.md.
+    expect(gate(repo, ["check"]).code).toBe(1);
+    expect(gate(repo, ["review", "--fresh"]).code).toBe(0);
+    expect(gate(repo, ["next"]).code).toBe(1);
+    const reviewRunId = (gate(repo, ["status", "--json"]).json() as { id: string }).id;
+    writeFileSync(
+      join(repo, `.gate/runs/${reviewRunId}/review.md`),
+      `---\nreviewer: fresh-eyes\nfindings: []\n---\n# Review\n`,
     );
     expect(gate(repo, ["next"]).code).toBe(0);
 
@@ -130,6 +143,160 @@ describe("gate CLI end-to-end", () => {
     expect(gate(repo, ["log", "notes.txt"]).code).toBe(0);
     const status = gate(repo, ["status", "--json"]).json() as { artifacts: string[] };
     expect(status.artifacts).toContain("notes.txt");
+  });
+
+  it("selects the phase set from the --profile flag", () => {
+    const repo = makeRepo();
+    gate(repo, ["init"]);
+
+    // bugfix routes through DEBUG (and skips IMPLEMENT); it scaffolds debug-log.md.
+    expect(gate(repo, ["start", "fix login", "--profile", "bugfix"]).code).toBe(0);
+    const status = gate(repo, ["status", "--json"]).json() as { profile: string; phases: string[] };
+    expect(status.profile).toBe("bugfix");
+    expect(status.phases).toEqual(["PLAN", "DEBUG", "TEST", "REVIEW", "DONE"]);
+    const runId = (gate(repo, ["status", "--json"]).json() as { id: string }).id;
+    expect(existsSync(join(repo, `.gate/runs/${runId}/debug-log.md`))).toBe(true);
+  });
+
+  it("rejects an unknown profile", () => {
+    const repo = makeRepo();
+    gate(repo, ["init"]);
+    expect(gate(repo, ["start", "x", "--profile", "bogus"]).code).toBe(2);
+  });
+
+  it("refuses to reach DONE when a review fix breaks the code (staleness guard)", () => {
+    const repo = makeRepo({
+      "package.json": JSON.stringify({ name: "fx", scripts: { test: "node test.js" } }),
+      "greet.js": "module.exports = (n) => 'Hello, ' + n\n",
+      "test.js":
+        `const ok = require('./greet')('Sam') === 'Hello, Sam';\n` +
+        `console.log(JSON.stringify({tests:[{name:'greets by name',status:ok?'passed':'failed'}]}));\n` +
+        `process.exit(ok ? 0 : 1)\n`,
+    });
+    gate(repo, ["init"]);
+    gate(repo, ["trust"]);
+    gate(repo, ["start", "demo"]);
+    const runId = (gate(repo, ["status", "--json"]).json() as { id: string }).id;
+    writeFileSync(
+      join(repo, `.gate/runs/${runId}/plan.md`),
+      `---\ngoal: demo\nfiles:\n  - "greet.js"\n  - "test.js"\ncriteria:\n  - id: c1\n    text: greets\n    verify: "test: greets by name"\n---\n# Plan\n`,
+    );
+    gate(repo, ["approve", "--by", "human"]);
+    expect(gate(repo, ["next"]).code).toBe(0); // PLAN -> IMPLEMENT
+    writeFileSync(join(repo, "greet.js"), "module.exports = (n) => 'Hello, ' + n // touched\n");
+    expect(gate(repo, ["next"]).code).toBe(0); // IMPLEMENT -> TEST
+    expect(gate(repo, ["next"]).code).toBe(0); // TEST -> REVIEW
+    const review = gate(repo, ["review", "--fresh", "--json"]);
+    expect(Object.keys(review.json() as Record<string, unknown>).sort()).toEqual([
+      "diff",
+      "findingsFile",
+      "packet",
+      "phase",
+      "plan",
+      "regenerated",
+      "requestedBy",
+      "rubric",
+      "treeHash",
+    ]);
+
+    // Reviewer files a blocker; the implementer "fixes" it by breaking the
+    // suite and flips the finding to resolved.
+    writeFileSync(
+      join(repo, `.gate/runs/${runId}/review.md`),
+      `---\nreviewer: fresh-eyes\nfindings:\n  - id: f1\n    severity: blocker\n    status: resolved\n    note: crash on null\n---\n`,
+    );
+    writeFileSync(join(repo, "greet.js"), "throw new Error('boom')\n");
+
+    // Stale packet: the reviewer never saw the "fix".
+    expect(gate(repo, ["next"]).code).toBe(1);
+    // Without --fresh an existing packet is not re-baselined.
+    gate(repo, ["review"]);
+    expect(gate(repo, ["next"]).code).toBe(1);
+    // Even with a fresh packet, re-verification catches the red suite.
+    gate(repo, ["review", "--fresh"]);
+    expect(gate(repo, ["next"]).code).toBe(1);
+
+    // A real fix, re-packeted, goes green and reaches DONE.
+    writeFileSync(join(repo, "greet.js"), "module.exports = (n) => 'Hello, ' + n\n");
+    gate(repo, ["review", "--fresh"]);
+    expect(gate(repo, ["next"]).code).toBe(0);
+    expect((gate(repo, ["status", "--json"]).json() as { active: boolean }).active).toBe(false);
+  });
+
+  it("reports per-run durations, gate failures, and findings", () => {
+    const repo = makeRepo();
+    gate(repo, ["init"]);
+    gate(repo, ["start", "report demo"]);
+    // One failed advancement attempt (empty plan) is recorded for the report.
+    expect(gate(repo, ["next"]).code).toBe(1);
+
+    const report = gate(repo, ["report", "--json"]).json() as {
+      id: string;
+      profile: string;
+      gateFailures: number;
+      phases: Array<{ phase: string; gateFailures: number }>;
+      findings: unknown;
+    };
+    expect(report.profile).toBe("feature");
+    expect(report.gateFailures).toBeGreaterThanOrEqual(1);
+    expect(report.phases.some((p) => p.phase === "PLAN")).toBe(true);
+    expect(report.findings).toBeNull(); // no review.md yet
+  });
+});
+
+describe("gate --json schema", () => {
+  const repo = makeRepo({
+    "package.json": JSON.stringify({ name: "fx", scripts: { test: "node -e 0" } }),
+  });
+
+  beforeAll(() => {
+    gate(repo, ["init"]);
+    gate(repo, ["trust"]);
+  });
+
+  const keys = (r: Run) => Object.keys(r.json() as Record<string, unknown>).sort();
+
+  it("init/start/status expose stable top-level keys", () => {
+    expect(keys(gate(repo, ["init", "--json"]))).toEqual(["detected", "initialized", "refreshed", "root"]);
+    expect(keys(gate(repo, ["start", "schema demo", "--json"]))).toEqual([
+      "hints",
+      "id",
+      "phase",
+      "phases",
+      "plan",
+      "profile",
+    ]);
+    expect(keys(gate(repo, ["status", "--json"]))).toEqual([
+      "active",
+      "artifacts",
+      "baseRef",
+      "id",
+      "nextAction",
+      "phase",
+      "phases",
+      "profile",
+      "sessionId",
+      "status",
+      "title",
+    ]);
+  });
+
+  it("check/report/playbook expose stable top-level keys", () => {
+    expect(keys(gate(repo, ["check", "--json"]))).toEqual(["checks", "ok", "phase"]);
+    expect(keys(gate(repo, ["report", "--json"]))).toEqual([
+      "artifacts",
+      "findings",
+      "gateFailures",
+      "id",
+      "overrides",
+      "phase",
+      "phases",
+      "profile",
+      "status",
+      "title",
+      "totalSeconds",
+    ]);
+    expect(keys(gate(repo, ["playbook", "PLAN", "--json"]))).toEqual(["hints", "phase", "playbook"]);
   });
 });
 

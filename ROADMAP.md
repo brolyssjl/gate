@@ -30,7 +30,7 @@ load-bearing; pointers, never copies.
 - [x] `gate skip <phase> --reason` — human-authorized skip with audit trail
 - [x] `gate log <file>` — register an artifact against the current phase
 
-## Milestone 2 — Full quality flow ⏳
+## Milestone 2 — Full quality flow ✅ (v0.2.0)
 
 - [x] DEBUG phase — enforced protocol (reproduce → hypothesize → predict → test →
       conclude) logged in `debug-log.md`; gate requires ≥1 completed cycle and the
@@ -42,7 +42,7 @@ load-bearing; pointers, never copies.
 - [x] `gate report` — per-run summary (durations, gate failures, findings)
 - [x] `--json` everywhere audit + schema snapshots
 
-### Milestone 2 hardening ✅
+### Milestone 2 hardening ✅ (v0.2.0)
 
 - [x] Staleness guard — tree fingerprint recorded at every gate pass and on the
       review packet; REVIEW fails on a stale packet and re-runs build/lint/test

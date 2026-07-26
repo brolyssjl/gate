@@ -1,6 +1,6 @@
 {
   "name": "gate",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Agent-agnostic quality harness: turns the dev flow into an enforced state machine with deterministic gates.",
   "type": "module",

@@ -24,6 +24,8 @@ export interface Plan {
   out_of_scope: string[];
   criteria: Criterion[];
   risks: string[];
+  /** Record ids (e.g. "LES-002") from an agnosgram advise report the author has acknowledged. */
+  acknowledgments: string[];
   /** Free-form markdown body (may cite an SDD spec path). */
   body: string;
 }
@@ -68,6 +70,7 @@ export function parsePlan(raw: string): PlanParse {
 
   const out_of_scope = asStringArray(data.out_of_scope);
   const risks = asStringArray(data.risks);
+  const acknowledgments = asStringArray(data.acknowledgments);
 
   const criteria: Criterion[] = [];
   const rawCriteria = Array.isArray(data.criteria) ? data.criteria : [];
@@ -96,7 +99,7 @@ export function parsePlan(raw: string): PlanParse {
 
   if (errors.length > 0) return { plan: null, errors };
   return {
-    plan: { goal, spec, files, out_of_scope, criteria, risks, body: (m[2] ?? "").trim() },
+    plan: { goal, spec, files, out_of_scope, criteria, risks, acknowledgments, body: (m[2] ?? "").trim() },
     errors: [],
   };
 }

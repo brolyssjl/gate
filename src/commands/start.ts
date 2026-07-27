@@ -19,6 +19,7 @@ criteria:
     text:
     verify: "test: "
 risks: []
+acknowledgments: []
 ---
 
 # Plan: %TITLE%

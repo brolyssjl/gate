@@ -19,7 +19,11 @@ is your job; Gate only checks structure.
    it to a real passing test. Use `manual` only when a machine genuinely cannot
    check it.
 5. List **risks** and **out-of-scope** items to hold the line against scope creep.
-6. Get sign-off, then run `gate approve`. Approval is a separate, deliberate
+6. If this repo has an `.agnosgram/` project-memory store, an `agnosgram
+   advise` report over this plan may already exist. Gate reads it (advisory —
+   it never runs the check itself); if it flags contradictions, resolve each
+   one and list its record id under `acknowledgments:` before approving.
+7. Get sign-off, then run `gate approve`. Approval is a separate, deliberate
    step recorded outside plan.md — you cannot self-approve by editing the plan,
    and any later edit to plan.md voids the approval (re-run `gate approve`).
 
@@ -39,6 +43,7 @@ criteria:
     verify: "test: resets password"   # or: manual
 risks:
   - "Token expiry edge cases"
+acknowledgments: []           # record ids from an agnosgram advise report you've resolved
 ---
 
 # Plan: <title>

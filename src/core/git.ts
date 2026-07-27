@@ -23,6 +23,14 @@ export function isGitRepo(root: string): boolean {
   return git(root, ["rev-parse", "--is-inside-work-tree"]).ok;
 }
 
+/** Current branch name, or null when not a repo, unborn, or detached HEAD. */
+export function currentBranch(root: string): string | null {
+  const res = git(root, ["rev-parse", "--abbrev-ref", "HEAD"]);
+  if (!res.ok) return null;
+  const branch = res.stdout.trim();
+  return branch && branch !== "HEAD" ? branch : null;
+}
+
 /** Current HEAD sha, or null if there are no commits yet / not a repo. */
 export function headSha(root: string): string | null {
   const res = git(root, ["rev-parse", "HEAD"]);

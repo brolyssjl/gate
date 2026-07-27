@@ -310,6 +310,25 @@ describe("gate CLI end-to-end", () => {
     expect((gate(repo, ["status", "--json"]).json() as { active: boolean }).active).toBe(false);
   });
 
+  it("gate adapt writes every adapter by default and is idempotent across the CLI", () => {
+    const repo = makeRepo();
+    gate(repo, ["init"]);
+
+    const first = gate(repo, ["adapt", "--json"]);
+    expect(first.code).toBe(0);
+    const firstData = first.json() as { adapters: Array<{ path: string; action: string }> };
+    expect(firstData.adapters.length).toBeGreaterThanOrEqual(6);
+    expect(firstData.adapters.every((a) => a.action === "created")).toBe(true);
+    for (const a of firstData.adapters) expect(existsSync(join(repo, a.path))).toBe(true);
+
+    const second = gate(repo, ["adapt", "--json"]);
+    const secondData = second.json() as { adapters: Array<{ action: string }> };
+    expect(secondData.adapters.every((a) => a.action === "unchanged")).toBe(true);
+
+    expect(gate(repo, ["adapt", "cursor", "--json"]).code).toBe(0);
+    expect(gate(repo, ["adapt", "not-a-real-adapter"]).code).toBe(2);
+  });
+
   it("reports per-run durations, gate failures, and findings", () => {
     const repo = makeRepo();
     gate(repo, ["init"]);

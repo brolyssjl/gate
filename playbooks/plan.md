@@ -8,8 +8,10 @@ is your job; Gate only checks structure.
 
 1. **Restate the goal** in one sentence — what does "done" mean for this work?
 2. If project memory is present (`.agnosgram/`, an SDD spec under `openspec/`,
-   `.specify/`, `_bmad/`), read it first and **cite** the spec path in the body
-   rather than restating it.
+   `.specify/`, `_bmad/`), read it first and **cite** the spec path rather than
+   restating it. When Gate detects an SDD directory (and `integrations.sdd` is
+   not `off`), put that path in the `spec:` frontmatter field — the gate checks
+   it points somewhere real under the SDD dir. No SDD present: leave it blank.
 3. **List every file** you expect to touch (globs allowed). IMPLEMENT will reject
    changes to files not covered here, so be honest and complete.
 4. **Write acceptance criteria.** Each must be *checkable*: give it a `verify`
@@ -26,6 +28,7 @@ is your job; Gate only checks structure.
 ```markdown
 ---
 goal: One sentence describing done.
+spec: openspec/changes/my-change/spec.md   # only when an SDD dir is detected
 files:
   - src/**                 # every path/glob you intend to touch
 out_of_scope:

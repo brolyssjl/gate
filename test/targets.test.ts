@@ -21,6 +21,7 @@ const EMPTY_CONFIG: GateConfig = {
   phases: {},
   integrations: {},
   coverage_format: "auto",
+  retention: {},
 };
 
 const TWO_TARGETS: GateConfig = {

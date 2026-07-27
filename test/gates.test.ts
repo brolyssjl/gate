@@ -22,6 +22,7 @@ const EMPTY_CONFIG: GateConfig = {
   phases: {},
   integrations: {},
   coverage_format: "auto",
+  retention: {},
 };
 
 function runOn(phase: Run["phase"], baseRef: string | null): Run {

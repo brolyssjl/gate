@@ -5,6 +5,7 @@ import { implementGate } from "./implement.js";
 import { testGate } from "./test.js";
 import { debugGate } from "./debug.js";
 import { reviewGate } from "./review.js";
+import { retroGate } from "./retro.js";
 
 const GATES: Partial<Record<Phase, Gate>> = {
   PLAN: planGate,
@@ -12,6 +13,7 @@ const GATES: Partial<Record<Phase, Gate>> = {
   IMPLEMENT: implementGate,
   TEST: testGate,
   REVIEW: reviewGate,
+  RETRO: retroGate,
 };
 
 export function hasGate(phase: Phase): boolean {

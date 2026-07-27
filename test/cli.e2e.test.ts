@@ -99,6 +99,17 @@ describe("gate CLI end-to-end", () => {
       `---\nreviewer: fresh-eyes\nfindings: []\n---\n# Review\n`,
     );
     expect(gate(repo, ["next"]).code).toBe(0);
+    expect((gate(repo, ["status", "--json"]).json() as { phase: string }).phase).toBe("RETRO");
+
+    // RETRO: the empty scaffold has no substance and must not pass; a filled-in
+    // retro (no .agnosgram/ store in this fixture repo, so no journal sync is
+    // required) reaches DONE.
+    expect(gate(repo, ["check"]).code).toBe(1);
+    writeFileSync(
+      join(repo, `.gate/runs/${reviewRunId}/retro.md`),
+      `---\nbroke: []\navoid:\n  - "Do not skip the reproduce step"\nconventions: []\n---\n# Retro\n`,
+    );
+    expect(gate(repo, ["next"]).code).toBe(0);
 
     const done = gate(repo, ["status", "--json"]).json() as { active: boolean };
     expect(done.active).toBe(false);
@@ -153,7 +164,7 @@ describe("gate CLI end-to-end", () => {
     expect(gate(repo, ["start", "fix login", "--profile", "bugfix"]).code).toBe(0);
     const status = gate(repo, ["status", "--json"]).json() as { profile: string; phases: string[] };
     expect(status.profile).toBe("bugfix");
-    expect(status.phases).toEqual(["PLAN", "DEBUG", "TEST", "REVIEW", "DONE"]);
+    expect(status.phases).toEqual(["PLAN", "DEBUG", "TEST", "REVIEW", "RETRO", "DONE"]);
     const runId = (gate(repo, ["status", "--json"]).json() as { id: string }).id;
     expect(existsSync(join(repo, `.gate/runs/${runId}/debug-log.md`))).toBe(true);
   });
@@ -216,9 +227,15 @@ describe("gate CLI end-to-end", () => {
     gate(repo, ["review", "--fresh"]);
     expect(gate(repo, ["next"]).code).toBe(1);
 
-    // A real fix, re-packeted, goes green and reaches DONE.
+    // A real fix, re-packeted, goes green and enters RETRO.
     writeFileSync(join(repo, "greet.js"), "module.exports = (n) => 'Hello, ' + n\n");
     gate(repo, ["review", "--fresh"]);
+    expect(gate(repo, ["next"]).code).toBe(0);
+    expect((gate(repo, ["status", "--json"]).json() as { phase: string }).phase).toBe("RETRO");
+    writeFileSync(
+      join(repo, `.gate/runs/${runId}/retro.md`),
+      `---\nbroke:\n  - "Fixing a blocker by breaking the build almost shipped"\navoid: []\nconventions: []\n---\n# Retro\n`,
+    );
     expect(gate(repo, ["next"]).code).toBe(0);
     expect((gate(repo, ["status", "--json"]).json() as { active: boolean }).active).toBe(false);
   });

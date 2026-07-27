@@ -43,5 +43,6 @@ export function runPaths(root: string, runId: string) {
     debugLog: join(dir, "debug-log.md"),
     reviewPacket: join(dir, "review-packet.md"),
     review: join(dir, "review.md"),
+    retro: join(dir, "retro.md"),
   };
 }

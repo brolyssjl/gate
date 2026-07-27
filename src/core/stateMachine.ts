@@ -11,19 +11,20 @@
  */
 
 /** Every phase Gate knows about. Not every run walks all of them (see profiles). */
-export const PHASES = ["PLAN", "DEBUG", "IMPLEMENT", "TEST", "REVIEW", "DONE"] as const;
+export const PHASES = ["PLAN", "DEBUG", "IMPLEMENT", "TEST", "REVIEW", "RETRO", "DONE"] as const;
 export type Phase = (typeof PHASES)[number];
 
 /**
  * Run profiles select which phases run, in order. DONE is appended implicitly and
  * is never listed here. Adding a profile is a pure data edit — no transition code
  * changes. `feature` is the default (back-compatible with the Milestone 1 flow,
- * now with a REVIEW gate before DONE).
+ * now with a REVIEW gate before DONE). RETRO closes every profile except `docs`
+ * (kickoff interpretation: a docs-only change has nothing worth a retro).
  */
 export const PROFILES = {
-  feature: ["PLAN", "IMPLEMENT", "TEST", "REVIEW"],
-  bugfix: ["PLAN", "DEBUG", "TEST", "REVIEW"],
-  refactor: ["PLAN", "IMPLEMENT", "TEST", "REVIEW"],
+  feature: ["PLAN", "IMPLEMENT", "TEST", "REVIEW", "RETRO"],
+  bugfix: ["PLAN", "DEBUG", "TEST", "REVIEW", "RETRO"],
+  refactor: ["PLAN", "IMPLEMENT", "TEST", "REVIEW", "RETRO"],
   docs: ["PLAN", "IMPLEMENT"],
 } as const satisfies Record<string, readonly Phase[]>;
 
@@ -31,7 +32,7 @@ export type Profile = keyof typeof PROFILES;
 export const DEFAULT_PROFILE: Profile = "feature";
 
 /** Phases that have a gate the agent must clear. DONE is terminal, no gate. */
-export const GATED_PHASES: readonly Phase[] = ["PLAN", "DEBUG", "IMPLEMENT", "TEST", "REVIEW"];
+export const GATED_PHASES: readonly Phase[] = ["PLAN", "DEBUG", "IMPLEMENT", "TEST", "REVIEW", "RETRO"];
 
 export function isPhase(value: string): value is Phase {
   return (PHASES as readonly string[]).includes(value);

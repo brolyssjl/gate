@@ -41,6 +41,16 @@ cycles:
 
 `;
 
+const RETRO_TEMPLATE = `---
+broke: []
+avoid: []
+conventions: []
+---
+
+# Retro: %TITLE%
+
+`;
+
 /** `gate start "<title>"` — create a run, enter PLAN, print the plan playbook. */
 export function cmdStart(args: ParsedArgs): void {
   const root = requireRoot();
@@ -74,13 +84,16 @@ export function cmdStart(args: ParsedArgs): void {
   writeRun(root, run);
   setCurrentRunId(root, id);
 
-  // Scaffold a plan.md for the agent to fill in, plus a debug-log.md when the
-  // profile walks through DEBUG so the protocol template is waiting for them.
+  // Scaffold a plan.md for the agent to fill in, plus a debug-log.md / retro.md
+  // when the profile walks through DEBUG / RETRO so the templates are waiting.
   const paths = runPaths(root, id);
   if (!existsSync(paths.plan)) writeFileSync(paths.plan, PLAN_TEMPLATE.replace("%TITLE%", title));
   const sequence = phaseSequence(profile);
   if (sequence.includes("DEBUG") && !existsSync(paths.debugLog)) {
     writeFileSync(paths.debugLog, DEBUG_TEMPLATE.replace("%TITLE%", title));
+  }
+  if (sequence.includes("RETRO") && !existsSync(paths.retro)) {
+    writeFileSync(paths.retro, RETRO_TEMPLATE.replace("%TITLE%", title));
   }
 
   const hints = planHints(detect(root));

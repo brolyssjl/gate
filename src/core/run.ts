@@ -42,6 +42,19 @@ export interface Approval {
   planHash: string;
 }
 
+/**
+ * Journal-sync receipt written by `gate retro` (Milestone 3, additive). Absent
+ * until `gate retro` runs; the RETRO gate's `retro.journal` check reads it to
+ * confirm the sync actually landed, rather than trusting a bare claim.
+ */
+export interface RetroSync {
+  /** Repo-relative path to the `.agnosgram/journal/*.md` file the entry landed in. */
+  journalFile: string;
+  syncedAt: string;
+  /** "agnosgram-cli" when `agnosgram log --stdin` ran; "fallback" on ENOENT direct-append. */
+  method: "agnosgram-cli" | "fallback";
+}
+
 export interface ReviewRequest {
   /**
    * Who emitted the packet (from --by or GATE_SESSION_ID); audit only. The
@@ -80,6 +93,8 @@ export interface Run {
   approval?: Approval;
   /** REVIEW packet request, recorded by `gate review` (absent until requested). */
   review?: ReviewRequest;
+  /** RETRO journal-sync receipt, recorded by `gate retro` (absent until synced). */
+  retro?: RetroSync;
 }
 
 export function nowIso(): string {

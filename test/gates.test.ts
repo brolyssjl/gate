@@ -11,6 +11,7 @@ import { implementGate } from "../src/gates/implement.js";
 import { testGate } from "../src/gates/test.js";
 import { debugGate } from "../src/gates/debug.js";
 import { reviewGate } from "../src/gates/review.js";
+import { retroGate } from "../src/gates/retro.js";
 import type { GateResult } from "../src/gates/types.js";
 import { headSha, makeRepo, writeConfig, writeFile } from "./helpers.js";
 
@@ -547,5 +548,73 @@ describe("REVIEW gate", () => {
     const res = reviewGate({ root, run, config });
     expect(check(res, "review.evidence")).toBe(false);
     expect(existsSync(join(root, "ran.txt"))).toBe(false);
+  });
+});
+
+function writeRetro(root: string, content: string): void {
+  writeFile(root, join(".gate", "runs", "r1", "retro.md"), content);
+}
+
+const SUBSTANTIVE_RETRO = `---\nbroke: []\navoid:\n  - "Do not skip reproduce"\nconventions: []\n---\n# Retro`;
+const EMPTY_RETRO = `---\nbroke: []\navoid: []\nconventions: []\n---\n# Retro`;
+
+describe("RETRO gate", () => {
+  it("fails when retro.md is missing", () => {
+    const root = makeRepo();
+    const res = retroGate({ root, run: runOn("RETRO", null), config: EMPTY_CONFIG });
+    expect(check(res, "retro.schema")).toBe(false);
+  });
+
+  it("fails retro.substance on an empty scaffold", () => {
+    const root = makeRepo();
+    writeRetro(root, EMPTY_RETRO);
+    const res = retroGate({ root, run: runOn("RETRO", null), config: EMPTY_CONFIG });
+    expect(check(res, "retro.substance")).toBe(false);
+  });
+
+  it("passes with no .agnosgram store (journal sync not required)", () => {
+    const root = makeRepo();
+    writeRetro(root, SUBSTANTIVE_RETRO);
+    const res = retroGate({ root, run: runOn("RETRO", null), config: EMPTY_CONFIG });
+    expect(res.ok).toBe(true);
+    expect(check(res, "retro.journal")).toBe(true);
+  });
+
+  it("passes when the agnosgram integration is off, even with a store present", () => {
+    const root = makeRepo();
+    writeFile(root, ".agnosgram/journal/2026-01.md", "# Journal\n");
+    writeRetro(root, SUBSTANTIVE_RETRO);
+    const config = writeConfig(root, { integrations: { agnosgram: "off" } });
+    const res = retroGate({ root, run: runOn("RETRO", null), config });
+    expect(check(res, "retro.journal")).toBe(true);
+  });
+
+  it("fails retro.journal when a store is present but no sync was recorded", () => {
+    const root = makeRepo();
+    writeFile(root, ".agnosgram/journal/2026-01.md", "# Journal\n");
+    writeRetro(root, SUBSTANTIVE_RETRO);
+    const res = retroGate({ root, run: runOn("RETRO", null), config: EMPTY_CONFIG });
+    expect(check(res, "retro.journal")).toBe(false);
+  });
+
+  it("passes retro.journal once the run.retro receipt points at a journal entry containing the run id", () => {
+    const root = makeRepo();
+    writeFile(root, ".agnosgram/journal/2026-01.md", "# Journal\n\n## entry\n- **Source:** .gate/runs/r1\n");
+    writeRetro(root, SUBSTANTIVE_RETRO);
+    const run = runOn("RETRO", null);
+    run.retro = { journalFile: ".agnosgram/journal/2026-01.md", syncedAt: nowIso(), method: "fallback" };
+    const res = retroGate({ root, run, config: EMPTY_CONFIG });
+    expect(res.ok).toBe(true);
+    expect(check(res, "retro.journal")).toBe(true);
+  });
+
+  it("fails retro.journal when the recorded journal file no longer contains the run id", () => {
+    const root = makeRepo();
+    writeFile(root, ".agnosgram/journal/2026-01.md", "# Journal\n\n## entry\n- **Did:** unrelated\n");
+    writeRetro(root, SUBSTANTIVE_RETRO);
+    const run = runOn("RETRO", null);
+    run.retro = { journalFile: ".agnosgram/journal/2026-01.md", syncedAt: nowIso(), method: "fallback" };
+    const res = retroGate({ root, run, config: EMPTY_CONFIG });
+    expect(check(res, "retro.journal")).toBe(false);
   });
 });

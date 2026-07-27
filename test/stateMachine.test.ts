@@ -14,7 +14,7 @@ import {
 
 describe("state machine", () => {
   it("catalogs every phase Gate knows about, DONE last", () => {
-    expect(PHASES).toEqual(["PLAN", "DEBUG", "IMPLEMENT", "TEST", "REVIEW", "DONE"]);
+    expect(PHASES).toEqual(["PLAN", "DEBUG", "IMPLEMENT", "TEST", "REVIEW", "RETRO", "DONE"]);
     expect(PHASES[PHASES.length - 1]).toBe("DONE");
   });
 
@@ -23,9 +23,10 @@ describe("state machine", () => {
   });
 
   it("builds each profile's sequence, always ending at DONE", () => {
-    expect(phaseSequence("feature")).toEqual(["PLAN", "IMPLEMENT", "TEST", "REVIEW", "DONE"]);
-    expect(phaseSequence("bugfix")).toEqual(["PLAN", "DEBUG", "TEST", "REVIEW", "DONE"]);
-    expect(phaseSequence("refactor")).toEqual(["PLAN", "IMPLEMENT", "TEST", "REVIEW", "DONE"]);
+    expect(phaseSequence("feature")).toEqual(["PLAN", "IMPLEMENT", "TEST", "REVIEW", "RETRO", "DONE"]);
+    expect(phaseSequence("bugfix")).toEqual(["PLAN", "DEBUG", "TEST", "REVIEW", "RETRO", "DONE"]);
+    expect(phaseSequence("refactor")).toEqual(["PLAN", "IMPLEMENT", "TEST", "REVIEW", "RETRO", "DONE"]);
+    // docs skips REVIEW and RETRO — a docs-only change has no code review or retro.
     expect(phaseSequence("docs")).toEqual(["PLAN", "IMPLEMENT", "DONE"]);
   });
 
@@ -38,7 +39,8 @@ describe("state machine", () => {
   it("advances within a profile and terminates at DONE", () => {
     expect(nextPhase("PLAN", "feature")).toBe("IMPLEMENT");
     expect(nextPhase("TEST", "feature")).toBe("REVIEW");
-    expect(nextPhase("REVIEW", "feature")).toBe("DONE");
+    expect(nextPhase("REVIEW", "feature")).toBe("RETRO");
+    expect(nextPhase("RETRO", "feature")).toBe("DONE");
     expect(nextPhase("DONE", "feature")).toBeNull();
     // bugfix routes through DEBUG and skips IMPLEMENT.
     expect(nextPhase("PLAN", "bugfix")).toBe("DEBUG");

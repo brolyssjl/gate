@@ -79,9 +79,13 @@ export function cmdStart(args: ParsedArgs): void {
     (typeof args.flags.session === "string" ? args.flags.session : undefined) ??
     process.env.GATE_SESSION_ID ??
     null;
+  const targetOverride =
+    typeof args.flags.target === "string"
+      ? args.flags.target.split(",").map((t) => t.trim()).filter(Boolean)
+      : undefined;
 
   const id = uniqueRunId(root, title);
-  const run = newRun({ id, title, profile, baseRef: headSha(root), sessionId });
+  const run = newRun({ id, title, profile, baseRef: headSha(root), sessionId, targetOverride });
   writeRun(root, run);
   setCurrentRunId(root, id);
 

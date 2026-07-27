@@ -3,6 +3,7 @@ import { changedFiles } from "../core/git.js";
 import { runCommand } from "../core/exec.js";
 import { isCommandsTrusted } from "../core/trust.js";
 import { parseDebugLogFile, isCycleComplete } from "../artifacts/debugLog.js";
+import { checkName, resolvePhaseTargets, type ResolvedTarget } from "../core/targets.js";
 import { scopeCheck } from "./implement.js";
 import { loadReport, statReport } from "./test.js";
 import { type Check, type GateContext, type GateResult, fail, pass, result } from "./types.js";
@@ -51,7 +52,9 @@ export function debugGate(ctx: GateContext): GateResult {
   const touched = changedFiles(ctx.root, ctx.run.baseRef).filter((f) => !f.startsWith(".gate/"));
   checks.push(scopeCheck("debug.scope", ctx, touched));
 
-  checks.push(triggeringTestCheck(ctx, log.triggeringTest, reportPath));
+  for (const t of resolvePhaseTargets(ctx.config, ctx.run, touched)) {
+    checks.push(triggeringTestCheck(ctx, log.triggeringTest, reportPath, t));
+  }
 
   return result("DEBUG", checks);
 }
@@ -63,34 +66,38 @@ export function debugGate(ctx: GateContext): GateResult {
  * trust discipline — untrusted config never spawns a process — and its evidence
  * discipline: the report must come from the run Gate just executed, and its
  * absence fails closed (a bugfix whose fix cannot be named is not verified).
+ *
+ * Targets (Milestone 3): `t.target === null` (no targets configured, or none
+ * affected) reproduces the pre-targets check byte-for-byte, including the
+ * bare "debug.test-green" name and report path; a named target uses its own
+ * effective commands and a per-target report path, with a bracketed name.
  */
-function triggeringTestCheck(ctx: GateContext, triggering: string, reportPath: string): Check {
-  const testCmd = ctx.config.commands.test;
-  if (!testCmd) return fail("debug.test-green", "no test command configured (commands.test)");
+function triggeringTestCheck(ctx: GateContext, triggering: string, reportPath: string, t: ResolvedTarget): Check {
+  const name = checkName("debug.test-green", t.target);
+  const testCmd = t.commands.test;
+  if (!testCmd) return fail(name, "no test command configured (commands.test)");
   if (!isCommandsTrusted(ctx.root)) {
-    return fail("debug.test-green", "test command not trusted — review .gate/config.yml and run `gate trust`");
+    return fail(name, "test command not trusted — review .gate/config.yml and run `gate trust`");
   }
   const { dir } = runPaths(ctx.root, ctx.run.id);
-  const reportBefore = statReport(reportPath);
-  const run = runCommand(testCmd, ctx.root, { GATE_RUN_DIR: dir, GATE_TEST_REPORT: reportPath });
+  const path = t.target ? reportPath.replace(/\.json$/, `.${t.target}.json`) : reportPath;
+  const reportBefore = statReport(path);
+  const run = runCommand(testCmd, ctx.root, { GATE_RUN_DIR: dir, GATE_TEST_REPORT: path });
   if (run.code !== 0) {
     const tail = (run.stderr || run.stdout).trim().split("\n").slice(-3).join(" ⏎ ");
-    return fail("debug.test-green", `suite still red (exit ${run.code}) — no regressions allowed: ${tail}`);
+    return fail(name, `suite still red (exit ${run.code}) — no regressions allowed: ${tail}`);
   }
-  const report = loadReport(reportPath, run.stdout, reportBefore);
+  const report = loadReport(path, run.stdout, reportBefore);
   if (!report) {
     return fail(
-      "debug.test-green",
+      name,
       "suite green, but no parseable report to confirm the triggering test — " +
         "emit a JSON report on stdout or write it to $GATE_TEST_REPORT",
     );
   }
   const needle = triggering.toLowerCase();
-  const hit = report.tests.some((t) => t.status === "passed" && t.name.toLowerCase().includes(needle));
+  const hit = report.tests.some((r) => r.status === "passed" && r.name.toLowerCase().includes(needle));
   return hit
-    ? pass("debug.test-green", `triggering test "${triggering}" passes; suite green`)
-    : fail(
-        "debug.test-green",
-        `suite is green but no passing test matches the triggering test "${triggering}"`,
-      );
+    ? pass(name, `triggering test "${triggering}" passes; suite green`)
+    : fail(name, `suite is green but no passing test matches the triggering test "${triggering}"`);
 }

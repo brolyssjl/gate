@@ -26,6 +26,8 @@ Commands:
                           before gates will execute build/test/lint
   start "<title>"         Create a run, enter PLAN, print the plan playbook
     [--profile <p>]       Phases to run: feature|bugfix|refactor|docs (default feature)
+    [--target <a,b>]      Override target resolution (comma-separated names);
+                          wins over file-based resolution for this run
   approve [--by] [--reason]  Record PLAN sign-off, bound to the plan's content
   status                  Current run, phase, what the gate waits for
   check                   Run the current gate; exit code = verdict

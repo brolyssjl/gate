@@ -24,6 +24,14 @@ export interface TargetConfig {
 
 export type PhaseMode = "required" | "optional" | "off";
 
+/** `gate prune` retention defaults (Milestone 3, additive). CLI flags win when given. */
+export interface RetentionConfig {
+  /** Keep the N most recently updated non-active runs (default 10). */
+  keep?: number;
+  /** Additionally require a candidate to be older than N days to be pruned. */
+  days?: number;
+}
+
 export interface GateConfig {
   commands: Commands;
   thresholds: Thresholds;
@@ -35,6 +43,12 @@ export interface GateConfig {
    * `generic` = the documented JSON contract. Defaults to auto-detect.
    */
   coverage_format?: "istanbul" | "generic" | "auto";
+  /**
+   * `gate prune` retention defaults. Deliberately NOT part of the trust hash
+   * (`commandsBlockHashSource`) — it configures which run folders get
+   * archived, never a command that executes.
+   */
+  retention: RetentionConfig;
 }
 
 const DEFAULT_CONFIG: GateConfig = {
@@ -44,6 +58,7 @@ const DEFAULT_CONFIG: GateConfig = {
   phases: {},
   integrations: {},
   coverage_format: "auto",
+  retention: {},
 };
 
 export function loadConfig(root: string): GateConfig {
@@ -58,6 +73,7 @@ export function loadConfig(root: string): GateConfig {
     phases: raw.phases ?? {},
     integrations: raw.integrations ?? {},
     coverage_format: raw.coverage_format ?? "auto",
+    retention: raw.retention ?? {},
   };
 }
 

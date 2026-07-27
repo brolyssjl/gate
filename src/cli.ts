@@ -15,6 +15,7 @@ import { cmdLog } from "./commands/log.js";
 import { cmdReview } from "./commands/review.js";
 import { cmdReport } from "./commands/report.js";
 import { cmdRetro } from "./commands/retro.js";
+import { cmdPrune } from "./commands/prune.js";
 
 const HELP = `gate — an agent-agnostic quality harness (umpire, not a driver).
 
@@ -37,6 +38,9 @@ Commands:
   retro                   Sync retro.md into the Agnosgram journal (RETRO
                           phase); no-op without a .agnosgram/ store
   report [<run-id>]       Per-run summary: durations, gate failures, findings
+                          (falls back to an archived summary after prune)
+  prune [--keep n] [--days n] [--dry-run]  Archive non-active runs past the
+                          retention window to .gate/archive/, then remove them
   skip <phase> --reason [--by]  Human-authorized skip of the current phase
                           (recorded with who and why; shown by \`gate report\`)
   log <file>              Register an artifact against the current phase
@@ -64,6 +68,7 @@ const COMMANDS: Record<string, Handler> = {
   review: cmdReview,
   retro: cmdRetro,
   report: cmdReport,
+  prune: cmdPrune,
   skip: cmdSkip,
   log: cmdLog,
   playbook: cmdPlaybook,

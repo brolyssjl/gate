@@ -175,6 +175,36 @@ describe("gate CLI end-to-end", () => {
     expect(gate(repo, ["start", "x", "--profile", "bogus"]).code).toBe(2);
   });
 
+  it("targets: --target override wins, and playbook overlays surface for affected targets", () => {
+    const repo = makeRepo();
+    gate(repo, ["init"]);
+    writeFileSync(
+      join(repo, ".gate", "playbooks", "test.web.md"),
+      "# Web overlay\n\nRun the visual regression suite.\n",
+    );
+    writeFileSync(
+      join(repo, ".gate", "config.yml"),
+      [
+        "commands: {}",
+        "thresholds: {}",
+        "targets:",
+        "  web:",
+        "    match: [\"apps/web/**\"]",
+        "    playbooks: { test: \".gate/playbooks/test.web.md\" }",
+        "  api:",
+        "    match: [\"apps/api/**\"]",
+        "phases: {}",
+        "integrations: { agnosgram: off, sdd: off }",
+        "",
+      ].join("\n"),
+    );
+
+    expect(gate(repo, ["start", "target override demo", "--target", "web"]).code).toBe(0);
+    const playbook = gate(repo, ["playbook", "TEST", "--json"]).json() as { playbook: string };
+    expect(playbook.playbook).toContain("## Target overlay: web");
+    expect(playbook.playbook).toContain("Run the visual regression suite.");
+  });
+
   it("refuses to reach DONE when a review fix breaks the code (staleness guard)", () => {
     const repo = makeRepo({
       "package.json": JSON.stringify({ name: "fx", scripts: { test: "node test.js" } }),

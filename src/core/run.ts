@@ -83,6 +83,8 @@ export interface Run {
   updatedAt: string;
   /** git ref (sha) captured at `gate start`; the IMPLEMENT diff is measured from here. */
   baseRef: string | null;
+  /** Explicit `gate start --target` override (Milestone 3, additive); wins over file-based resolution. */
+  targetOverride?: string[];
   /** Session id of the implementer, when the agent supplies one (GATE_SESSION_ID). */
   sessionId: string | null;
   history: HistoryEntry[];
@@ -119,6 +121,7 @@ export function newRun(params: {
   profile: string;
   baseRef: string | null;
   sessionId: string | null;
+  targetOverride?: string[];
 }): Run {
   const at = nowIso();
   return {
@@ -131,6 +134,7 @@ export function newRun(params: {
     createdAt: at,
     updatedAt: at,
     baseRef: params.baseRef,
+    ...(params.targetOverride && params.targetOverride.length > 0 ? { targetOverride: params.targetOverride } : {}),
     sessionId: params.sessionId,
     history: [{ phase: "PLAN", event: "entered", at }],
     overrides: [],

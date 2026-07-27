@@ -1,7 +1,8 @@
-import { copyFileSync, existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { gatePaths } from "../core/paths.js";
 import { bundledPlaybooksDir } from "../core/playbooks.js";
+import { EMBEDDED_PLAYBOOKS } from "../core/embeddedPlaybooks.js";
 import { detect } from "../integrations/index.js";
 import { inferCommands } from "./inferStack.js";
 import { emit, type ParsedArgs } from "./shared.js";
@@ -21,12 +22,13 @@ export function cmdInit(args: ParsedArgs): void {
   mkdirSync(paths.playbooks, { recursive: true });
   mkdirSync(paths.runs, { recursive: true });
 
-  // Copy default playbooks that the user hasn't already customized.
-  const bundled = bundledPlaybooksDir();
-  for (const file of readdirSync(bundled)) {
-    if (!file.endsWith(".md")) continue;
+  // Copy default playbooks that the user hasn't already customized. Prefer
+  // the real directory (dev-from-source, npm install); a single-file binary
+  // has none, so fall back to the copy compiled in at build time.
+  const bundledFiles = readBundledPlaybookFiles();
+  for (const [file, content] of bundledFiles) {
     const dest = join(paths.playbooks, file);
-    if (!existsSync(dest)) copyFileSync(join(bundled, file), dest);
+    if (!existsSync(dest)) writeFileSync(dest, content);
   }
 
   const det = detect(root);
@@ -54,6 +56,17 @@ export function cmdInit(args: ParsedArgs): void {
   ].join("\n");
 
   emit(human, { root, initialized: true, refreshed: refresh, detected }, args.flags);
+}
+
+function readBundledPlaybookFiles(): Array<[string, string]> {
+  try {
+    const bundled = bundledPlaybooksDir();
+    return readdirSync(bundled)
+      .filter((f) => f.endsWith(".md"))
+      .map((f) => [f, readFileSync(join(bundled, f), "utf8")] as [string, string]);
+  } catch {
+    return Object.entries(EMBEDDED_PLAYBOOKS).map(([phase, content]) => [`${phase}.md`, content]);
+  }
 }
 
 function buildConfig(root: string, det: ReturnType<typeof detect>): string {

@@ -1,0 +1,82 @@
+name: Release
+
+# Fires when a version tag is pushed (e.g. `git tag v0.3.0 && git push --tags`).
+# Builds, tests, and creates a GitHub release with per-platform binaries. npm
+# publish is a separate job that only runs once the owner opts in (repo
+# variable NPM_PUBLISH=true + secret NPM_TOKEN) — this workflow never
+# publishes on its own.
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build-binaries:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            asset: gate-linux-x64
+          - os: macos-latest
+            asset: gate-darwin-arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - uses: oven-sh/setup-bun@v2
+      - run: npm run build:binary
+      - run: mv dist-bin/gate "${{ matrix.asset }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: ${{ matrix.asset }}
+
+  release:
+    needs: build-binaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${{ github.ref_name }}" release-assets/* --generate-notes --verify-tag
+
+  publish-npm:
+    needs: release
+    runs-on: ubuntu-latest
+    # Enable by setting repo variable NPM_PUBLISH=true and secret NPM_TOKEN.
+    # Also requires flipping package.json's "private": true to false first.
+    if: ${{ vars.NPM_PUBLISH == 'true' }}
+    permissions:
+      contents: read
+      id-token: write # for npm provenance
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          registry-url: https://registry.npmjs.org
+          cache: npm
+      - run: npm ci
+      - run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

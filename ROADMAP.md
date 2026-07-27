@@ -65,14 +65,16 @@ load-bearing; pointers, never copies.
 
 ## Milestone 3 — Ecosystem & publish ⏳
 
-- [ ] RETRO phase + Agnosgram write integration (retro → journal, `source:` ids)
-- [ ] SDD detection wired into PLAN (`plan.md` cites the spec path)
-- [ ] Targets — per-stack blocks for multi-stack repos (match/commands/thresholds/
+- [x] RETRO phase + Agnosgram write integration (retro → journal, `source:` ids)
+- [x] SDD detection wired into PLAN (`plan.md` cites the spec path)
+- [x] Targets — per-stack blocks for multi-stack repos (match/commands/thresholds/
       playbook overlays); profiles choose which phases, targets choose how
-- [ ] Agent adapters — Claude Code skill, Cursor/Cline/Windsurf rules, `AGENTS.md`
-- [ ] `gate prune` — archive finished runs past the retention window
+- [x] Agent adapters — Claude Code skill, Cursor/Cline/Windsurf rules, `AGENTS.md`
+- [x] `gate prune` — archive finished runs past the retention window
 - [ ] Decide the npm name, then publish + distribution (global install,
-      `install.sh`, single-file binary for CI/Node-less machines)
+      `install.sh`, single-file binary for CI/Node-less machines) — mechanical
+      prep landed (placeholder name, `install.sh`, `build:binary`, CI/release
+      workflows); the owner still decides the final name and publish timing
 
 ## Deferred / v2
 

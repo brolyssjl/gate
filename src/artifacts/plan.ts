@@ -18,6 +18,8 @@ export interface Criterion {
 
 export interface Plan {
   goal: string;
+  /** Repo-relative path to an SDD spec this plan cites, e.g. "openspec/changes/x/spec.md". */
+  spec: string | null;
   files: string[];
   out_of_scope: string[];
   criteria: Criterion[];
@@ -58,6 +60,9 @@ export function parsePlan(raw: string): PlanParse {
   const goal = typeof data.goal === "string" ? data.goal.trim() : "";
   if (!goal) errors.push("`goal` is required and must be a non-empty string");
 
+  const specRaw = typeof data.spec === "string" ? data.spec.trim() : "";
+  const spec = specRaw.length > 0 ? specRaw : null;
+
   const files = asStringArray(data.files);
   if (files.length === 0) errors.push("`files` must list at least one path or glob");
 
@@ -91,7 +96,7 @@ export function parsePlan(raw: string): PlanParse {
 
   if (errors.length > 0) return { plan: null, errors };
   return {
-    plan: { goal, files, out_of_scope, criteria, risks, body: (m[2] ?? "").trim() },
+    plan: { goal, spec, files, out_of_scope, criteria, risks, body: (m[2] ?? "").trim() },
     errors: [],
   };
 }

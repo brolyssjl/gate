@@ -85,6 +85,57 @@ describe("PLAN gate", () => {
     const res = planGate({ root, run, config: EMPTY_CONFIG });
     expect(check(res, "plan.approved")).toBe(false);
   });
+
+  it("does not add plan.spec when no SDD directory is detected", () => {
+    const root = makeRepo();
+    writePlan(root, GOOD_PLAN);
+    const run = runOn("PLAN", null);
+    approve(root, run);
+    const res = planGate({ root, run, config: EMPTY_CONFIG });
+    expect(res.checks.some((c) => c.name === "plan.spec")).toBe(false);
+  });
+
+  it("requires a spec citation once an SDD directory is detected", () => {
+    const root = makeRepo();
+    writeFile(root, "openspec/changes/x/spec.md", "# spec\n");
+    writePlan(root, GOOD_PLAN);
+    const run = runOn("PLAN", null);
+    approve(root, run);
+    const res = planGate({ root, run, config: EMPTY_CONFIG });
+    expect(check(res, "plan.spec")).toBe(false);
+  });
+
+  it("passes plan.spec when the cited path exists under the detected SDD dir", () => {
+    const root = makeRepo();
+    writeFile(root, "openspec/changes/x/spec.md", "# spec\n");
+    writePlan(root, GOOD_PLAN.replace("goal: Add greet", "goal: Add greet\nspec: openspec/changes/x/spec.md"));
+    const run = runOn("PLAN", null);
+    approve(root, run);
+    const res = planGate({ root, run, config: EMPTY_CONFIG });
+    expect(check(res, "plan.spec")).toBe(true);
+  });
+
+  it("fails plan.spec when the cited path is outside the SDD dir", () => {
+    const root = makeRepo();
+    writeFile(root, "openspec/changes/x/spec.md", "# spec\n");
+    writeFile(root, "elsewhere.md", "not a spec\n");
+    writePlan(root, GOOD_PLAN.replace("goal: Add greet", "goal: Add greet\nspec: elsewhere.md"));
+    const run = runOn("PLAN", null);
+    approve(root, run);
+    const res = planGate({ root, run, config: EMPTY_CONFIG });
+    expect(check(res, "plan.spec")).toBe(false);
+  });
+
+  it("skips plan.spec entirely when integrations.sdd is off", () => {
+    const root = makeRepo();
+    writeFile(root, "openspec/changes/x/spec.md", "# spec\n");
+    writePlan(root, GOOD_PLAN);
+    const run = runOn("PLAN", null);
+    approve(root, run);
+    const config = writeConfig(root, { integrations: { sdd: "off" } });
+    const res = planGate({ root, run, config });
+    expect(res.checks.some((c) => c.name === "plan.spec")).toBe(false);
+  });
 });
 
 describe("IMPLEMENT gate", () => {

@@ -10,6 +10,7 @@ import { emit, GateError, requireRoot, UsageError, type ParsedArgs } from "./sha
 
 const PLAN_TEMPLATE = `---
 goal:
+spec:
 files:
   -
 out_of_scope: []

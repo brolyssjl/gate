@@ -137,6 +137,80 @@ describe("PLAN gate", () => {
     const res = planGate({ root, run, config });
     expect(res.checks.some((c) => c.name === "plan.spec")).toBe(false);
   });
+
+  it("does not add plan.advise without an .agnosgram store", () => {
+    const root = makeRepo();
+    writePlan(root, GOOD_PLAN);
+    const run = runOn("PLAN", null);
+    approve(root, run);
+    const res = planGate({ root, run, config: EMPTY_CONFIG });
+    expect(res.checks.some((c) => c.name === "plan.advise")).toBe(false);
+  });
+
+  it("passes plan.advise with a note when a store exists but no report was generated", () => {
+    const root = makeRepo();
+    writeFile(root, ".agnosgram/config.yml", "version: 1\n");
+    writePlan(root, GOOD_PLAN);
+    const run = runOn("PLAN", null);
+    approve(root, run);
+    const res = planGate({ root, run, config: EMPTY_CONFIG });
+    expect(check(res, "plan.advise")).toBe(true);
+  });
+
+  it("fails plan.advise on an unacknowledged contradiction", () => {
+    const root = makeRepo();
+    writeFile(root, ".agnosgram/config.yml", "version: 1\n");
+    writePlan(root, GOOD_PLAN);
+    writeFile(
+      root,
+      join(".gate", "runs", "r1", "plan.md.advise.json"),
+      JSON.stringify({
+        agnosgram_advise: 1,
+        plan: ".gate/runs/r1/plan.md",
+        generated: "2026-07-27",
+        checked_ids: ["LES-002"],
+        contradictions: [{ record_id: "LES-002", severity: "blocker", kind: "empirical" }],
+        clear: false,
+      }),
+    );
+    const run = runOn("PLAN", null);
+    approve(root, run);
+    const res = planGate({ root, run, config: EMPTY_CONFIG });
+    expect(check(res, "plan.advise")).toBe(false);
+  });
+
+  it("passes plan.advise once every contradiction is acknowledged in plan.md", () => {
+    const root = makeRepo();
+    writeFile(root, ".agnosgram/config.yml", "version: 1\n");
+    writePlan(root, GOOD_PLAN.replace("goal: Add greet", "goal: Add greet\nacknowledgments: [LES-002]"));
+    writeFile(
+      root,
+      join(".gate", "runs", "r1", "plan.md.advise.json"),
+      JSON.stringify({
+        agnosgram_advise: 1,
+        plan: ".gate/runs/r1/plan.md",
+        generated: "2026-07-27",
+        checked_ids: ["LES-002"],
+        contradictions: [{ record_id: "LES-002", severity: "blocker", kind: "empirical" }],
+        clear: false,
+      }),
+    );
+    const run = runOn("PLAN", null);
+    approve(root, run);
+    const res = planGate({ root, run, config: EMPTY_CONFIG });
+    expect(check(res, "plan.advise")).toBe(true);
+  });
+
+  it("skips plan.advise entirely when integrations.agnosgram is off", () => {
+    const root = makeRepo();
+    writeFile(root, ".agnosgram/config.yml", "version: 1\n");
+    writePlan(root, GOOD_PLAN);
+    const run = runOn("PLAN", null);
+    approve(root, run);
+    const config = writeConfig(root, { integrations: { agnosgram: "off" } });
+    const res = planGate({ root, run, config });
+    expect(res.checks.some((c) => c.name === "plan.advise")).toBe(false);
+  });
 });
 
 describe("IMPLEMENT gate", () => {

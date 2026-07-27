@@ -14,6 +14,7 @@ import { cmdSkip } from "./commands/skip.js";
 import { cmdLog } from "./commands/log.js";
 import { cmdReview } from "./commands/review.js";
 import { cmdReport } from "./commands/report.js";
+import { cmdRetro } from "./commands/retro.js";
 
 const HELP = `gate — an agent-agnostic quality harness (umpire, not a driver).
 
@@ -31,6 +32,8 @@ Commands:
   next                    Check + advance on pass; on fail, print what's missing
   review [--fresh] [--by] Emit a self-contained review packet (REVIEW phase);
                           --fresh regenerates it from the current code
+  retro                   Sync retro.md into the Agnosgram journal (RETRO
+                          phase); no-op without a .agnosgram/ store
   report [<run-id>]       Per-run summary: durations, gate failures, findings
   skip <phase> --reason [--by]  Human-authorized skip of the current phase
                           (recorded with who and why; shown by \`gate report\`)
@@ -57,6 +60,7 @@ const COMMANDS: Record<string, Handler> = {
   check: cmdCheck,
   next: cmdNext,
   review: cmdReview,
+  retro: cmdRetro,
   report: cmdReport,
   skip: cmdSkip,
   log: cmdLog,

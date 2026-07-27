@@ -1,7 +1,7 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { beforeAll, describe, expect, it } from "vitest";
 import { makeRepo } from "./helpers.js";
 
@@ -236,6 +236,46 @@ describe("gate CLI end-to-end", () => {
       join(repo, `.gate/runs/${runId}/retro.md`),
       `---\nbroke:\n  - "Fixing a blocker by breaking the build almost shipped"\navoid: []\nconventions: []\n---\n# Retro\n`,
     );
+    expect(gate(repo, ["next"]).code).toBe(0);
+    expect((gate(repo, ["status", "--json"]).json() as { active: boolean }).active).toBe(false);
+  });
+
+  it("gate retro syncs the journal (fallback path — no agnosgram binary in this sandbox) and is idempotent", () => {
+    const repo = makeRepo();
+    mkdirSync(join(repo, ".agnosgram"), { recursive: true });
+    writeFileSync(join(repo, ".agnosgram", "config.yml"), "version: 1\n");
+    gate(repo, ["init"]);
+    gate(repo, ["start", "retro sync demo"]);
+    const runId = (gate(repo, ["status", "--json"]).json() as { id: string }).id;
+    // Walk PLAN -> RETRO the short way: skip every gated phase up to RETRO.
+    expect(gate(repo, ["skip", "PLAN", "--reason", "test"]).code).toBe(0);
+    expect(gate(repo, ["skip", "IMPLEMENT", "--reason", "test"]).code).toBe(0);
+    expect(gate(repo, ["skip", "TEST", "--reason", "test"]).code).toBe(0);
+    expect(gate(repo, ["skip", "REVIEW", "--reason", "test"]).code).toBe(0);
+    expect((gate(repo, ["status", "--json"]).json() as { phase: string }).phase).toBe("RETRO");
+
+    // No substance yet: gate retro refuses.
+    expect(gate(repo, ["retro"]).code).toBe(1);
+
+    writeFileSync(
+      join(repo, `.gate/runs/${runId}/retro.md`),
+      `---\nbroke: []\navoid:\n  - "Do not skip reproduce"\nconventions: []\n---\n# Retro\n`,
+    );
+    const synced = gate(repo, ["retro", "--json"]);
+    expect(synced.code).toBe(0);
+    const syncedData = synced.json() as { synced: boolean; method: string; journalFile: string };
+    expect(syncedData.synced).toBe(true);
+    expect(syncedData.method).toBe("fallback");
+    const journal = readFileSync(join(repo, syncedData.journalFile), "utf8");
+    expect(journal).toContain(runId);
+    expect(journal).toContain("- **Avoid:** Do not skip reproduce");
+
+    // Idempotent: re-running does not duplicate the entry — byte-identical file.
+    const again = gate(repo, ["retro", "--json"]).json() as { alreadySynced: boolean };
+    expect(again.alreadySynced).toBe(true);
+    const journalAfter = readFileSync(join(repo, syncedData.journalFile), "utf8");
+    expect(journalAfter).toBe(journal);
+
     expect(gate(repo, ["next"]).code).toBe(0);
     expect((gate(repo, ["status", "--json"]).json() as { active: boolean }).active).toBe(false);
   });

@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { runPaths } from "../core/paths.js";
 import { hashPlanFile, parsePlanFile, type Plan } from "../artifacts/plan.js";
 import { sddDir } from "../integrations/index.js";
+import { loadAdviseReport } from "../integrations/advise.js";
 import { type Check, type GateContext, type GateResult, fail, pass, result } from "./types.js";
 
 /**
@@ -41,6 +42,8 @@ export function planGate(ctx: GateContext): GateResult {
   );
   const spec = specCheck(ctx, plan);
   if (spec) checks.push(spec);
+  const advise = adviseCheck(ctx, plan, planPath);
+  if (advise) checks.push(advise);
   checks.push(approvalCheck(ctx, planPath));
   return result("PLAN", checks);
 }
@@ -71,6 +74,43 @@ function specCheck(ctx: GateContext, plan: Plan): Check | null {
     return fail("plan.spec", `spec path "${plan.spec}" does not exist`);
   }
   return pass("plan.spec", `cites spec ${plan.spec}`);
+}
+
+/**
+ * Advise consumption (Milestone 3, additive): fires only when an `.agnosgram/`
+ * store is present and `integrations.agnosgram` is not "off" — same presence
+ * + opt-out shape as `specCheck`. Gate never runs `agnosgram advise` itself
+ * (advisory, never load-bearing); it only reads whatever report is already on
+ * disk. A missing or unparseable report is "no report": advisory pass with a
+ * hint, never a failure — a repo without Agnosgram installed must behave
+ * exactly as before this feature existed.
+ */
+function adviseCheck(ctx: GateContext, plan: Plan, planPath: string): Check | null {
+  if (ctx.config.integrations.agnosgram === "off") return null;
+  if (!existsSync(join(ctx.root, ".agnosgram"))) return null;
+
+  const report = loadAdviseReport(planPath);
+  if (!report) {
+    return pass(
+      "plan.advise",
+      "no agnosgram advise report found — advisory only; run `agnosgram advise` to check for contradictions",
+    );
+  }
+  const acknowledged = new Set(plan.acknowledgments);
+  const unacknowledged = report.contradictions.filter((c) => !acknowledged.has(c.record_id));
+  if (unacknowledged.length > 0) {
+    return fail(
+      "plan.advise",
+      `unacknowledged contradictions: ${unacknowledged.map((c) => `${c.record_id} (${c.severity})`).join(", ")} — ` +
+        "resolve them, then list the ids under plan.md's `acknowledgments:`",
+    );
+  }
+  return pass(
+    "plan.advise",
+    report.contradictions.length === 0
+      ? "advise report is clear — no contradictions"
+      : `${report.contradictions.length} contradiction(s), all acknowledged`,
+  );
 }
 
 function approvalCheck(ctx: GateContext, planPath: string): Check {

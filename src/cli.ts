@@ -16,12 +16,16 @@ import { cmdReview } from "./commands/review.js";
 import { cmdReport } from "./commands/report.js";
 import { cmdRetro } from "./commands/retro.js";
 import { cmdPrune } from "./commands/prune.js";
+import { cmdAdapt } from "./commands/adapt.js";
+import { ADAPTER_KEYS } from "./adapters/index.js";
 
 const HELP = `gate — an agent-agnostic quality harness (umpire, not a driver).
 
 Usage: gate <command> [options]
 
 Commands:
+  adapt [adapter...]      Write/refresh agent config pointer blocks (default:
+                          all of ${ADAPTER_KEYS.join(", ")})
   init [--refresh]        Scaffold .gate/, infer commands, detect integrations
   trust [--check] [--by]  Approve the config commands block (TOFU); required
                           before gates will execute build/test/lint
@@ -59,6 +63,7 @@ type Handler = (args: ReturnType<typeof parseArgs>) => void;
 
 const COMMANDS: Record<string, Handler> = {
   init: cmdInit,
+  adapt: cmdAdapt,
   trust: cmdTrust,
   start: cmdStart,
   approve: cmdApprove,

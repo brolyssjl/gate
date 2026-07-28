@@ -128,6 +128,19 @@ describe("PLAN gate", () => {
     expect(check(res, "plan.spec")).toBe(false);
   });
 
+  it("fails plan.spec when '..' would escape the SDD dir after normalization", () => {
+    const root = makeRepo();
+    writeFile(root, "openspec/changes/x/spec.md", "# spec\n");
+    writeFile(root, "README.md", "not a spec\n");
+    // "openspec/../README.md" string-starts-with "openspec/" but normalizes
+    // to "README.md" - outside the detected SDD dir entirely.
+    writePlan(root, GOOD_PLAN.replace("goal: Add greet", "goal: Add greet\nspec: openspec/../README.md"));
+    const run = runOn("PLAN", null);
+    approve(root, run);
+    const res = planGate({ root, run, config: EMPTY_CONFIG });
+    expect(check(res, "plan.spec")).toBe(false);
+  });
+
   it("skips plan.spec entirely when integrations.sdd is off", () => {
     const root = makeRepo();
     writeFile(root, "openspec/changes/x/spec.md", "# spec\n");

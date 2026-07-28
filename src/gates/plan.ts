@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { join, normalize, relative, sep } from "node:path";
 import { runPaths } from "../core/paths.js";
 import { hashPlanFile, parsePlanFile, type Plan } from "../artifacts/plan.js";
 import { sddDir } from "../integrations/index.js";
@@ -7,12 +7,12 @@ import { loadAdviseReport } from "../integrations/advise.js";
 import { type Check, type GateContext, type GateResult, fail, pass, result } from "./types.js";
 
 /**
- * PLAN gate — all deterministic:
+ * PLAN gate - all deterministic:
  *  - plan.md exists and parses against the schema
  *  - ≥1 acceptance criterion, each with a declared verification method
  *  - approved via `gate approve`, bound to the current plan's content hash
  *  - when an SDD directory is detected and not disabled, the plan cites a spec
- *    path under it (advisory otherwise — see `specCheck`)
+ *    path under it (advisory otherwise - see `specCheck`)
  *
  * Approval lives in run.json (written by `gate approve`), not in the
  * agent-editable plan.md, so the author can't self-approve; editing the plan
@@ -50,7 +50,7 @@ export function planGate(ctx: GateContext): GateResult {
 
 /**
  * SDD citation (Milestone 3, additive): fires only when an SDD directory is
- * detected on disk and `integrations.sdd` is not explicitly "off" — presence
+ * detected on disk and `integrations.sdd` is not explicitly "off" - presence
  * plus opt-out, never a hard dependency on the framework being installed. Not
  * added to the checks at all otherwise, so the JSON schema for a repo with no
  * SDD framework stays byte-identical to before this feature existed.
@@ -63,26 +63,33 @@ function specCheck(ctx: GateContext, plan: Plan): Check | null {
   if (!plan.spec) {
     return fail(
       "plan.spec",
-      `SDD detected (${dir}) — cite the spec path in plan.md's \`spec:\` field instead of restating it`,
+      `SDD detected (${dir}) - cite the spec path in plan.md's \`spec:\` field instead of restating it`,
     );
   }
-  const normalized = plan.spec.replace(/^\.\//, "");
-  if (normalized !== dir && !normalized.startsWith(dir + "/")) {
+  // Normalize first (collapses "..") and check containment via a relative
+  // path, not a string prefix - `openspec/../README.md` starts with the
+  // string "openspec/" but normalizes to "README.md", outside `dir` entirely.
+  // A naive `startsWith(dir + "/")` on the raw path is defeated by exactly
+  // that "..".
+  const normalized = normalize(plan.spec.replace(/^\.\//, ""));
+  const rel = relative(dir, normalized);
+  const contained = rel === "" || (rel !== ".." && !rel.startsWith(".." + sep));
+  if (!contained) {
     return fail("plan.spec", `spec path "${plan.spec}" is not under the detected SDD dir "${dir}"`);
   }
   if (!existsSync(join(ctx.root, normalized))) {
     return fail("plan.spec", `spec path "${plan.spec}" does not exist`);
   }
-  return pass("plan.spec", `cites spec ${plan.spec}`);
+  return pass("plan.spec", `cites spec ${normalized}`);
 }
 
 /**
  * Advise consumption (Milestone 3, additive): fires only when an `.agnosgram/`
- * store is present and `integrations.agnosgram` is not "off" — same presence
+ * store is present and `integrations.agnosgram` is not "off" - same presence
  * + opt-out shape as `specCheck`. Gate never runs `agnosgram advise` itself
  * (advisory, never load-bearing); it only reads whatever report is already on
  * disk. A missing or unparseable report is "no report": advisory pass with a
- * hint, never a failure — a repo without Agnosgram installed must behave
+ * hint, never a failure - a repo without Agnosgram installed must behave
  * exactly as before this feature existed.
  */
 function adviseCheck(ctx: GateContext, plan: Plan, planPath: string): Check | null {
@@ -93,7 +100,7 @@ function adviseCheck(ctx: GateContext, plan: Plan, planPath: string): Check | nu
   if (!report) {
     return pass(
       "plan.advise",
-      "no agnosgram advise report found — advisory only; run `agnosgram advise` to check for contradictions",
+      "no agnosgram advise report found - advisory only; run `agnosgram advise` to check for contradictions",
     );
   }
   const acknowledged = new Set(plan.acknowledgments);
@@ -101,14 +108,14 @@ function adviseCheck(ctx: GateContext, plan: Plan, planPath: string): Check | nu
   if (unacknowledged.length > 0) {
     return fail(
       "plan.advise",
-      `unacknowledged contradictions: ${unacknowledged.map((c) => `${c.record_id} (${c.severity})`).join(", ")} — ` +
+      `unacknowledged contradictions: ${unacknowledged.map((c) => `${c.record_id} (${c.severity})`).join(", ")} - ` +
         "resolve them, then list the ids under plan.md's `acknowledgments:`",
     );
   }
   return pass(
     "plan.advise",
     report.contradictions.length === 0
-      ? "advise report is clear — no contradictions"
+      ? "advise report is clear - no contradictions"
       : `${report.contradictions.length} contradiction(s), all acknowledged`,
   );
 }
@@ -116,13 +123,13 @@ function adviseCheck(ctx: GateContext, plan: Plan, planPath: string): Check | nu
 function approvalCheck(ctx: GateContext, planPath: string): Check {
   const approval = ctx.run.approval;
   if (!approval) {
-    return fail("plan.approved", "plan not approved — get sign-off, then run `gate approve`");
+    return fail("plan.approved", "plan not approved - get sign-off, then run `gate approve`");
   }
   const currentHash = hashPlanFile(planPath);
   if (currentHash !== approval.planHash) {
     return fail(
       "plan.approved",
-      "plan changed since approval — re-run `gate approve` on the current plan",
+      "plan changed since approval - re-run `gate approve` on the current plan",
     );
   }
   return pass("plan.approved", `plan approved${approval.by ? ` by ${approval.by}` : ""}`);

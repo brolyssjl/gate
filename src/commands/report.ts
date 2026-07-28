@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { archivePath, gatePaths, runPaths } from "../core/paths.js";
 import { readCurrentRunId } from "../core/current.js";
@@ -30,7 +30,7 @@ export interface ReportData {
  * Pure summary of a run: everything `gate report` prints, with no I/O beyond
  * what the caller already did (reading run.json and review.md). Shared by the
  * live path (`cmdReport`) and `gate prune`, which persists exactly this shape
- * to `.gate/archive/<id>.json` before deleting the run folder — the archive
+ * to `.gate/archive/<id>.json` before deleting the run folder - the archive
  * summary and a live report are the same data, computed the same way.
  */
 export function buildReportData(root: string, run: Run): ReportData {
@@ -71,7 +71,7 @@ export function renderReportHuman(data: ReportData, archived: boolean): string {
     ),
     "",
     data.findings
-      ? `  Findings: ${data.findings.total} total — ` +
+      ? `  Findings: ${data.findings.total} total - ` +
         `${data.findings.blocker} blocker, ${data.findings.major} major, ${data.findings.minor} minor, ${data.findings.nit} nit ` +
         `(${data.findings.open} open, ${data.findings.resolved} resolved, ${data.findings.waived} waived)`
       : "  Findings: (no review.md)",
@@ -83,17 +83,19 @@ export function renderReportHuman(data: ReportData, archived: boolean): string {
 }
 
 /**
- * `gate report [runId]` — a per-run summary: how long each phase took, how many
+ * `gate report [runId]` - a per-run summary: how long each phase took, how many
  * gate attempts failed, and any review findings. Read-only; it never runs a gate
- * or a command. Defaults to the active run, else the most recently updated one,
- * so `gate report` works right after a run reaches DONE. Falls back to an
- * archived summary (`.gate/archive/<id>.json`) when `gate prune` has already
- * removed the live run folder.
+ * or a command. Defaults to the active run, else the most recently updated live
+ * one, so `gate report` works right after a run reaches DONE. Falls back to the
+ * newest archived summary (`.gate/archive/<id>.json`) when `gate prune` has
+ * already removed every live run folder - otherwise an argless `gate report`
+ * right after a full prune would error even though summaries still exist.
  */
 export function cmdReport(args: ParsedArgs): void {
   const root = requireRoot();
-  const runId = args.positionals[0] ?? readCurrentRunId(root) ?? mostRecentRunId(root);
-  if (!runId) throw new GateError("no run to report on — pass a run id: gate report <id>");
+  const runId =
+    args.positionals[0] ?? readCurrentRunId(root) ?? mostRecentRunId(root) ?? mostRecentArchivedRunId(root);
+  if (!runId) throw new GateError("no run to report on - pass a run id: gate report <id>");
 
   const { data, archived } = loadReportData(root, runId);
   emit(renderReportHuman(data, archived), data, args.flags);
@@ -188,6 +190,25 @@ function mostRecentRunId(root: string): string | null {
     } catch {
       // ignore unreadable runs
     }
+  }
+  return best?.id ?? null;
+}
+
+/**
+ * The most recently archived run's id, by archive-file mtime (`ReportData`
+ * carries no timestamp of its own - `gate prune` writes archives in order, so
+ * mtime is a faithful recency proxy). Used only when no live run exists at
+ * all (e.g. `gate report` with no args right after a full `gate prune`).
+ */
+function mostRecentArchivedRunId(root: string): string | null {
+  const archiveDir = gatePaths(root).archive;
+  if (!existsSync(archiveDir)) return null;
+  let best: { id: string; at: number } | null = null;
+  for (const file of readdirSync(archiveDir)) {
+    if (!file.endsWith(".json")) continue;
+    const at = statSync(join(archiveDir, file)).mtimeMs;
+    const id = file.slice(0, -".json".length);
+    if (!best || at > best.at) best = { id, at };
   }
   return best?.id ?? null;
 }

@@ -127,4 +127,22 @@ describe("gate prune", () => {
     const human = gate(repo, ["report", "archived-run"]);
     expect(human.stdout).toContain("(archived)");
   });
+
+  it("gate report with no run id falls back to the newest archived summary after a full prune", () => {
+    const repo = makeRepo();
+    gate(repo, ["init"]);
+    seedRun(repo, "older-run", daysAgo(20));
+    seedRun(repo, "newer-run", daysAgo(2));
+    // Prune both, oldest archived first so mtime recency actually distinguishes them.
+    gate(repo, ["prune", "--keep", "0"]);
+    expect(existsSync(join(repo, ".gate", "runs", "older-run"))).toBe(false);
+    expect(existsSync(join(repo, ".gate", "runs", "newer-run"))).toBe(false);
+
+    // No positional arg, no active run - must not error just because the live
+    // runs folder is empty; both summaries are still on disk under archive/.
+    const report = gate(repo, ["report", "--json"]);
+    expect(report.code).toBe(0);
+    const data = report.json() as { id: string };
+    expect(["older-run", "newer-run"]).toContain(data.id);
+  });
 });

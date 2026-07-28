@@ -8,7 +8,7 @@ import { inferCommands } from "./inferStack.js";
 import { emit, type ParsedArgs } from "./shared.js";
 
 /**
- * `gate init` — scaffold `.gate/`, infer build/test/lint commands from the
+ * `gate init` - scaffold `.gate/`, infer build/test/lint commands from the
  * stack, detect advisory integrations, and copy default playbooks. Idempotent:
  * `--refresh` re-detects integrations and rewrites the managed hint block
  * without clobbering user edits to config or playbooks.
@@ -58,13 +58,32 @@ export function cmdInit(args: ParsedArgs): void {
   emit(human, { root, initialized: true, refreshed: refresh, detected }, args.flags);
 }
 
+/**
+ * Prefer the real `playbooks/` directory on disk; fall back to the copy
+ * compiled into the binary at build time (`scripts/embedPlaybooks.mjs`).
+ * `bundledPlaybooksDir()` throws plain `Error("bundled playbooks directory
+ * not found")` for the *expected* case - a single-file binary with no
+ * sibling `playbooks/` directory to walk to - and that's the only failure
+ * this should swallow silently. Any other failure (e.g. the directory exists
+ * but a file in it can't be read - permissions, a symlink loop) is not "no
+ * directory", it's something actually wrong; init still completes on the
+ * embedded fallback (playbooks aren't load-bearing for `.gate/` to exist),
+ * but an umpire that quietly wallpapers over an unexpected error is not
+ * trustworthy - so it's surfaced on stderr instead of going unmentioned.
+ */
 function readBundledPlaybookFiles(): Array<[string, string]> {
   try {
     const bundled = bundledPlaybooksDir();
     return readdirSync(bundled)
       .filter((f) => f.endsWith(".md"))
       .map((f) => [f, readFileSync(join(bundled, f), "utf8")] as [string, string]);
-  } catch {
+  } catch (e) {
+    const expected = e instanceof Error && e.message === "bundled playbooks directory not found";
+    if (!expected) {
+      process.stderr.write(
+        `gate: warning: could not read bundled playbooks (${(e as Error).message}) - using the built-in copy\n`,
+      );
+    }
     return Object.entries(EMBEDDED_PLAYBOOKS).map(([phase, content]) => [`${phase}.md`, content]);
   }
 }

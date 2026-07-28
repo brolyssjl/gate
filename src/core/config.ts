@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { parse as parseYaml } from "yaml";
 import { gatePaths } from "./paths.js";
+import { GateError } from "../cli/output.js";
 
 /** Machine actions per phase. Missing commands mean "no such action here". */
 export interface Commands {
@@ -45,7 +46,7 @@ export interface GateConfig {
   coverage_format?: "istanbul" | "generic" | "auto";
   /**
    * `gate prune` retention defaults. Deliberately NOT part of the trust hash
-   * (`commandsBlockHashSource`) — it configures which run folders get
+   * (`commandsBlockHashSource`) - it configures which run folders get
    * archived, never a command that executes.
    */
   retention: RetentionConfig;
@@ -66,15 +67,58 @@ export function loadConfig(root: string): GateConfig {
   if (!existsSync(config)) return { ...DEFAULT_CONFIG };
   const raw = parseYaml(readFileSync(config, "utf8")) as Partial<GateConfig> | null;
   if (!raw || typeof raw !== "object") return { ...DEFAULT_CONFIG };
+  const targets = raw.targets ?? {};
+  validateTargets(targets);
   return {
     commands: raw.commands ?? {},
     thresholds: raw.thresholds ?? {},
-    targets: raw.targets ?? {},
+    targets,
     phases: raw.phases ?? {},
     integrations: raw.integrations ?? {},
     coverage_format: raw.coverage_format ?? "auto",
     retention: raw.retention ?? {},
   };
+}
+
+/**
+ * A malformed target block (most dangerously a missing/empty `match`) used to
+ * reach the gates and blow up deep inside glob matching ("globs is not
+ * iterable" - `matchesAny` does `for (const g of globs)`). Fail fast and
+ * friendly here instead, naming the offending target so the fix is obvious.
+ */
+function validateTargets(targets: Record<string, unknown>): void {
+  for (const [name, raw] of Object.entries(targets)) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+      throw new GateError(`.gate/config.yml: target "${name}" must be a mapping`);
+    }
+    const t = raw as Record<string, unknown>;
+
+    if (
+      !Array.isArray(t.match) ||
+      t.match.length === 0 ||
+      !t.match.every((g) => typeof g === "string" && g.trim().length > 0)
+    ) {
+      throw new GateError(
+        `.gate/config.yml: target "${name}" must declare a non-empty \`match\` list of glob strings`,
+      );
+    }
+
+    if (t.commands !== undefined && (typeof t.commands !== "object" || t.commands === null || Array.isArray(t.commands))) {
+      throw new GateError(`.gate/config.yml: target "${name}".commands must be a mapping`);
+    }
+    if (
+      t.thresholds !== undefined &&
+      (typeof t.thresholds !== "object" || t.thresholds === null || Array.isArray(t.thresholds))
+    ) {
+      throw new GateError(`.gate/config.yml: target "${name}".thresholds must be a mapping`);
+    }
+    if (
+      t.playbooks !== undefined &&
+      (typeof t.playbooks !== "object" || t.playbooks === null || Array.isArray(t.playbooks))
+    ) {
+      throw new GateError(`.gate/config.yml: target "${name}".playbooks must be a mapping of phase → path`);
+    }
+  }
 }
 
 /** Raw commands block text, used by trust hashing in a later milestone. */

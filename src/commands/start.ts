@@ -1,10 +1,13 @@
 import { existsSync, writeFileSync } from "node:fs";
+import { RETRO_TEMPLATE } from "../artifacts/retro.js";
+import { loadConfig } from "../core/config.js";
 import { clearCurrentRunId, readCurrentRunId, setCurrentRunId } from "../core/current.js";
 import { headSha } from "../core/git.js";
 import { runPaths } from "../core/paths.js";
-import { resolvePlaybook } from "../core/playbooks.js";
+import { resolvePlaybookWithOverlays } from "../core/playbooks.js";
 import { makeRunId, newRun, readRun, writeRun } from "../core/run.js";
 import { DEFAULT_PROFILE, isProfile, phaseSequence, PROFILES } from "../core/stateMachine.js";
+import { resolveDisplayTargets } from "../core/targets.js";
 import { detect, planHints } from "../integrations/index.js";
 import { emit, GateError, requireRoot, UsageError, type ParsedArgs } from "./shared.js";
 
@@ -42,17 +45,7 @@ cycles:
 
 `;
 
-const RETRO_TEMPLATE = `---
-broke: []
-avoid: []
-conventions: []
----
-
-# Retro: %TITLE%
-
-`;
-
-/** `gate start "<title>"` — create a run, enter PLAN, print the plan playbook. */
+/** `gate start "<title>"` - create a run, enter PLAN, print the plan playbook. */
 export function cmdStart(args: ParsedArgs): void {
   const root = requireRoot();
   const title = args.positionals.join(" ").trim();
@@ -84,6 +77,18 @@ export function cmdStart(args: ParsedArgs): void {
       ? args.flags.target.split(",").map((t) => t.trim()).filter(Boolean)
       : undefined;
 
+  const config = loadConfig(root);
+  if (targetOverride && targetOverride.length > 0) {
+    const known = Object.keys(config.targets);
+    const unknown = targetOverride.filter((t) => !known.includes(t));
+    if (unknown.length > 0) {
+      throw new UsageError(
+        `unknown --target name(s): ${unknown.join(", ")} ` +
+          (known.length > 0 ? `(valid targets: ${known.join(", ")})` : "(no targets configured in .gate/config.yml)"),
+      );
+    }
+  }
+
   const id = uniqueRunId(root, title);
   const run = newRun({ id, title, profile, baseRef: headSha(root), sessionId, targetOverride });
   writeRun(root, run);
@@ -102,7 +107,8 @@ export function cmdStart(args: ParsedArgs): void {
   }
 
   const hints = planHints(detect(root));
-  const playbook = resolvePlaybook(root, "PLAN") ?? "(no PLAN playbook found)";
+  const targetNames = resolveDisplayTargets(root, run, config);
+  const playbook = resolvePlaybookWithOverlays(root, "PLAN", config, targetNames) ?? "(no PLAN playbook found)";
   const human = [
     `Started run "${id}" (profile: ${profile}, phases: ${sequence.join(" → ")}) → phase PLAN`,
     `Edit the plan at: ${paths.plan}`,

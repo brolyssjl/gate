@@ -205,6 +205,113 @@ describe("gate CLI end-to-end", () => {
     expect(playbook.playbook).toContain("Run the visual regression suite.");
   });
 
+  it("rejects `gate start --target` with an unknown target name", () => {
+    const repo = makeRepo();
+    gate(repo, ["init"]);
+    writeFileSync(
+      join(repo, ".gate", "config.yml"),
+      [
+        "commands: {}",
+        "thresholds: {}",
+        "targets:",
+        "  api:",
+        "    match: [\"apps/api/**\"]",
+        "phases: {}",
+        "integrations: { agnosgram: off, sdd: off }",
+        "",
+      ].join("\n"),
+    );
+    const res = gate(repo, ["start", "bad target demo", "--target", "does-not-exist"]);
+    expect(res.code).toBe(2); // UsageError
+    expect(existsSync(join(repo, ".gate", "current"))).toBe(false); // no run created
+  });
+
+  it("target playbook overlays surface inline at `gate start`, not just the standalone `gate playbook`", () => {
+    const repo = makeRepo();
+    gate(repo, ["init"]);
+    writeFileSync(join(repo, ".gate", "playbooks", "plan.api.md"), "# PLAN overlay\n\nCite the api spec.\n");
+    writeFileSync(
+      join(repo, ".gate", "config.yml"),
+      [
+        "commands: {}",
+        "thresholds: {}",
+        "targets:",
+        "  api:",
+        "    match: [\"apps/api/**\"]",
+        "    playbooks: { plan: .gate/playbooks/plan.api.md }",
+        "phases: {}",
+        "integrations: { agnosgram: off, sdd: off }",
+        "",
+      ].join("\n"),
+    );
+
+    const started = gate(repo, ["start", "api overlay demo", "--target", "api"]);
+    expect(started.code).toBe(0);
+    expect(started.stdout).toContain("## Target overlay: api");
+    expect(started.stdout).toContain("Cite the api spec.");
+  });
+
+  it("target playbook overlays surface inline at `gate next`'s phase-entry print", () => {
+    const repo = makeRepo();
+    gate(repo, ["init"]);
+    writeFileSync(join(repo, ".gate", "playbooks", "test.api.md"), "# TEST overlay\n\nRun the api contract suite.\n");
+    writeFileSync(
+      join(repo, ".gate", "config.yml"),
+      [
+        "commands: {}",
+        "thresholds: {}",
+        "targets:",
+        "  api:",
+        "    match: [\"apps/api/**\"]",
+        "    playbooks: { test: .gate/playbooks/test.api.md }",
+        "phases: {}",
+        "integrations: { agnosgram: off, sdd: off }",
+        "",
+      ].join("\n"),
+    );
+    gate(repo, ["start", "api overlay demo", "--target", "api"]);
+    const runId = (gate(repo, ["status", "--json"]).json() as { id: string }).id;
+    writeFileSync(
+      join(repo, `.gate/runs/${runId}/plan.md`),
+      `---\ngoal: g\nfiles:\n  - apps/api/**\ncriteria:\n  - id: c1\n    text: t\n    verify: manual\n---\n# Plan\n`,
+    );
+    gate(repo, ["approve", "--by", "human"]);
+    expect(gate(repo, ["next"]).code).toBe(0); // PLAN -> IMPLEMENT
+    mkdirSync(join(repo, "apps", "api"), { recursive: true });
+    writeFileSync(join(repo, "apps/api/x.py"), "changed\n");
+    const enteredTest = gate(repo, ["next"]); // IMPLEMENT -> TEST
+    expect(enteredTest.code).toBe(0);
+    expect(enteredTest.stdout).toContain("## Target overlay: api");
+    expect(enteredTest.stdout).toContain("Run the api contract suite.");
+  });
+
+  it("target playbook overlays surface inline in `gate review`'s emitted rubric", () => {
+    const repo = makeRepo();
+    gate(repo, ["init"]);
+    writeFileSync(join(repo, ".gate", "playbooks", "review.api.md"), "# REVIEW overlay\n\nCheck the api error envelope.\n");
+    writeFileSync(
+      join(repo, ".gate", "config.yml"),
+      [
+        "commands: {}",
+        "thresholds: {}",
+        "targets:",
+        "  api:",
+        "    match: [\"apps/api/**\"]",
+        "    playbooks: { review: .gate/playbooks/review.api.md }",
+        "phases: {}",
+        "integrations: { agnosgram: off, sdd: off }",
+        "",
+      ].join("\n"),
+    );
+    gate(repo, ["start", "api overlay demo", "--target", "api"]);
+    expect(gate(repo, ["skip", "PLAN", "--reason", "test"]).code).toBe(0);
+    expect(gate(repo, ["skip", "IMPLEMENT", "--reason", "test"]).code).toBe(0);
+    expect(gate(repo, ["skip", "TEST", "--reason", "test"]).code).toBe(0);
+    const review = gate(repo, ["review", "--fresh", "--json"]).json() as { rubric: string };
+    expect(review.rubric).toContain("## Target overlay: api");
+    expect(review.rubric).toContain("Check the api error envelope.");
+  });
+
   it("refuses to reach DONE when a review fix breaks the code (staleness guard)", () => {
     const repo = makeRepo({
       "package.json": JSON.stringify({ name: "fx", scripts: { test: "node test.js" } }),
@@ -270,7 +377,7 @@ describe("gate CLI end-to-end", () => {
     expect((gate(repo, ["status", "--json"]).json() as { active: boolean }).active).toBe(false);
   });
 
-  it("gate retro syncs the journal (fallback path — no agnosgram binary in this sandbox) and is idempotent", () => {
+  it("gate retro syncs the journal (fallback path - no agnosgram binary in this sandbox) and is idempotent", () => {
     const repo = makeRepo();
     mkdirSync(join(repo, ".agnosgram"), { recursive: true });
     writeFileSync(join(repo, ".agnosgram", "config.yml"), "version: 1\n");
@@ -300,7 +407,7 @@ describe("gate CLI end-to-end", () => {
     expect(journal).toContain(runId);
     expect(journal).toContain("- **Avoid:** Do not skip reproduce");
 
-    // Idempotent: re-running does not duplicate the entry — byte-identical file.
+    // Idempotent: re-running does not duplicate the entry - byte-identical file.
     const again = gate(repo, ["retro", "--json"]).json() as { alreadySynced: boolean };
     expect(again.alreadySynced).toBe(true);
     const journalAfter = readFileSync(join(repo, syncedData.journalFile), "utf8");

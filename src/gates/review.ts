@@ -1,15 +1,16 @@
 import { existsSync } from "node:fs";
 import { runPaths } from "../core/paths.js";
-import { treeFingerprint } from "../core/git.js";
+import { changedFiles, treeFingerprint } from "../core/git.js";
 import { runCommand } from "../core/exec.js";
 import { isCommandsTrusted } from "../core/trust.js";
+import { checkName, resolvePhaseTargets } from "../core/targets.js";
 import { parseReviewFile, blockingFindings, unjustifiedWaivers, type Review } from "../artifacts/review.js";
 import { type Check, type GateContext, type GateResult, fail, pass, result } from "./types.js";
 
 /**
- * REVIEW gate — deterministic checks over a fresh, self-contained review:
+ * REVIEW gate - deterministic checks over a fresh, self-contained review:
  *  - a review packet was emitted and matches the *current* code (tree
- *    fingerprint) — a reviewer must have seen what actually ships
+ *    fingerprint) - a reviewer must have seen what actually ships
  *  - review.md parses and records who reviewed; no blocker/major finding is
  *    left open, and any waived blocker/major carries a waiver rationale
  *  - the reviewer differs from the implementer, when both are known
@@ -35,7 +36,8 @@ export function reviewGate(ctx: GateContext): GateResult {
     checks.push(reviewerCheck(ctx, review));
   }
 
-  checks.push(evidenceCheck(ctx, current));
+  const touched = changedFiles(ctx.root, ctx.run.baseRef).filter((f) => !f.startsWith(".gate/"));
+  checks.push(...evidenceChecks(ctx, current, touched));
 
   return result("REVIEW", checks);
 }
@@ -43,19 +45,19 @@ export function reviewGate(ctx: GateContext): GateResult {
 /**
  * The packet must exist and have been generated from the code as it stands
  * now; otherwise the reviewer signed off on a different diff. Without git the
- * fingerprint is unavailable — existence is all we can check, and we say so.
+ * fingerprint is unavailable - existence is all we can check, and we say so.
  */
 function packetCheck(ctx: GateContext, packetPath: string, current: string | null): Check {
   if (!ctx.run.review || !existsSync(packetPath)) {
-    return fail("review.packet", "no review packet — run `gate review --fresh` to emit one");
+    return fail("review.packet", "no review packet - run `gate review --fresh` to emit one");
   }
   if (current === null) {
-    return pass("review.packet", "packet emitted (not a git repo — freshness unverifiable)");
+    return pass("review.packet", "packet emitted (not a git repo - freshness unverifiable)");
   }
   if (ctx.run.review.treeHash !== current) {
     return fail(
       "review.packet",
-      "packet is stale — the code changed after it was generated; re-run `gate review --fresh` " +
+      "packet is stale - the code changed after it was generated; re-run `gate review --fresh` " +
         "so the reviewer sees the code that ships",
     );
   }
@@ -81,32 +83,32 @@ function findingsCheck(review: Review): Check {
 }
 
 /**
- * The reviewer signs review.md (`reviewer:` in its frontmatter) — identity is
+ * The reviewer signs review.md (`reviewer:` in its frontmatter) - identity is
  * claimed at sign-off time, not when the packet was emitted. A missing name
  * fails: it is the cheapest mechanical proof that *someone* went through the
  * rubric, and without it `gate review --fresh && gate next` would pass on the
  * untouched scaffold. Equal to the implementer's session id fails (self-review);
- * an unknown implementer passes with a note — a CLI cannot prove a human.
+ * an unknown implementer passes with a note - a CLI cannot prove a human.
  */
 function reviewerCheck(ctx: GateContext, review: Review): Check {
   if (!review.reviewer) {
     return fail(
       "review.reviewer",
-      "review.md does not say who reviewed — the reviewer must fill in `reviewer:` when signing off",
+      "review.md does not say who reviewed - the reviewer must fill in `reviewer:` when signing off",
     );
   }
   const implementer = ctx.run.sessionId;
   if (implementer && review.reviewer === implementer) {
     return fail(
       "review.reviewer",
-      `reviewer (${review.reviewer}) is the implementer — get a fresh pair of eyes`,
+      `reviewer (${review.reviewer}) is the implementer - get a fresh pair of eyes`,
     );
   }
   return pass(
     "review.reviewer",
     implementer
       ? `reviewed by ${review.reviewer} (≠ implementer)`
-      : `reviewed by ${review.reviewer} (implementer identity unknown — independence unverified)`,
+      : `reviewed by ${review.reviewer} (implementer identity unknown - independence unverified)`,
   );
 }
 
@@ -115,40 +117,43 @@ function reviewerCheck(ctx: GateContext, review: Review): Check {
  * *after* IMPLEMENT/TEST certified it, and DONE is one `gate next` away. When
  * the current tree still matches the fingerprint recorded at the last gate
  * pass, the earlier evidence stands; otherwise Gate re-runs build/lint/test
- * right here and requires them green. Fails closed — untrusted commands are
+ * right here and requires them green. Fails closed - untrusted commands are
  * never spawned, and a red re-run blocks DONE.
+ *
+ * Targets (Milestone 3): resolved via `resolvePhaseTargets`, mirroring the
+ * IMPLEMENT/TEST gates. Reading only `ctx.config.commands` (the top-level
+ * set) let a per-target-only repo - no top-level build/lint/test configured
+ * at all - pass this check vacuously, never re-verifying any target's actual
+ * commands. Bare/legacy case (no targets configured, or none affected)
+ * collapses to a single unbracketed "review.evidence" check, byte-identical
+ * to before targets existed.
  */
-function evidenceCheck(ctx: GateContext, current: string | null): Check {
+function evidenceChecks(ctx: GateContext, current: string | null, touched: string[]): Check[] {
   const lastVerified = [...ctx.run.history]
     .reverse()
     .find((h) => h.event === "passed" && h.treeHash)?.treeHash;
   if (current !== null && lastVerified === current) {
-    return pass("review.evidence", "code unchanged since the last gate passed — evidence still valid");
+    return [pass("review.evidence", "code unchanged since the last gate passed - evidence still valid")];
   }
 
-  const { build, lint, test } = ctx.config.commands;
-  const toRun = Object.entries({ build, lint, test }).filter(([, cmd]) => cmd) as Array<[string, string]>;
-  if (toRun.length === 0) {
-    return pass("review.evidence", "no build/lint/test commands configured — nothing to re-verify");
-  }
-  if (!isCommandsTrusted(ctx.root)) {
-    return fail(
-      "review.evidence",
-      "code changed since the last gate passed and commands are untrusted — run `gate trust`",
-    );
-  }
-  const red: string[] = [];
-  for (const [label, cmd] of toRun) {
-    const res = runCommand(cmd, ctx.root);
-    if (res.code !== 0) red.push(`${label} (exit ${res.code})`);
-  }
-  return red.length === 0
-    ? pass(
-        "review.evidence",
-        `code changed since the last gate passed — re-verified: ${toRun.map(([l]) => l).join("/")} green`,
-      )
-    : fail(
-        "review.evidence",
-        `code changed since the last gate passed and re-verification failed: ${red.join(", ")}`,
-      );
+  const trusted = isCommandsTrusted(ctx.root);
+  return resolvePhaseTargets(ctx.config, ctx.run, touched).map((t) => {
+    const name = checkName("review.evidence", t.target);
+    const { build, lint, test } = t.commands;
+    const toRun = Object.entries({ build, lint, test }).filter(([, cmd]) => cmd) as Array<[string, string]>;
+    if (toRun.length === 0) {
+      return pass(name, "no build/lint/test commands configured - nothing to re-verify");
+    }
+    if (!trusted) {
+      return fail(name, "code changed since the last gate passed and commands are untrusted - run `gate trust`");
+    }
+    const red: string[] = [];
+    for (const [label, cmd] of toRun) {
+      const res = runCommand(cmd, ctx.root);
+      if (res.code !== 0) red.push(`${label} (exit ${res.code})`);
+    }
+    return red.length === 0
+      ? pass(name, `code changed since the last gate passed - re-verified: ${toRun.map(([l]) => l).join("/")} green`)
+      : fail(name, `code changed since the last gate passed and re-verification failed: ${red.join(", ")}`);
+  });
 }

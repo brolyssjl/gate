@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { parse as parseYaml } from "yaml";
+import { splitFrontmatter } from "./frontmatter.js";
 
 /**
  * A single pass of the debugging protocol: reproduce → hypothesize → predict →
@@ -30,7 +30,6 @@ export interface DebugLogParse {
   errors: string[];
 }
 
-const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/;
 const CYCLE_FIELDS = ["hypothesis", "prediction", "experiment", "observation", "conclusion"] as const;
 
 export function parseDebugLogFile(path: string): DebugLogParse {
@@ -39,20 +38,9 @@ export function parseDebugLogFile(path: string): DebugLogParse {
 }
 
 export function parseDebugLog(raw: string): DebugLogParse {
-  const m = FRONTMATTER.exec(raw);
-  if (!m) {
-    return { log: null, errors: ["debug-log.md must start with a YAML frontmatter block (---)"] };
-  }
-  let fm: unknown;
-  try {
-    fm = parseYaml(m[1]!);
-  } catch (e) {
-    return { log: null, errors: [`frontmatter is not valid YAML: ${(e as Error).message}`] };
-  }
-  if (!fm || typeof fm !== "object") {
-    return { log: null, errors: ["frontmatter must be a YAML mapping"] };
-  }
-  const data = fm as Record<string, unknown>;
+  const split = splitFrontmatter(raw, "debug-log.md");
+  if (!split.ok) return { log: null, errors: split.errors };
+  const { data } = split.value;
   const errors: string[] = [];
 
   const triggeringTest = typeof data.triggering_test === "string" ? data.triggering_test.trim() : "";
@@ -78,7 +66,7 @@ export function parseDebugLog(raw: string): DebugLogParse {
 
   if (errors.length > 0) return { log: null, errors };
   return {
-    log: { triggeringTest, reproduced, cycles, body: (m[2] ?? "").trim() },
+    log: { triggeringTest, reproduced, cycles, body: split.value.body },
     errors: [],
   };
 }

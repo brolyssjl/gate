@@ -1,8 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
-import { parse as parseYaml } from "yaml";
+import { splitFrontmatter } from "./frontmatter.js";
 
 /**
- * Severity ordering matters: `blocker` and `major` are *load-bearing* — the
+ * Severity ordering matters: `blocker` and `major` are *load-bearing* - the
  * REVIEW gate refuses to advance while any is still open. `minor`/`nit` are
  * advisory and never block.
  */
@@ -32,28 +32,15 @@ export interface ReviewParse {
   errors: string[];
 }
 
-const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/;
-
 export function parseReviewFile(path: string): ReviewParse {
   if (!existsSync(path)) return { review: null, errors: ["review.md does not exist"] };
   return parseReview(readFileSync(path, "utf8"));
 }
 
 export function parseReview(raw: string): ReviewParse {
-  const m = FRONTMATTER.exec(raw);
-  if (!m) {
-    return { review: null, errors: ["review.md must start with a YAML frontmatter block (---)"] };
-  }
-  let fm: unknown;
-  try {
-    fm = parseYaml(m[1]!);
-  } catch (e) {
-    return { review: null, errors: [`frontmatter is not valid YAML: ${(e as Error).message}`] };
-  }
-  if (!fm || typeof fm !== "object") {
-    return { review: null, errors: ["frontmatter must be a YAML mapping"] };
-  }
-  const data = fm as Record<string, unknown>;
+  const split = splitFrontmatter(raw, "review.md");
+  if (!split.ok) return { review: null, errors: split.errors };
+  const { data } = split.value;
   const errors: string[] = [];
 
   const reviewer = typeof data.reviewer === "string" ? data.reviewer.trim() : "";
@@ -83,7 +70,7 @@ export function parseReview(raw: string): ReviewParse {
   });
 
   if (errors.length > 0) return { review: null, errors };
-  return { review: { reviewer, findings, body: (m[2] ?? "").trim() }, errors: [] };
+  return { review: { reviewer, findings, body: split.value.body }, errors: [] };
 }
 
 function isSeverity(v: string): v is Severity {

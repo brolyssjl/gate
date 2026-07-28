@@ -1,16 +1,17 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { runPaths } from "../core/paths.js";
 import { hasSubstance, parseRetroFile } from "../artifacts/retro.js";
+import { journalContainsRunId } from "../integrations/agnosgramWrite.js";
 import { type Check, type GateContext, type GateResult, fail, pass, result } from "./types.js";
 
 /**
- * RETRO gate — deterministic:
+ * RETRO gate - deterministic:
  *  - retro.md exists and follows the schema (broke/avoid/conventions lists)
  *  - at least one of the three questions was actually answered
  *  - when an Agnosgram store is present and the integration is not "off", the
  *    entry was synced to the journal (`gate retro`); otherwise this check is
- *    advisory (pass-with-note — there is nowhere to sync to)
+ *    advisory (pass-with-note - there is nowhere to sync to)
  *
  * Whether the retro is *insightful* is judgment and lives in the RETRO
  * playbook; the gate only checks that the ritual happened and, where a store
@@ -30,7 +31,7 @@ export function retroGate(ctx: GateContext): GateResult {
   checks.push(
     hasSubstance(retro)
       ? pass("retro.substance", "at least one of broke/avoid/conventions was answered")
-      : fail("retro.substance", "retro.md is empty — answer at least one of broke/avoid/conventions"),
+      : fail("retro.substance", "retro.md is empty - answer at least one of broke/avoid/conventions"),
   );
 
   checks.push(journalCheck(ctx));
@@ -40,25 +41,23 @@ export function retroGate(ctx: GateContext): GateResult {
 
 function journalCheck(ctx: GateContext): Check {
   if (ctx.config.integrations.agnosgram === "off") {
-    return pass("retro.journal", "agnosgram integration is off — journal sync not required");
+    return pass("retro.journal", "agnosgram integration is off - journal sync not required");
   }
   if (!existsSync(join(ctx.root, ".agnosgram"))) {
-    return pass("retro.journal", "no .agnosgram store detected — journal sync not required");
+    return pass("retro.journal", "no .agnosgram store detected - journal sync not required");
   }
 
   const sync = ctx.run.retro;
   if (!sync) {
-    return fail("retro.journal", "no journal sync recorded — run `gate retro` to write the journal entry");
+    return fail("retro.journal", "no journal sync recorded - run `gate retro` to write the journal entry");
   }
-  const journalPath = join(ctx.root, sync.journalFile);
-  if (!existsSync(journalPath)) {
-    return fail("retro.journal", `journal file not found: ${sync.journalFile} — re-run \`gate retro\``);
+  if (!existsSync(join(ctx.root, sync.journalFile))) {
+    return fail("retro.journal", `journal file not found: ${sync.journalFile} - re-run \`gate retro\``);
   }
-  const content = readFileSync(journalPath, "utf8");
-  if (!content.includes(ctx.run.id)) {
+  if (!journalContainsRunId(ctx.root, sync.journalFile, ctx.run.id)) {
     return fail(
       "retro.journal",
-      `journal file ${sync.journalFile} does not contain run id "${ctx.run.id}" — re-run \`gate retro\``,
+      `journal file ${sync.journalFile} does not contain run id "${ctx.run.id}" - re-run \`gate retro\``,
     );
   }
   return pass("retro.journal", `journal entry recorded in ${sync.journalFile}`);

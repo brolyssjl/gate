@@ -1,8 +1,8 @@
 # Gate
 
-An **agent-agnostic quality harness**. Gate turns the development flow —
+An **agent-agnostic quality harness**. Gate turns the development flow -
 `PLAN → IMPLEMENT → TEST → REVIEW → RETRO → DONE` (a bugfix run swaps
-IMPLEMENT for DEBUG) — into an enforced state machine with deterministic
+IMPLEMENT for DEBUG) - into an enforced state machine with deterministic
 quality gates. Any AI agent (or human) does the thinking; Gate holds the
 state, checks the evidence, and refuses to advance until the evidence is real.
 
@@ -29,7 +29,7 @@ npm link          # puts `gate` on your PATH
 
 Once published, global install will be `npm install -g gate-cli`.
 `install.sh` fetches a single-file binary for Node-less machines (falls back
-to npm when no matching release asset exists yet — no binaries are published
+to npm when no matching release asset exists yet - no binaries are published
 either; `npm run build:binary` is mechanical prep, see "Single-file binary"
 below):
 
@@ -100,9 +100,9 @@ so CI always inherits the command pin.
 | **IMPLEMENT** | working diff is non-empty; every touched file is declared in `plan.md`; `build` exits 0; `lint` exits 0 |
 | **TEST** | `build` and `lint` exit 0 (load-bearing for `bugfix`, which skips IMPLEMENT); `test` command exits 0; every `test:`-verified criterion maps to a named passing test; no skipped tests; diff coverage ≥ threshold |
 | **REVIEW** | packet emitted **and matches the current code** (tree fingerprint); review.md signed by a reviewer (≠ implementer when both known); no blocker/major finding left open (or waived with a rationale); if the code changed since the last gate passed, `build`/`lint`/`test` are re-run here and must be green |
-| **RETRO** | `retro.md` valid; at least one of `broke`/`avoid`/`conventions` answered; if an `.agnosgram/` store is present, the entry was synced to its journal (`gate retro`) — otherwise this check passes with a note |
+| **RETRO** | `retro.md` valid; at least one of `broke`/`avoid`/`conventions` answered; if an `.agnosgram/` store is present, the entry was synced to its journal (`gate retro`) - otherwise this check passes with a note |
 
-Plan *quality*, debugging *rigor*, and review *depth* are judgment, not code —
+Plan *quality*, debugging *rigor*, and review *depth* are judgment, not code -
 they live in editable Markdown **playbooks** (`.gate/playbooks/*.md`) the CLI
 serves to the agent, never in the gates.
 
@@ -137,8 +137,8 @@ so when the tree no longer matches the fingerprint recorded at the last gate
 pass, the REVIEW gate re-runs `build`/`lint`/`test` itself and requires them
 green before DONE.
 
-`gate report [<run-id>]` prints a per-run summary — phase durations, failed gate
-attempts, findings, and any skips (with who and why) — defaulting to the active
+`gate report [<run-id>]` prints a per-run summary - phase durations, failed gate
+attempts, findings, and any skips (with who and why) - defaulting to the active
 or most recent run. `--json` gives the machine-readable form. It falls back to
 an archived summary (see "Pruning runs") once a run's live folder is gone.
 
@@ -160,7 +160,7 @@ RETRO closes every profile except `docs`: answer at least one of `broke`,
 
 It spawns `agnosgram log --stdin --agent gate`; if the binary isn't installed
 (ENOENT), it falls back to appending the same entry directly to
-`.agnosgram/journal/<month>.md`. Re-running is idempotent — it checks the
+`.agnosgram/journal/<month>.md`. Re-running is idempotent - it checks the
 recorded journal file already contains the run id before syncing again. With
 no `.agnosgram/` store, `gate retro` is a no-op and the RETRO gate's journal
 check passes with a note; nothing about RETRO depends on Agnosgram being
@@ -170,7 +170,7 @@ The PLAN gate is the read side of the same integration: with an `.agnosgram/`
 store present, if `agnosgram advise` has written `<plan>.advise.json`
 (the pinned `agnosgram_advise` report schema), every flagged contradiction
 must be listed under plan.md's `acknowledgments:` before PLAN passes. No
-report on disk yet is advisory-only — Gate never runs `agnosgram advise`
+report on disk yet is advisory-only - Gate never runs `agnosgram advise`
 itself.
 
 ## SDD spec citation
@@ -178,7 +178,7 @@ itself.
 With an SDD directory detected (`openspec/`, `.specify/`, `_bmad/`/`.bmad/`)
 and `integrations.sdd` not `off`, the PLAN gate requires plan.md's `spec:`
 field to cite a path that exists under that directory, instead of restating
-the spec. No SDD directory present: the check doesn't run at all — same
+the spec. No SDD directory present: the check doesn't run at all - same
 behavior as before this existed.
 
 ## Targets (multi-stack repos)
@@ -205,16 +205,16 @@ names (`implement.build[api]`, `test.command[web]`) so a change touching both
 stacks must pass both. `gate playbook` appends a `## Target overlay: <name>`
 section per affected target that declares one. With no `targets:` configured,
 or none affected by the change, behavior and check names are byte-identical
-to a single-stack repo — targets are purely additive. `gate start --target
+to a single-stack repo - targets are purely additive. `gate start --target
 <a,b>` overrides resolution for the whole run.
 
 ## Agent adapters
 
 `gate adapt [adapter...]` writes (or refreshes) a pointer block into each
-agent's config file — the same ~12-line loop (status → playbook → work →
+agent's config file - the same ~12-line loop (status → playbook → work →
 next) in every target, managed between `<!-- gate:start -->` /
 `<!-- gate:end -->` markers so your own content around it is untouched.
-With no arguments it writes every adapter; idempotent — running it again with
+With no arguments it writes every adapter; idempotent - running it again with
 nothing changed reports `unchanged` and doesn't touch the file.
 
 | Adapter | Target file |
@@ -226,7 +226,7 @@ nothing changed reports `unchanged` and doesn't touch the file.
 | `windsurf` | `.windsurf/rules/gate.md` |
 | `agents` | `AGENTS.md` |
 
-These are ergonomics only — the contract is always the CLI; every adapter
+These are ergonomics only - the contract is always the CLI; every adapter
 just tells the agent to run it.
 
 ## Pruning runs
@@ -245,7 +245,7 @@ gate prune --keep 20 --days 30   # also require a candidate to be >30 days old
 newest N by `updatedAt`; `--days` (or `retention.days`) is an *additional* age
 requirement, not a replacement for `--keep`. The active run is never a
 candidate. `retention:` in config.yml is deliberately outside the trust
-hash — it's not a command.
+hash - it's not a command.
 
 ## Evidence integrity
 
@@ -289,10 +289,10 @@ phases:
   implement: required
   test: required
 integrations:
-  agnosgram: auto                # advisory only — presence changes hint lines and check behavior
+  agnosgram: auto                # advisory only - presence changes hint lines and check behavior
   sdd: auto
-targets: {}                      # optional — see "Targets (multi-stack repos)"
-retention: {}                    # optional — gate prune defaults, e.g. { keep: 10, days: 30 }
+targets: {}                      # optional - see "Targets (multi-stack repos)"
+retention: {}                    # optional - gate prune defaults, e.g. { keep: 10, days: 30 }
 ```
 
 Diff coverage understands istanbul `coverage/coverage-final.json` (jest, vitest)
@@ -301,7 +301,7 @@ and a generic `coverage/gate-coverage.json` contract:
 
 ## Command trust (TOFU)
 
-Gate executes the commands in `config.yml` — the same trust class as npm
+Gate executes the commands in `config.yml` - the same trust class as npm
 scripts. Before any gate will run them, a human must review the config and run
 `gate trust`, which hashes the `commands:` block into `.gate/trust.json`. The
 IMPLEMENT and TEST gates **refuse to spawn a process** until the current hash
@@ -313,7 +313,7 @@ re-trust land in the same diff for review. `gate trust --check` reports status
 Approval is deliberately separate from writing the plan: `gate approve` records
 who signed off and the plan's content hash in `run.json`, so the author can't
 self-approve by flipping a flag, and editing the plan afterward voids it. A CLI
-can't prove a *human* ran `approve` — the mechanical guarantee is that approval
+can't prove a *human* ran `approve` - the mechanical guarantee is that approval
 is a distinct, hash-bound act.
 
 ## Output formats
@@ -334,16 +334,16 @@ contract. See `ROADMAP.md` for the full plan.
 ```bash
 npm test          # vitest: state machine, gates against fixtures, TOON, CLI e2e
 npm run build     # embeds playbooks (scripts/embedPlaybooks.mjs), then tsc → dist/
-npm run typecheck # tsc --noEmit — the project's lint
+npm run typecheck # tsc --noEmit - the project's lint
 ```
 
 ### Single-file binary
 
 `npm run build:binary` (after `npm run build`) produces `dist-bin/gate`: a
 single executable with the CLI, its one runtime dependency, and the
-playbooks all compiled in — no `node_modules` or `playbooks/` directory
+playbooks all compiled in - no `node_modules` or `playbooks/` directory
 needed alongside it. Uses `bun build --compile` when `bun` is on PATH
 (zero extra dependencies), falling back to Node's Single Executable
 Applications support (`--experimental-sea-config` + `postject`) otherwise.
-Mechanical prep for CI/Node-less distribution — not part of `npm run build`
+Mechanical prep for CI/Node-less distribution - not part of `npm run build`
 or wired into a release yet.

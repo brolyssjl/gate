@@ -9,13 +9,13 @@ umpire, not a driver; deterministic checks in code, judgment in playbooks; all
 state on disk; the agent contract is the CLI; integrations advisory, never
 load-bearing; pointers, never copies.
 
-## Milestone 1 — Core MVP ✅ (v0.1.0)
+## Milestone 1 - Core MVP ✅ (v0.1.0)
 
 - [x] State machine `PLAN → IMPLEMENT → TEST → DONE` (data-driven phase list)
 - [x] Commands: `init`, `start`, `status`, `check`, `next`, `playbook`
-- [x] PLAN gate — schema valid, ≥1 criterion, each criterion checkable
-- [x] IMPLEMENT gate — non-empty diff, touched ⊆ declared, build, lint
-- [x] TEST gate — suite exits 0, criteria→test mapping, no skips, diff coverage
+- [x] PLAN gate - schema valid, ≥1 criterion, each criterion checkable
+- [x] IMPLEMENT gate - non-empty diff, touched ⊆ declared, build, lint
+- [x] TEST gate - suite exits 0, criteria→test mapping, no skips, diff coverage
 - [x] Pluggable serializer (JSON default, TOON opt-in for uniform arrays)
 - [x] Default Markdown playbooks (bundled + user-editable copies)
 - [x] Advisory Agnosgram/SDD detection stubs (presence-only)
@@ -23,56 +23,56 @@ load-bearing; pointers, never copies.
 
 ### Milestone 1 hardening ✅ (v0.1.0)
 
-- [x] `gate trust` — TOFU hashing of the commands block; gates refuse to execute
+- [x] `gate trust` - TOFU hashing of the commands block; gates refuse to execute
       untrusted commands
-- [x] Real approval handshake — `gate approve`, recorded in run.json and bound to
+- [x] Real approval handshake - `gate approve`, recorded in run.json and bound to
       the plan's content hash (no self-approval, void-on-edit)
-- [x] `gate skip <phase> --reason` — human-authorized skip with audit trail
-- [x] `gate log <file>` — register an artifact against the current phase
+- [x] `gate skip <phase> --reason` - human-authorized skip with audit trail
+- [x] `gate log <file>` - register an artifact against the current phase
 
-## Milestone 2 — Full quality flow ✅ (v0.2.0)
+## Milestone 2 - Full quality flow ✅ (v0.2.0)
 
-- [x] DEBUG phase — enforced protocol (reproduce → hypothesize → predict → test →
+- [x] DEBUG phase - enforced protocol (reproduce → hypothesize → predict → test →
       conclude) logged in `debug-log.md`; gate requires ≥1 completed cycle and the
       triggering test green with no regressions
-- [x] REVIEW phase — `gate review --fresh` emits a self-contained packet
+- [x] REVIEW phase - `gate review --fresh` emits a self-contained packet
       (diff + plan + rubric); blocker/major findings resolved or human-waived;
       reviewer session id ≠ implementer when available
-- [x] Run profiles — `--profile feature|bugfix|refactor|docs` (which phases run)
-- [x] `gate report` — per-run summary (durations, gate failures, findings)
+- [x] Run profiles - `--profile feature|bugfix|refactor|docs` (which phases run)
+- [x] `gate report` - per-run summary (durations, gate failures, findings)
 - [x] `--json` everywhere audit + schema snapshots
 
 ### Milestone 2 hardening ✅ (v0.2.0)
 
-- [x] Staleness guard — tree fingerprint recorded at every gate pass and on the
+- [x] Staleness guard - tree fingerprint recorded at every gate pass and on the
       review packet; REVIEW fails on a stale packet and re-runs build/lint/test
       when the code changed since the last gate passed (review fixes cannot ship
       unverified)
-- [x] Evidence integrity — test reports come only from the run Gate executes
+- [x] Evidence integrity - test reports come only from the run Gate executes
       (stdout, or a file the command wrote during the run via $GATE_TEST_REPORT);
       pre-staged reports are ignored; Gate persists the normalized report
 - [x] Review packet includes untracked files in its diff (commit-less agent
       flows no longer hide new files from the reviewer)
-- [x] Reviewer sign-off — review.md must name its reviewer; the untouched
+- [x] Reviewer sign-off - review.md must name its reviewer; the untouched
       scaffold cannot pass REVIEW
 - [x] TEST gate runs build+lint (bugfix profile skips IMPLEMENT and would
       otherwise never build or lint)
 - [x] DEBUG triggering-test check fails closed without a parseable report
 - [x] Atomic run.json/trust/current writes (crash-safe state)
 - [x] run.json schema 2 with explicit migration from Milestone 1 runs
-- [x] Honest docs — threat model section (defends against sloppiness, not
+- [x] Honest docs - threat model section (defends against sloppiness, not
       malice), CI caveat for gitignored run state, report durations fixed
 
-## Milestone 3 — Ecosystem & publish ⏳
+## Milestone 3 - Ecosystem & publish ⏳
 
 - [x] RETRO phase + Agnosgram write integration (retro → journal, `source:` ids)
 - [x] SDD detection wired into PLAN (`plan.md` cites the spec path)
-- [x] Targets — per-stack blocks for multi-stack repos (match/commands/thresholds/
+- [x] Targets - per-stack blocks for multi-stack repos (match/commands/thresholds/
       playbook overlays); profiles choose which phases, targets choose how
-- [x] Agent adapters — Claude Code skill, Cursor/Cline/Windsurf rules, `AGENTS.md`
-- [x] `gate prune` — archive finished runs past the retention window
+- [x] Agent adapters - Claude Code skill, Cursor/Cline/Windsurf rules, `AGENTS.md`
+- [x] `gate prune` - archive finished runs past the retention window
 - [ ] Decide the npm name, then publish + distribution (global install,
-      `install.sh`, single-file binary for CI/Node-less machines) — mechanical
+      `install.sh`, single-file binary for CI/Node-less machines) - mechanical
       prep landed (placeholder name, `install.sh`, `build:binary`, CI/release
       workflows); the owner still decides the final name and publish timing
 

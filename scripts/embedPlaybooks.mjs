@@ -6,7 +6,7 @@
  * playbooks compiled in, with no dependency on a `playbooks/` directory
  * sitting next to the executable. `core/playbooks.ts` still tries the real
  * on-disk directory first (the disk-walk fallback stays authoritative for
- * normal npm-install and dev-from-source use — a playbook edit is live
+ * normal npm-install and dev-from-source use - a playbook edit is live
  * immediately, no rebuild needed) and only falls back to this embedded copy
  * when the directory can't be found.
  *
@@ -34,7 +34,7 @@ const entries = files.map((f) => {
   return `  ${JSON.stringify(phase)}: ${JSON.stringify(content)},`;
 });
 
-const out = `// GENERATED FILE — do not hand-edit. Regenerate with:
+const out = `// GENERATED FILE - do not hand-edit. Regenerate with:
 //   node scripts/embedPlaybooks.mjs
 // Source: playbooks/*.md + package.json version, at build time.
 

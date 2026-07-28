@@ -16,7 +16,7 @@ export type Phase = (typeof PHASES)[number];
 
 /**
  * Run profiles select which phases run, in order. DONE is appended implicitly and
- * is never listed here. Adding a profile is a pure data edit — no transition code
+ * is never listed here. Adding a profile is a pure data edit - no transition code
  * changes. `feature` is the default (back-compatible with the Milestone 1 flow,
  * now with a REVIEW gate before DONE). RETRO closes every profile except `docs`
  * (kickoff interpretation: a docs-only change has nothing worth a retro).

@@ -8,7 +8,7 @@ import { EMBEDDED_VERSION } from "./embeddedPlaybooks.js";
  * never drifts from the published version. Walks up from this module to the
  * nearest package.json (the package root in both src and dist layouts).
  * Falls back to the version embedded at build time when no package.json is
- * reachable — a single-file binary ships with no sibling package.json.
+ * reachable - a single-file binary ships with no sibling package.json.
  */
 export function readVersion(): string {
   let dir = dirname(fileURLToPath(import.meta.url));

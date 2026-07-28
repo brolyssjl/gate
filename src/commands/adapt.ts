@@ -40,7 +40,7 @@ export function applyAdapter(root: string, adapter: Adapter): AdaptResult {
 }
 
 /**
- * `gate adapt [adapter...]` — write (or refresh) agent config pointer blocks.
+ * `gate adapt [adapter...]` - write (or refresh) agent config pointer blocks.
  * With no arguments, writes every known adapter (all are cheap, idempotent
  * managed-block writes, so there's no harm doing all of them by default).
  * Named adapters restrict the run to just those.

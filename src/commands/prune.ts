@@ -14,11 +14,11 @@ interface Candidate {
 }
 
 /**
- * `gate prune` — archive finished runs past the retention window (proposal
+ * `gate prune` - archive finished runs past the retention window (proposal
  * §4: "run folders are ephemeral by design"). Candidates are every non-active
  * run except the currently active one. Keeps the most recently updated
  * `--keep` (default 10, or `retention.keep` in config.yml); with `--days`,
- * a candidate must *also* be older than that many days to be pruned — `--keep`
+ * a candidate must *also* be older than that many days to be pruned - `--keep`
  * alone is a count-based floor, `--days` an additional age gate. `--dry-run`
  * reports what would be pruned without touching disk. A pruned run's summary
  * (the same shape `gate report` prints) is written to
@@ -73,7 +73,7 @@ function listCandidates(root: string, activeId: string | null): Candidate[] {
     try {
       run = readRun(root, id);
     } catch {
-      continue; // unreadable run.json — leave it alone, don't guess
+      continue; // unreadable run.json - leave it alone, don't guess
     }
     if (run.status === "active") continue;
     candidates.push({ id, updatedAt: run.updatedAt });

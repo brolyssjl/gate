@@ -8,7 +8,7 @@ import type { Phase } from "./stateMachine.js";
 
 /**
  * Locate the bundled default playbooks by walking up to the package root, or
- * null if there is none to find — e.g. a single-file binary (Node SEA / `bun
+ * null if there is none to find - e.g. a single-file binary (Node SEA / `bun
  * build --compile`) has no `playbooks/` directory sitting next to it.
  */
 function findBundledPlaybooksDir(): string | null {
@@ -22,7 +22,7 @@ function findBundledPlaybooksDir(): string | null {
   }
 }
 
-/** Same walk, throwing when not found — for `gate init`, which needs the real directory to enumerate. */
+/** Same walk, throwing when not found - for `gate init`, which needs the real directory to enumerate. */
 export function bundledPlaybooksDir(): string {
   const dir = findBundledPlaybooksDir();
   if (!dir) throw new Error("bundled playbooks directory not found");
@@ -36,7 +36,7 @@ export function bundledPlaybookPath(phase: Phase): string {
 /**
  * Resolve the active playbook for a phase: the user's editable copy under
  * `.gate/playbooks/` wins; otherwise the bundled default on disk (the normal
- * dev-from-source and npm-install layouts — a playbook edit there is live
+ * dev-from-source and npm-install layouts - a playbook edit there is live
  * immediately, no rebuild needed); otherwise the copy compiled into the
  * binary at build time (`scripts/embedPlaybooks.mjs`), for single-file
  * binaries with no sibling `playbooks/` directory to walk to. Returns null

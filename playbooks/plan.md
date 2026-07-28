@@ -6,11 +6,11 @@ is your job; Gate only checks structure.
 
 ## Do
 
-1. **Restate the goal** in one sentence — what does "done" mean for this work?
+1. **Restate the goal** in one sentence - what does "done" mean for this work?
 2. If project memory is present (`.agnosgram/`, an SDD spec under `openspec/`,
    `.specify/`, `_bmad/`), read it first and **cite** the spec path rather than
    restating it. When Gate detects an SDD directory (and `integrations.sdd` is
-   not `off`), put that path in the `spec:` frontmatter field — the gate checks
+   not `off`), put that path in the `spec:` frontmatter field - the gate checks
    it points somewhere real under the SDD dir. No SDD present: leave it blank.
 3. **List every file** you expect to touch (globs allowed). IMPLEMENT will reject
    changes to files not covered here, so be honest and complete.
@@ -20,11 +20,11 @@ is your job; Gate only checks structure.
    check it.
 5. List **risks** and **out-of-scope** items to hold the line against scope creep.
 6. If this repo has an `.agnosgram/` project-memory store, an `agnosgram
-   advise` report over this plan may already exist. Gate reads it (advisory —
+   advise` report over this plan may already exist. Gate reads it (advisory -
    it never runs the check itself); if it flags contradictions, resolve each
    one and list its record id under `acknowledgments:` before approving.
 7. Get sign-off, then run `gate approve`. Approval is a separate, deliberate
-   step recorded outside plan.md — you cannot self-approve by editing the plan,
+   step recorded outside plan.md - you cannot self-approve by editing the plan,
    and any later edit to plan.md voids the approval (re-run `gate approve`).
 
 ## plan.md schema

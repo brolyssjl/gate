@@ -1,22 +1,22 @@
 # RETRO playbook
 
 You are in the **RETRO** phase, the last stop before DONE. Three questions,
-answered honestly and briefly — this is capture, not essay writing. Gate will
+answered honestly and briefly - this is capture, not essay writing. Gate will
 not let you reach DONE on an untouched scaffold.
 
 ## Do
 
-1. **What broke?** Anything that failed, surprised you, or cost time —
+1. **What broke?** Anything that failed, surprised you, or cost time -
    a wrong assumption, a flaky test, a misread requirement.
 2. **What to avoid next time?** A concrete "don't do X" for a future run.
 3. **What convention emerged?** A pattern worth repeating, if one did.
 
-Answer at least one. Empty slots are fine; an entirely empty retro is not —
+Answer at least one. Empty slots are fine; an entirely empty retro is not -
 the gate requires ≥1 entry across the three.
 
 4. If this repo has an `.agnosgram/` project-memory store, run `gate retro` to
    sync your answers into its journal (source-linked to this run). Without a
-   store, this step is a no-op — the gate does not require it.
+   store, this step is a no-op - the gate does not require it.
 
 ## retro.md schema
 

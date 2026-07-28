@@ -3,7 +3,7 @@ name: Release
 # Fires when a version tag is pushed (e.g. `git tag v0.3.0 && git push --tags`).
 # Builds, tests, and creates a GitHub release with per-platform binaries. npm
 # publish is a separate job that only runs once the owner opts in (repo
-# variable NPM_PUBLISH=true + secret NPM_TOKEN) — this workflow never
+# variable NPM_PUBLISH=true + secret NPM_TOKEN) - this workflow never
 # publishes on its own.
 on:
   push:

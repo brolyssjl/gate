@@ -19,7 +19,7 @@ import { cmdPrune } from "./commands/prune.js";
 import { cmdAdapt } from "./commands/adapt.js";
 import { ADAPTER_KEYS } from "./adapters/index.js";
 
-const HELP = `gate — an agent-agnostic quality harness (umpire, not a driver).
+const HELP = `gate - an agent-agnostic quality harness (umpire, not a driver).
 
 Usage: gate <command> [options]
 

@@ -1,7 +1,7 @@
 /**
  * An adapter targets one agent's config file. Every adapter injects the *same*
  * pointer body (kickoff-gate.md's adapter principle: skill/rules wrappers are
- * ergonomics only, the CLI is the real contract — one shared source, no per-agent
+ * ergonomics only, the CLI is the real contract - one shared source, no per-agent
  * drift). Shared files (CLAUDE.md, AGENTS.md) get the managed block merged into
  * user content; a dedicated file (Cursor `.mdc`, a Claude Code skill, Cline/
  * Windsurf rules) is fully Gate's, with an optional preamble the tool requires.

@@ -1,17 +1,17 @@
 #!/usr/bin/env node
 /**
  * Build a single-file `gate` executable for CI / Node-less machines
- * (proposal §10, distribution tier 2). Mechanical prep only — not run as
+ * (proposal §10, distribution tier 2). Mechanical prep only - not run as
  * part of `npm run build` or CI by default; the owner wires this into a
  * release job when ready to ship binaries.
  *
  * Two paths, in order of preference:
  *
- *   1. `bun build --compile` — zero extra dependencies (bun is a separate
+ *   1. `bun build --compile` - zero extra dependencies (bun is a separate
  *      runtime, not an npm package), and Gate has no runtime deps besides
  *      `yaml`, so bun bundles everything. Used automatically when `bun` is
  *      on PATH.
- *   2. Node's built-in Single Executable Applications (SEA) — works with
+ *   2. Node's built-in Single Executable Applications (SEA) - works with
  *      plain Node, but needs `postject` to inject the bundle into a copied
  *      node binary. Not added as a project dependency (mechanical-prep
  *      scope, no new deps); install it ad hoc (`npm install --no-save
@@ -50,7 +50,7 @@ function buildWithNodeSea() {
   );
   mkdirSync(outDir, { recursive: true });
 
-  process.stdout.write("bun not found — falling back to Node SEA (requires `postject`).\n");
+  process.stdout.write("bun not found - falling back to Node SEA (requires `postject`).\n");
   execFileSync(process.execPath, ["--experimental-sea-config", seaConfigPath], { stdio: "inherit", cwd: root });
 
   const nodeBin = existsSync(outFile) ? outFile : process.execPath;
@@ -71,7 +71,7 @@ function buildWithNodeSea() {
   const res = spawnSync("npx", postjectArgs, { stdio: "inherit", cwd: root });
   if (res.status !== 0) {
     process.stderr.write(
-      "postject failed — install it first: npm install --no-save postject\n" +
+      "postject failed - install it first: npm install --no-save postject\n" +
         "(kept as an ad-hoc dependency, not a project devDependency, per the minimal-deps rule)\n",
     );
     process.exitCode = 1;
@@ -81,7 +81,7 @@ function buildWithNodeSea() {
 }
 
 if (!existsSync(entry)) {
-  process.stderr.write(`${entry} not found — run \`npm run build\` first.\n`);
+  process.stderr.write(`${entry} not found - run \`npm run build\` first.\n`);
   process.exit(1);
 }
 

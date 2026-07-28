@@ -26,7 +26,7 @@ describe("state machine", () => {
     expect(phaseSequence("feature")).toEqual(["PLAN", "IMPLEMENT", "TEST", "REVIEW", "RETRO", "DONE"]);
     expect(phaseSequence("bugfix")).toEqual(["PLAN", "DEBUG", "TEST", "REVIEW", "RETRO", "DONE"]);
     expect(phaseSequence("refactor")).toEqual(["PLAN", "IMPLEMENT", "TEST", "REVIEW", "RETRO", "DONE"]);
-    // docs skips REVIEW and RETRO — a docs-only change has no code review or retro.
+    // docs skips REVIEW and RETRO - a docs-only change has no code review or retro.
     expect(phaseSequence("docs")).toEqual(["PLAN", "IMPLEMENT", "DONE"]);
   });
 

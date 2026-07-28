@@ -60,7 +60,7 @@ install_via_npm() {
     echo "  npm install -g gate-cli" >&2
     exit 1
   fi
-  echo "No matching binary release yet — installing via npm instead."
+  echo "No matching binary release yet - installing via npm instead."
   npm install -g gate-cli
 }
 
@@ -70,14 +70,14 @@ main() {
   cpu="$(arch)"
 
   if [ "$platform" = "unsupported" ] || [ "$cpu" = "unsupported" ]; then
-    echo "Unrecognized platform ($(uname -s) $(uname -m)) — falling back to npm." >&2
+    echo "Unrecognized platform ($(uname -s) $(uname -m)) - falling back to npm." >&2
     install_via_npm
     return
   fi
 
   local tag
   if ! tag="$(latest_tag)" || [ -z "$tag" ]; then
-    echo "Could not determine the latest release — falling back to npm." >&2
+    echo "Could not determine the latest release - falling back to npm." >&2
     install_via_npm
     return
   fi

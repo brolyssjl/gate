@@ -51,7 +51,7 @@ describe("targetCommands / targetThresholds", () => {
   it("layers a target's own values over the top-level defaults", () => {
     expect(targetCommands(TWO_TARGETS, "api")).toEqual({ test: "pytest", build: "top-level-build" });
     expect(targetThresholds(TWO_TARGETS, "api")).toEqual({ diff_coverage: 85 });
-    // web has no thresholds override — inherits the top-level value.
+    // web has no thresholds override - inherits the top-level value.
     expect(targetThresholds(TWO_TARGETS, "web")).toEqual({ diff_coverage: 50 });
   });
 

@@ -1,7 +1,7 @@
 # REVIEW playbook
 
-You are in the **REVIEW** phase. A *fresh* reviewer — ideally a different agent
-session or a human, not the implementer — reads the change cold and judges it
+You are in the **REVIEW** phase. A *fresh* reviewer - ideally a different agent
+session or a human, not the implementer - reads the change cold and judges it
 against this rubric. Gate emits a self-contained packet so the reviewer needs no
 prior context, and refuses to advance while any blocker/major finding is open.
 
@@ -16,18 +16,18 @@ re-verifies build/lint/test on its own. Hand the packet to a reviewer who is
 not you; the gate rejects a reviewer equal to your session id when both are
 known.
 
-## For the reviewer — the rubric
+## For the reviewer - the rubric
 
 Read the packet end to end, then judge:
 
-1. **Correctness** — does it do what the plan says? Edge cases, error paths,
+1. **Correctness** - does it do what the plan says? Edge cases, error paths,
    concurrency, off-by-ones. Is every acceptance criterion actually met?
-2. **Scope** — does the diff match the plan, with nothing snuck in or left out?
-3. **Tests** — do the tests prove the behavior, or just exercise it? Would they
+2. **Scope** - does the diff match the plan, with nothing snuck in or left out?
+3. **Tests** - do the tests prove the behavior, or just exercise it? Would they
    fail if the code were wrong?
-4. **Clarity & maintainability** — names, structure, comments where the *why* is
+4. **Clarity & maintainability** - names, structure, comments where the *why* is
    non-obvious. Would the next person understand this?
-5. **Safety** — secrets, injection, unsafe defaults, data loss.
+5. **Safety** - secrets, injection, unsafe defaults, data loss.
 
 Record each issue as a finding. Be specific and actionable. Sign your review by
 filling in `reviewer:` in `review.md` - the gate refuses an anonymous review.

@@ -7,17 +7,17 @@ with no regressions. Log every cycle in `debug-log.md` in the run folder.
 
 ## The protocol (one cycle at a time)
 
-1. **Reproduce** — get the failure to happen on demand, ideally as a failing
+1. **Reproduce** - get the failure to happen on demand, ideally as a failing
    test. Name that test's title (or a substring) in `triggering_test`. Set
    `reproduced: true` only once you've actually seen it fail. If you can't
-   reproduce it, you cannot fix it — keep at the reproduce step.
-2. **Hypothesize** — write down *one* concrete, falsifiable cause. Not "something
+   reproduce it, you cannot fix it - keep at the reproduce step.
+2. **Hypothesize** - write down *one* concrete, falsifiable cause. Not "something
    with state"; rather "the cache isn't invalidated when X changes."
-3. **Predict** — state what you'd observe if the hypothesis were true (and,
+3. **Predict** - state what you'd observe if the hypothesis were true (and,
    ideally, what you'd observe if it were false).
-4. **Experiment** — run the smallest test that discriminates: a log line, a
+4. **Experiment** - run the smallest test that discriminates: a log line, a
    breakpoint, a one-line change. Record what you actually did.
-5. **Observe & conclude** — write down what you saw and what it means: hypothesis
+5. **Observe & conclude** - write down what you saw and what it means: hypothesis
    confirmed, refuted, or refined. If refuted, start a new cycle. Mark a finished
    cycle `status: complete`.
 
@@ -34,7 +34,7 @@ cycles:
   - hypothesis: "Token TTL is compared in ms against a seconds value"
     prediction: "Logging both sides shows a 1000x mismatch"
     experiment: "Added a temporary log of expiry and now()"
-    observation: "expiry=1699999999000, now=1699999999 — off by 1000x"
+    observation: "expiry=1699999999000, now=1699999999 - off by 1000x"
     conclusion: "Confirmed: units mismatch in isExpired()"
     status: complete
 ---
@@ -57,4 +57,4 @@ Free-form narrative, links, stack traces.
 
 ## Advance
 
-`gate next`. Fix the root cause you confirmed — not the symptom.
+`gate next`. Fix the root cause you confirmed - not the symptom.

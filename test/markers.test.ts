@@ -11,7 +11,7 @@ describe("managed-block markers", () => {
     expect(out).toContain("BODY");
   });
 
-  it("is idempotent — running twice yields identical output (golden invariant)", () => {
+  it("is idempotent - running twice yields identical output (golden invariant)", () => {
     const existing = "# My rules\n\nkeep me\n";
     const once = upsertManagedBlock(existing, "BODY v1");
     const twice = upsertManagedBlock(once, "BODY v1");
@@ -41,5 +41,24 @@ describe("managed-block markers", () => {
   it("handles empty input", () => {
     const out = upsertManagedBlock("", "BODY");
     expect(hasManagedBlock(out)).toBe(true);
+  });
+
+  it("never deletes user content around an orphaned start marker (no matching end)", () => {
+    const existing = `keep this\n\n${START_MARKER}\nnot a real block, no end marker\nstill user content\n`;
+
+    const once = upsertManagedBlock(existing, "BODY v1");
+    // The orphan and everything after it is untouched - only appended to.
+    expect(once).toContain("keep this");
+    expect(once).toContain("not a real block, no end marker");
+    expect(once).toContain("still user content");
+    expect(once.startsWith(existing.replace(/\s*$/, ""))).toBe(true);
+
+    const twice = upsertManagedBlock(once, "BODY v2");
+    // Running it again must not delete anything either - byte-for-byte the
+    // original orphan and its trailing user content still survive verbatim.
+    expect(twice).toContain("keep this");
+    expect(twice).toContain("not a real block, no end marker");
+    expect(twice).toContain("still user content");
+    expect(twice.startsWith(existing.replace(/\s*$/, ""))).toBe(true);
   });
 });

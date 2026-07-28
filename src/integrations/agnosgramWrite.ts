@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { writeFileAtomic } from "../core/fsx.js";
+import { GateError } from "../cli/output.js";
 import type { RetroLog } from "../artifacts/retro.js";
 
 /**
@@ -52,7 +53,7 @@ export function formatJournalEntry(params: JournalEntryParams): string {
 }
 
 /**
- * Fixed binary, fixed argv — spawns exactly `agnosgram log --stdin --agent
+ * Fixed binary, fixed argv - spawns exactly `agnosgram log --stdin --agent
  * gate` with no arguments read from repo config, so this sits outside Gate's
  * command-trust regime (TOFU): there is nothing a hostile `.gate/config.yml`
  * could inject, because config never reaches this call.
@@ -68,12 +69,28 @@ export interface JournalWriteResult {
   method: JournalWriteMethod;
 }
 
+/**
+ * The journal month, in UTC - matching the Agnosgram CLI's own contract
+ * (`toISOString().slice(0, 7)`). Using local time here would pick a different
+ * month than the CLI near a month boundary in any timezone ahead of or behind
+ * UTC, producing wrong receipts (the file Gate records in run.json isn't the
+ * one the CLI actually wrote to) and duplicate entries on retry. Must stay in
+ * sync in both the CLI-success path and the ENOENT direct-append fallback
+ * below - both funnel through this one function.
+ */
 function journalMonth(d: Date): string {
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`;
+  return d.toISOString().slice(0, 7);
+}
+
+/** Repo-relative POSIX path to the month's journal file `when` falls in (UTC). */
+export function journalFilePath(when: Date): string {
+  return join(".agnosgram", "journal", `${journalMonth(when)}.md`)
+    .split("\\")
+    .join("/");
 }
 
 function monthHeader(month: string): string {
-  return `# Journal — ${month}\n\nAppend-only. One file per month. Written by \`agnosgram log\` and, when the\nCLI is unavailable, by \`gate retro\`'s direct-append fallback.\n`;
+  return `# Journal - ${month}\n\nAppend-only. One file per month. Written by \`agnosgram log\` and, when the\nCLI is unavailable, by \`gate retro\`'s direct-append fallback.\n`;
 }
 
 /**
@@ -82,19 +99,18 @@ function monthHeader(month: string): string {
  * the agnosgram CLI fails with ENOENT.
  */
 function appendJournalDirect(root: string, entry: string, when: Date): string {
-  const month = journalMonth(when);
-  const relPath = join(".agnosgram", "journal", `${month}.md`);
+  const relPath = journalFilePath(when);
   const absPath = join(root, relPath);
   mkdirSync(dirname(absPath), { recursive: true });
-  const existing = existsSync(absPath) ? readFileSync(absPath, "utf8") : monthHeader(month);
+  const existing = existsSync(absPath) ? readFileSync(absPath, "utf8") : monthHeader(journalMonth(when));
   const withTrailingNewline = existing.endsWith("\n") ? existing : existing + "\n";
   writeFileAtomic(absPath, withTrailingNewline + "\n" + entry);
-  return relPath.split("\\").join("/");
+  return relPath;
 }
 
 /**
  * Write a pre-formatted journal entry: prefer spawning the agnosgram CLI
- * (`agnosgram log --stdin --agent gate`, entry piped on stdin — agnosgram
+ * (`agnosgram log --stdin --agent gate`, entry piped on stdin - agnosgram
  * appends stdin verbatim when it already starts with `##`); when the binary
  * isn't installed (ENOENT), fall back to appending directly in the same
  * frozen format. Any other spawn failure (binary present but errored) is
@@ -110,11 +126,15 @@ export function writeJournalEntry(root: string, entry: string, when: Date = new 
   }
   if (res.error || res.status !== 0) {
     const detail = res.error ? res.error.message : (res.stderr || res.stdout || "").trim();
-    throw new Error(`agnosgram log failed: ${detail}`);
+    throw new GateError(`agnosgram log failed: ${detail}`);
   }
 
-  const journalFile = join(".agnosgram", "journal", `${journalMonth(when)}.md`)
-    .split("\\")
-    .join("/");
-  return { journalFile, method: "agnosgram-cli" };
+  return { journalFile: journalFilePath(when), method: "agnosgram-cli" };
+}
+
+/** Whether the journal file at `journalFile` (repo-relative) already records `runId`. */
+export function journalContainsRunId(root: string, journalFile: string, runId: string): boolean {
+  const path = join(root, journalFile);
+  if (!existsSync(path)) return false;
+  return readFileSync(path, "utf8").includes(runId);
 }

@@ -1,12 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { formatJournalEntry, writeJournalEntry } from "../src/integrations/agnosgramWrite.js";
+import { formatJournalEntry, journalFilePath, writeJournalEntry } from "../src/integrations/agnosgramWrite.js";
 import { makeRepo } from "./helpers.js";
 
 const WHEN = new Date(2026, 6, 27, 14, 5); // 2026-07-27 14:05, local
 
-describe("formatJournalEntry (golden — frozen Agnosgram journal format v1)", () => {
+describe("formatJournalEntry (golden - frozen Agnosgram journal format v1)", () => {
   it("renders every slot when broke/avoid/conventions are all answered", () => {
     const entry = formatJournalEntry({
       run: { id: "2026-07-27-add-greet", title: "add greet", profile: "feature" },
@@ -106,5 +106,31 @@ describe("writeJournalEntry fallback (agnosgram binary not on PATH in this sandb
     const content = readFileSync(join(root, r1.journalFile), "utf8");
     expect(content).toContain(".gate/runs/r1");
     expect(content).toContain(".gate/runs/r2");
+  });
+});
+
+describe("journalFilePath pins the month to UTC (matches the agnosgram CLI's toISOString().slice(0,7))", () => {
+  const originalTZ = process.env.TZ;
+  afterEach(() => {
+    if (originalTZ === undefined) delete process.env.TZ;
+    else process.env.TZ = originalTZ;
+  });
+
+  it("uses the UTC month even when local wall-clock time has already rolled into the next month", () => {
+    // 2026-07-31 23:30 UTC. In a timezone well ahead of UTC, local wall-clock
+    // time here is already 2026-08-01 - a local-time-based derivation would
+    // (wrongly) file this under August, disagreeing with the agnosgram CLI's
+    // own UTC-based month, which is exactly the "wrong receipt" bug.
+    process.env.TZ = "Etc/GMT-14"; // POSIX TZ sign is inverted: GMT-14 means UTC+14
+    const when = new Date(Date.UTC(2026, 6, 31, 23, 30));
+    expect(journalFilePath(when)).toBe(".agnosgram/journal/2026-07.md");
+  });
+
+  it("uses the UTC month even when local wall-clock time is still in the previous month", () => {
+    // 2026-08-01 00:30 UTC. In a timezone well behind UTC, local wall-clock
+    // time here is still 2026-07-31 - same contract, opposite direction.
+    process.env.TZ = "Etc/GMT+12"; // POSIX TZ sign is inverted: GMT+12 means UTC-12
+    const when = new Date(Date.UTC(2026, 7, 1, 0, 30));
+    expect(journalFilePath(when)).toBe(".agnosgram/journal/2026-08.md");
   });
 });

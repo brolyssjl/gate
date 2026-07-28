@@ -9,7 +9,7 @@ import { parsePlanFile } from "../artifacts/plan.js";
  * Targets let a multi-stack repo declare named per-stack blocks in
  * `config.yml` (match globs, commands, thresholds, playbook overlays).
  * Composition rule (proposal §4.1): **profiles choose which phases run;
- * targets choose how each phase runs.** Everything here is additive — a repo
+ * targets choose how each phase runs.** Everything here is additive - a repo
  * with no `targets:` block resolves to a single bare, top-level command set,
  * byte-identical to Gate's behavior before targets existed.
  */
@@ -59,7 +59,7 @@ export function resolveRunTargets(config: GateConfig, run: Pick<Run, "targetOver
 }
 
 export interface ResolvedTarget {
-  /** null = no targets configured, or none affected — run the bare, top-level command set. */
+  /** null = no targets configured, or none affected - run the bare, top-level command set. */
   target: string | null;
   commands: Commands;
   thresholds: Thresholds;
@@ -100,7 +100,7 @@ function staticPrefix(glob: string): string {
  * match glob, without a real diff to check against yet. Errs toward inclusion
  * (a wildcard-rooted glob on either side is treated as covering everything;
  * otherwise two globs overlap when one's static path prefix contains the
- * other's) — a false positive only shows an extra, harmless playbook overlay.
+ * other's) - a false positive only shows an extra, harmless playbook overlay.
  */
 function globsOverlap(a: string, b: string): boolean {
   const pa = staticPrefix(a);
@@ -126,11 +126,14 @@ export function resolveTargetsFromPlanFiles(config: GateConfig, planFiles: strin
  */
 export function resolveDisplayTargets(root: string, run: Run, config: GateConfig): string[] {
   if (Object.keys(config.targets).length === 0) return [];
+  // An explicit override always wins - delegate to resolveRunTargets instead
+  // of re-implementing that branch here; files are irrelevant once an
+  // override is set, so it doesn't matter that none are passed.
   if (run.targetOverride && run.targetOverride.length > 0) {
-    return run.targetOverride.filter((t) => t in config.targets);
+    return resolveRunTargets(config, run, []);
   }
   const changed = changedFiles(root, run.baseRef).filter((f) => !f.startsWith(".gate/"));
-  const fromDiff = resolveAffectedTargets(config, changed);
+  const fromDiff = resolveRunTargets(config, run, changed);
   if (fromDiff.length > 0) return fromDiff;
   const { plan } = parsePlanFile(runPaths(root, run.id).plan);
   return plan ? resolveTargetsFromPlanFiles(config, plan.files) : [];

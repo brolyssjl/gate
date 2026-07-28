@@ -1,10 +1,10 @@
 import { existsSync, readFileSync } from "node:fs";
-import { parse as parseYaml } from "yaml";
+import { splitFrontmatter } from "./frontmatter.js";
 
 /**
  * The RETRO phase asks three questions (proposal §3): what broke, what to
  * avoid next time, what convention emerged. All three lists may be empty
- * individually — `hasSubstance` is the gate's real bar: at least one answer
+ * individually - `hasSubstance` is the gate's real bar: at least one answer
  * across the three, so a run can't coast through on an untouched scaffold.
  */
 export interface RetroLog {
@@ -19,7 +19,22 @@ export interface RetroParse {
   errors: string[];
 }
 
-const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/;
+/**
+ * The scaffold `gate start` writes for a run whose profile walks through
+ * RETRO, and that `advance()` also writes when a pre-Milestone-3 run (started
+ * before RETRO scaffolding existed) transitions into RETRO and finds no
+ * retro.md waiting - otherwise that run stalls forever with no way to satisfy
+ * the RETRO gate. `%TITLE%` is replaced by the caller.
+ */
+export const RETRO_TEMPLATE = `---
+broke: []
+avoid: []
+conventions: []
+---
+
+# Retro: %TITLE%
+
+`;
 
 export function parseRetroFile(path: string): RetroParse {
   if (!existsSync(path)) return { retro: null, errors: ["retro.md does not exist"] };
@@ -27,27 +42,16 @@ export function parseRetroFile(path: string): RetroParse {
 }
 
 export function parseRetro(raw: string): RetroParse {
-  const m = FRONTMATTER.exec(raw);
-  if (!m) {
-    return { retro: null, errors: ["retro.md must start with a YAML frontmatter block (---)"] };
-  }
-  let fm: unknown;
-  try {
-    fm = parseYaml(m[1]!);
-  } catch (e) {
-    return { retro: null, errors: [`frontmatter is not valid YAML: ${(e as Error).message}`] };
-  }
-  if (!fm || typeof fm !== "object") {
-    return { retro: null, errors: ["frontmatter must be a YAML mapping"] };
-  }
-  const data = fm as Record<string, unknown>;
+  const split = splitFrontmatter(raw, "retro.md");
+  if (!split.ok) return { retro: null, errors: split.errors };
+  const { data, body } = split.value;
 
   const broke = asStringArray(data.broke);
   const avoid = asStringArray(data.avoid);
   const conventions = asStringArray(data.conventions);
 
   return {
-    retro: { broke, avoid, conventions, body: (m[2] ?? "").trim() },
+    retro: { broke, avoid, conventions, body },
     errors: [],
   };
 }

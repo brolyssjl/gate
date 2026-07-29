@@ -149,6 +149,39 @@ describe("branch-keyed run concurrency", () => {
     expect(withRun.stderr).not.toContain("detached");
   });
 
+  it("--run refuses a non-active (done/abandoned) run instead of letting phase gates pass vacuously", () => {
+    const repo = makeRepo();
+    gate(repo, ["init"]);
+    seedLegacyRun(repo, "finished-run"); // schema 2, status: active by default - override below
+    const runPath = join(repo, ".gate", "runs", "finished-run", "run.json");
+    const run = JSON.parse(readFileSync(runPath, "utf8")) as { status: string };
+    run.status = "done";
+    writeFileSync(runPath, JSON.stringify(run));
+
+    const res = gate(repo, ["check", "--run", "finished-run"]);
+    expect(res.code).not.toBe(0);
+    expect(res.stderr).toContain("not active");
+  });
+
+  it("--run refuses a run whose recorded branch doesn't match the checked-out branch (would otherwise diff against the wrong tree)", () => {
+    const repo = makeRepo({ "package.json": JSON.stringify({ name: "fx", scripts: { test: "node -e 0" } }) });
+    gate(repo, ["init"]);
+    gate(repo, ["trust"]);
+    const mainBranch = git(repo, ["branch", "--show-current"]);
+    const started = gate(repo, ["start", "run on main", "--profile", "docs", "--json"]).json() as { id: string };
+
+    git(repo, ["checkout", "-b", "other-branch"]);
+    const res = gate(repo, ["check", "--run", started.id]);
+    expect(res.code).not.toBe(0);
+    expect(res.stderr).toContain(mainBranch);
+    expect(res.stderr).toContain("other-branch");
+
+    // Checking back out to the run's own branch, --run works again.
+    git(repo, ["checkout", mainBranch]);
+    const ok = gate(repo, ["check", "--run", started.id]);
+    expect(ok.stderr).not.toContain("checked out");
+  });
+
   it("migrates the legacy single-run .gate/current pointer into per-branch current.json", () => {
     const repo = makeRepo();
     gate(repo, ["init"]);

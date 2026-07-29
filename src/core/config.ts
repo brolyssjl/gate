@@ -16,11 +16,24 @@ export interface Thresholds {
   diff_coverage?: number;
 }
 
+/** Diff-coverage report formats Gate can parse (Milestone 4 adds coverage-py/go-cover/lcov). */
+export type CoverageFormat = "istanbul" | "generic" | "coverage-py" | "go-cover" | "lcov" | "auto";
+const COVERAGE_FORMATS: readonly CoverageFormat[] = [
+  "istanbul",
+  "generic",
+  "coverage-py",
+  "go-cover",
+  "lcov",
+  "auto",
+];
+
 export interface TargetConfig {
   match: string[];
   commands?: Commands;
   thresholds?: Thresholds;
   playbooks?: Record<string, string>;
+  /** Overrides the top-level `coverage_format` for this target only. */
+  coverage_format?: CoverageFormat;
 }
 
 export type PhaseMode = "required" | "optional" | "off";
@@ -41,9 +54,11 @@ export interface GateConfig {
   integrations: Record<string, string>;
   /**
    * Coverage report format hint. `istanbul` = coverage-final.json (jest/vitest),
-   * `generic` = the documented JSON contract. Defaults to auto-detect.
+   * `generic` = the documented JSON contract, `coverage-py` = coverage.py's
+   * `coverage json` output, `go-cover` = `go test -coverprofile` text profiles,
+   * `lcov` = the standard lcov.info text format. Defaults to auto-detect.
    */
-  coverage_format?: "istanbul" | "generic" | "auto";
+  coverage_format?: CoverageFormat;
   /**
    * `gate prune` retention defaults. Deliberately NOT part of the trust hash
    * (`commandsBlockHashSource`) - it configures which run folders get
@@ -69,6 +84,9 @@ export function loadConfig(root: string): GateConfig {
   if (!raw || typeof raw !== "object") return { ...DEFAULT_CONFIG };
   const targets = raw.targets ?? {};
   validateTargets(targets);
+  if (raw.coverage_format !== undefined && !COVERAGE_FORMATS.includes(raw.coverage_format)) {
+    throw new GateError(`.gate/config.yml: coverage_format must be one of ${COVERAGE_FORMATS.join(", ")}`);
+  }
   return {
     commands: raw.commands ?? {},
     thresholds: raw.thresholds ?? {},
@@ -117,6 +135,11 @@ function validateTargets(targets: Record<string, unknown>): void {
       (typeof t.playbooks !== "object" || t.playbooks === null || Array.isArray(t.playbooks))
     ) {
       throw new GateError(`.gate/config.yml: target "${name}".playbooks must be a mapping of phase → path`);
+    }
+    if (t.coverage_format !== undefined && !COVERAGE_FORMATS.includes(t.coverage_format as CoverageFormat)) {
+      throw new GateError(
+        `.gate/config.yml: target "${name}".coverage_format must be one of ${COVERAGE_FORMATS.join(", ")}`,
+      );
     }
   }
 }

@@ -1,7 +1,7 @@
 import { changedFiles } from "./git.js";
 import { matchesAny } from "./glob.js";
 import { runPaths } from "./paths.js";
-import type { Commands, GateConfig, Thresholds } from "./config.js";
+import type { Commands, CoverageFormat, GateConfig, Thresholds } from "./config.js";
 import type { Run } from "./run.js";
 import { parsePlanFile } from "../artifacts/plan.js";
 
@@ -31,6 +31,11 @@ export function targetCommands(config: GateConfig, name: string): Commands {
 /** A target's effective thresholds: its own thresholds layered over the top-level defaults. */
 export function targetThresholds(config: GateConfig, name: string): Thresholds {
   return { ...config.thresholds, ...(config.targets[name]?.thresholds ?? {}) };
+}
+
+/** A target's effective coverage format: its own override, or the top-level default. */
+export function targetCoverageFormat(config: GateConfig, name: string): CoverageFormat {
+  return config.targets[name]?.coverage_format ?? config.coverage_format ?? "auto";
 }
 
 /** `base` for the untargeted case (JSON stability), `base[name]` once a target applies. */
@@ -63,6 +68,7 @@ export interface ResolvedTarget {
   target: string | null;
   commands: Commands;
   thresholds: Thresholds;
+  coverageFormat: CoverageFormat;
 }
 
 /**
@@ -74,17 +80,20 @@ export interface ResolvedTarget {
  * yielding bracketed check names via `checkName`.
  */
 export function resolvePhaseTargets(config: GateConfig, run: Pick<Run, "targetOverride">, files: string[]): ResolvedTarget[] {
-  if (Object.keys(config.targets).length === 0) {
-    return [{ target: null, commands: config.commands, thresholds: config.thresholds }];
-  }
+  const bare: ResolvedTarget = {
+    target: null,
+    commands: config.commands,
+    thresholds: config.thresholds,
+    coverageFormat: config.coverage_format ?? "auto",
+  };
+  if (Object.keys(config.targets).length === 0) return [bare];
   const affected = resolveRunTargets(config, run, files);
-  if (affected.length === 0) {
-    return [{ target: null, commands: config.commands, thresholds: config.thresholds }];
-  }
+  if (affected.length === 0) return [bare];
   return affected.map((name) => ({
     target: name,
     commands: targetCommands(config, name),
     thresholds: targetThresholds(config, name),
+    coverageFormat: targetCoverageFormat(config, name),
   }));
 }
 

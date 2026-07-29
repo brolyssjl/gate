@@ -11,6 +11,7 @@ import { implementGate } from "../src/gates/implement.js";
 import { testGate } from "../src/gates/test.js";
 import { debugGate } from "../src/gates/debug.js";
 import { reviewGate } from "../src/gates/review.js";
+import { retroGate } from "../src/gates/retro.js";
 import type { GateResult } from "../src/gates/types.js";
 import { headSha, makeRepo, writeConfig, writeFile } from "./helpers.js";
 
@@ -21,6 +22,7 @@ const EMPTY_CONFIG: GateConfig = {
   phases: {},
   integrations: {},
   coverage_format: "auto",
+  retention: {},
 };
 
 function runOn(phase: Run["phase"], baseRef: string | null): Run {
@@ -84,6 +86,144 @@ describe("PLAN gate", () => {
     writePlan(root, GOOD_PLAN + "\nedited after approval\n"); // plan hash now differs
     const res = planGate({ root, run, config: EMPTY_CONFIG });
     expect(check(res, "plan.approved")).toBe(false);
+  });
+
+  it("does not add plan.spec when no SDD directory is detected", () => {
+    const root = makeRepo();
+    writePlan(root, GOOD_PLAN);
+    const run = runOn("PLAN", null);
+    approve(root, run);
+    const res = planGate({ root, run, config: EMPTY_CONFIG });
+    expect(res.checks.some((c) => c.name === "plan.spec")).toBe(false);
+  });
+
+  it("requires a spec citation once an SDD directory is detected", () => {
+    const root = makeRepo();
+    writeFile(root, "openspec/changes/x/spec.md", "# spec\n");
+    writePlan(root, GOOD_PLAN);
+    const run = runOn("PLAN", null);
+    approve(root, run);
+    const res = planGate({ root, run, config: EMPTY_CONFIG });
+    expect(check(res, "plan.spec")).toBe(false);
+  });
+
+  it("passes plan.spec when the cited path exists under the detected SDD dir", () => {
+    const root = makeRepo();
+    writeFile(root, "openspec/changes/x/spec.md", "# spec\n");
+    writePlan(root, GOOD_PLAN.replace("goal: Add greet", "goal: Add greet\nspec: openspec/changes/x/spec.md"));
+    const run = runOn("PLAN", null);
+    approve(root, run);
+    const res = planGate({ root, run, config: EMPTY_CONFIG });
+    expect(check(res, "plan.spec")).toBe(true);
+  });
+
+  it("fails plan.spec when the cited path is outside the SDD dir", () => {
+    const root = makeRepo();
+    writeFile(root, "openspec/changes/x/spec.md", "# spec\n");
+    writeFile(root, "elsewhere.md", "not a spec\n");
+    writePlan(root, GOOD_PLAN.replace("goal: Add greet", "goal: Add greet\nspec: elsewhere.md"));
+    const run = runOn("PLAN", null);
+    approve(root, run);
+    const res = planGate({ root, run, config: EMPTY_CONFIG });
+    expect(check(res, "plan.spec")).toBe(false);
+  });
+
+  it("fails plan.spec when '..' would escape the SDD dir after normalization", () => {
+    const root = makeRepo();
+    writeFile(root, "openspec/changes/x/spec.md", "# spec\n");
+    writeFile(root, "README.md", "not a spec\n");
+    // "openspec/../README.md" string-starts-with "openspec/" but normalizes
+    // to "README.md" - outside the detected SDD dir entirely.
+    writePlan(root, GOOD_PLAN.replace("goal: Add greet", "goal: Add greet\nspec: openspec/../README.md"));
+    const run = runOn("PLAN", null);
+    approve(root, run);
+    const res = planGate({ root, run, config: EMPTY_CONFIG });
+    expect(check(res, "plan.spec")).toBe(false);
+  });
+
+  it("skips plan.spec entirely when integrations.sdd is off", () => {
+    const root = makeRepo();
+    writeFile(root, "openspec/changes/x/spec.md", "# spec\n");
+    writePlan(root, GOOD_PLAN);
+    const run = runOn("PLAN", null);
+    approve(root, run);
+    const config = writeConfig(root, { integrations: { sdd: "off" } });
+    const res = planGate({ root, run, config });
+    expect(res.checks.some((c) => c.name === "plan.spec")).toBe(false);
+  });
+
+  it("does not add plan.advise without an .agnosgram store", () => {
+    const root = makeRepo();
+    writePlan(root, GOOD_PLAN);
+    const run = runOn("PLAN", null);
+    approve(root, run);
+    const res = planGate({ root, run, config: EMPTY_CONFIG });
+    expect(res.checks.some((c) => c.name === "plan.advise")).toBe(false);
+  });
+
+  it("passes plan.advise with a note when a store exists but no report was generated", () => {
+    const root = makeRepo();
+    writeFile(root, ".agnosgram/config.yml", "version: 1\n");
+    writePlan(root, GOOD_PLAN);
+    const run = runOn("PLAN", null);
+    approve(root, run);
+    const res = planGate({ root, run, config: EMPTY_CONFIG });
+    expect(check(res, "plan.advise")).toBe(true);
+  });
+
+  it("fails plan.advise on an unacknowledged contradiction", () => {
+    const root = makeRepo();
+    writeFile(root, ".agnosgram/config.yml", "version: 1\n");
+    writePlan(root, GOOD_PLAN);
+    writeFile(
+      root,
+      join(".gate", "runs", "r1", "plan.md.advise.json"),
+      JSON.stringify({
+        agnosgram_advise: 1,
+        plan: ".gate/runs/r1/plan.md",
+        generated: "2026-07-27",
+        checked_ids: ["LES-002"],
+        contradictions: [{ record_id: "LES-002", severity: "blocker", kind: "empirical" }],
+        clear: false,
+      }),
+    );
+    const run = runOn("PLAN", null);
+    approve(root, run);
+    const res = planGate({ root, run, config: EMPTY_CONFIG });
+    expect(check(res, "plan.advise")).toBe(false);
+  });
+
+  it("passes plan.advise once every contradiction is acknowledged in plan.md", () => {
+    const root = makeRepo();
+    writeFile(root, ".agnosgram/config.yml", "version: 1\n");
+    writePlan(root, GOOD_PLAN.replace("goal: Add greet", "goal: Add greet\nacknowledgments: [LES-002]"));
+    writeFile(
+      root,
+      join(".gate", "runs", "r1", "plan.md.advise.json"),
+      JSON.stringify({
+        agnosgram_advise: 1,
+        plan: ".gate/runs/r1/plan.md",
+        generated: "2026-07-27",
+        checked_ids: ["LES-002"],
+        contradictions: [{ record_id: "LES-002", severity: "blocker", kind: "empirical" }],
+        clear: false,
+      }),
+    );
+    const run = runOn("PLAN", null);
+    approve(root, run);
+    const res = planGate({ root, run, config: EMPTY_CONFIG });
+    expect(check(res, "plan.advise")).toBe(true);
+  });
+
+  it("skips plan.advise entirely when integrations.agnosgram is off", () => {
+    const root = makeRepo();
+    writeFile(root, ".agnosgram/config.yml", "version: 1\n");
+    writePlan(root, GOOD_PLAN);
+    const run = runOn("PLAN", null);
+    approve(root, run);
+    const config = writeConfig(root, { integrations: { agnosgram: "off" } });
+    const res = planGate({ root, run, config });
+    expect(res.checks.some((c) => c.name === "plan.advise")).toBe(false);
   });
 });
 
@@ -496,5 +636,73 @@ describe("REVIEW gate", () => {
     const res = reviewGate({ root, run, config });
     expect(check(res, "review.evidence")).toBe(false);
     expect(existsSync(join(root, "ran.txt"))).toBe(false);
+  });
+});
+
+function writeRetro(root: string, content: string): void {
+  writeFile(root, join(".gate", "runs", "r1", "retro.md"), content);
+}
+
+const SUBSTANTIVE_RETRO = `---\nbroke: []\navoid:\n  - "Do not skip reproduce"\nconventions: []\n---\n# Retro`;
+const EMPTY_RETRO = `---\nbroke: []\navoid: []\nconventions: []\n---\n# Retro`;
+
+describe("RETRO gate", () => {
+  it("fails when retro.md is missing", () => {
+    const root = makeRepo();
+    const res = retroGate({ root, run: runOn("RETRO", null), config: EMPTY_CONFIG });
+    expect(check(res, "retro.schema")).toBe(false);
+  });
+
+  it("fails retro.substance on an empty scaffold", () => {
+    const root = makeRepo();
+    writeRetro(root, EMPTY_RETRO);
+    const res = retroGate({ root, run: runOn("RETRO", null), config: EMPTY_CONFIG });
+    expect(check(res, "retro.substance")).toBe(false);
+  });
+
+  it("passes with no .agnosgram store (journal sync not required)", () => {
+    const root = makeRepo();
+    writeRetro(root, SUBSTANTIVE_RETRO);
+    const res = retroGate({ root, run: runOn("RETRO", null), config: EMPTY_CONFIG });
+    expect(res.ok).toBe(true);
+    expect(check(res, "retro.journal")).toBe(true);
+  });
+
+  it("passes when the agnosgram integration is off, even with a store present", () => {
+    const root = makeRepo();
+    writeFile(root, ".agnosgram/journal/2026-01.md", "# Journal\n");
+    writeRetro(root, SUBSTANTIVE_RETRO);
+    const config = writeConfig(root, { integrations: { agnosgram: "off" } });
+    const res = retroGate({ root, run: runOn("RETRO", null), config });
+    expect(check(res, "retro.journal")).toBe(true);
+  });
+
+  it("fails retro.journal when a store is present but no sync was recorded", () => {
+    const root = makeRepo();
+    writeFile(root, ".agnosgram/journal/2026-01.md", "# Journal\n");
+    writeRetro(root, SUBSTANTIVE_RETRO);
+    const res = retroGate({ root, run: runOn("RETRO", null), config: EMPTY_CONFIG });
+    expect(check(res, "retro.journal")).toBe(false);
+  });
+
+  it("passes retro.journal once the run.retro receipt points at a journal entry containing the run id", () => {
+    const root = makeRepo();
+    writeFile(root, ".agnosgram/journal/2026-01.md", "# Journal\n\n## entry\n- **Source:** .gate/runs/r1\n");
+    writeRetro(root, SUBSTANTIVE_RETRO);
+    const run = runOn("RETRO", null);
+    run.retro = { journalFile: ".agnosgram/journal/2026-01.md", syncedAt: nowIso(), method: "fallback" };
+    const res = retroGate({ root, run, config: EMPTY_CONFIG });
+    expect(res.ok).toBe(true);
+    expect(check(res, "retro.journal")).toBe(true);
+  });
+
+  it("fails retro.journal when the recorded journal file no longer contains the run id", () => {
+    const root = makeRepo();
+    writeFile(root, ".agnosgram/journal/2026-01.md", "# Journal\n\n## entry\n- **Did:** unrelated\n");
+    writeRetro(root, SUBSTANTIVE_RETRO);
+    const run = runOn("RETRO", null);
+    run.retro = { journalFile: ".agnosgram/journal/2026-01.md", syncedAt: nowIso(), method: "fallback" };
+    const res = retroGate({ root, run, config: EMPTY_CONFIG });
+    expect(check(res, "retro.journal")).toBe(false);
   });
 });

@@ -2,8 +2,9 @@ import { existsSync, readFileSync } from "node:fs";
 import { runPaths } from "../core/paths.js";
 import { writeFileAtomic } from "../core/fsx.js";
 import { diffText, treeFingerprint } from "../core/git.js";
-import { resolvePlaybook } from "../core/playbooks.js";
+import { resolvePlaybookWithOverlays } from "../core/playbooks.js";
 import { nowIso, writeRun } from "../core/run.js";
+import { resolveDisplayTargets } from "../core/targets.js";
 import { emit, GateError, requireActiveRun, type ParsedArgs } from "./shared.js";
 
 const REVIEW_TEMPLATE = `---
@@ -33,7 +34,7 @@ waive with a human rationale.
  * accidental re-run cannot silently re-baseline what the reviewer saw.
  */
 export function cmdReview(args: ParsedArgs): void {
-  const { root, run } = requireActiveRun();
+  const { root, run, config } = requireActiveRun();
   if (run.phase !== "REVIEW") {
     throw new GateError(`nothing to review - run is in ${run.phase}, not REVIEW`);
   }
@@ -58,7 +59,8 @@ export function cmdReview(args: ParsedArgs): void {
 
   const plan = existsSync(paths.plan) ? readFileSync(paths.plan, "utf8").trim() : "(no plan.md)";
   const diff = diffText(root, run.baseRef).trim() || "(no diff)";
-  const rubric = resolvePlaybook(root, "REVIEW") ?? "(no REVIEW playbook found)";
+  const targetNames = resolveDisplayTargets(root, run, config);
+  const rubric = resolvePlaybookWithOverlays(root, "REVIEW", config, targetNames) ?? "(no REVIEW playbook found)";
   const treeHash = treeFingerprint(root);
 
   const packet = [

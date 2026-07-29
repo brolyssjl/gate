@@ -1,17 +1,23 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { runPaths } from "../core/paths.js";
-import { changedLines } from "../core/git.js";
+import { changedLines, changedFiles } from "../core/git.js";
 import { runCommand } from "../core/exec.js";
 import { writeFileAtomic } from "../core/fsx.js";
 import { isCommandsTrusted } from "../core/trust.js";
 import { parsePlanFile } from "../artifacts/plan.js";
+import {
+  checkName,
+  filesForTarget,
+  resolvePhaseTargets,
+  type ResolvedTarget,
+} from "../core/targets.js";
 import { parseTestReport, type NormalizedReport } from "./testReport.js";
 import { diffCoverage, loadCoverage } from "./coverage.js";
 import { commandCheck } from "./implement.js";
 import { type Check, type GateContext, type GateResult, fail, pass, result } from "./types.js";
 
 /**
- * TEST gate — deterministic:
+ * TEST gate - deterministic:
  *  - `build` and `lint` exit 0 (parity with IMPLEMENT; the bugfix profile has
  *    no IMPLEMENT phase, so this is where its build/lint discipline lives)
  *  - the test command exits 0 (no green claim over a red suite)
@@ -22,71 +28,74 @@ import { type Check, type GateContext, type GateResult, fail, pass, result } fro
  * Machine evidence is produced by Gate itself: the report comes from the test
  * command Gate just ran (stdout, or a file that command wrote), never from a
  * file an agent staged in advance.
+ *
+ * Targets (Milestone 3): when `config.targets` resolves to a single bare,
+ * top-level command set (no targets configured, or none affected by the
+ * touched files), this delegates to `runBareTargetGate` - the exact same
+ * check sequence and names Gate produced before targets existed. Once ≥1
+ * named target is affected, each gets its own `test.build[name]` /
+ * `test.lint[name]` / `test.command[name]` / `test.coverage[name]` checks;
+ * `test.criteria` / `test.no-skips` stay single, aggregate checks over every
+ * affected target's combined report (a criterion is a property of the plan,
+ * not of one stack).
  */
 export function testGate(ctx: GateContext): GateResult {
-  const checks: Check[] = [];
-  const { dir, testReport: reportPath } = runPaths(ctx.root, ctx.run.id);
+  const { testReport: reportPath } = runPaths(ctx.root, ctx.run.id);
+  const touched = changedFiles(ctx.root, ctx.run.baseRef).filter((f) => !f.startsWith(".gate/"));
 
-  const testCmd = ctx.config.commands.test;
+  // Untrusted config never spawns a process, for any target (proposal §9) -
+  // the trust hash already covers the targets block (commandsBlockHashSource).
+  if (!isCommandsTrusted(ctx.root)) {
+    return result("TEST", [
+      fail("test.command", "test command not trusted - review .gate/config.yml and run `gate trust`"),
+    ]);
+  }
+
+  const resolved = resolvePhaseTargets(ctx.config, ctx.run, touched);
+  if (resolved.length === 1 && resolved[0]!.target === null) {
+    return result("TEST", runBareTargetGate(ctx, resolved[0]!, reportPath));
+  }
+  return result("TEST", runTargetedGate(ctx, resolved, reportPath, touched));
+}
+
+/**
+ * Byte-identical to Gate's pre-targets TEST gate: no `targets:` configured,
+ * or the touched files matched none. `bare.commands`/`bare.thresholds` are
+ * always exactly `ctx.config.commands`/`ctx.config.thresholds` in this case.
+ */
+function runBareTargetGate(ctx: GateContext, bare: ResolvedTarget, reportPath: string): Check[] {
+  const checks: Check[] = [];
+  const { dir } = runPaths(ctx.root, ctx.run.id);
+
+  const testCmd = bare.commands.test;
   if (!testCmd) {
     checks.push(fail("test.command", "no test command configured (commands.test)"));
-    return result("TEST", checks);
-  }
-  // Untrusted config never spawns a process (proposal §9).
-  if (!isCommandsTrusted(ctx.root)) {
-    checks.push(
-      fail("test.command", "test command not trusted — review .gate/config.yml and run `gate trust`"),
-    );
-    return result("TEST", checks);
+    return checks;
   }
 
-  // 1. Build + lint. Redundant for the feature profile (IMPLEMENT ran them on
-  //    an older tree) but load-bearing for bugfix, which never walks IMPLEMENT.
-  checks.push(commandCheck("test.build", ctx.config.commands.build, ctx.root, "build", true));
-  checks.push(commandCheck("test.lint", ctx.config.commands.lint, ctx.root, "lint", true));
+  checks.push(commandCheck("test.build", bare.commands.build, ctx.root, "build", true));
+  checks.push(commandCheck("test.lint", bare.commands.lint, ctx.root, "lint", true));
 
-  // 2. Test command exit code — the load-bearing check.
   const reportBefore = statReport(reportPath);
   const run = runCommand(testCmd, ctx.root, { GATE_RUN_DIR: dir, GATE_TEST_REPORT: reportPath });
-  const stdout = run.stdout;
   checks.push(
     run.code === 0
       ? pass("test.command", "test suite passed (exit 0)")
-      : fail(
-          "test.command",
-          `test suite failed (exit ${run.code}): ${(run.stderr || run.stdout).trim().split("\n").slice(-3).join(" ⏎ ")}`,
-        ),
+      : fail("test.command", `test suite failed (exit ${run.code}): ${tail(run.stderr || run.stdout)}`),
   );
 
-  // 3. Normalized report from the run Gate just executed.
-  const report = loadReport(reportPath, stdout, reportBefore);
+  const report = loadReport(reportPath, run.stdout, reportBefore);
 
-  // 4. Criterion → test mapping.
   const { plan } = parsePlanFile(runPaths(ctx.root, ctx.run.id).plan);
   const testCriteria = (plan?.criteria ?? []).filter((c) => c.verify.toLowerCase().startsWith("test:"));
   if (testCriteria.length === 0) {
     checks.push(pass("test.criteria", "no test-verified criteria to map"));
   } else if (!report) {
-    checks.push(
-      fail("test.criteria", "cannot verify criterion→test mapping: no parseable test report found"),
-    );
+    checks.push(fail("test.criteria", "cannot verify criterion→test mapping: no parseable test report found"));
   } else {
-    const passing = report.tests.filter((t) => t.status === "passed").map((t) => t.name.toLowerCase());
-    const unmapped = testCriteria.filter((c) => {
-      const needle = c.verify.slice(c.verify.indexOf(":") + 1).trim().toLowerCase();
-      return !passing.some((name) => name.includes(needle));
-    });
-    checks.push(
-      unmapped.length === 0
-        ? pass("test.criteria", `all ${testCriteria.length} test-verified criteria map to a passing test`)
-        : fail(
-            "test.criteria",
-            `criteria without a passing named test: ${unmapped.map((c) => `${c.id} (${c.verify})`).join(", ")}`,
-          ),
-    );
+    checks.push(criteriaCheck("test.criteria", testCriteria, report));
   }
 
-  // 5. No skipped tests.
   if (report) {
     checks.push(
       report.skipped === 0
@@ -95,13 +104,147 @@ export function testGate(ctx: GateContext): GateResult {
     );
   }
 
-  // 6. Diff coverage (only when configured).
-  const threshold = ctx.config.thresholds.diff_coverage;
+  const threshold = bare.thresholds.diff_coverage;
   if (threshold !== undefined) {
-    checks.push(coverageCheck(ctx, threshold));
+    const allChanged = changedLines(ctx.root, ctx.run.baseRef);
+    checks.push(coverageCheck(ctx, threshold, "test.coverage", bare.commands.coverage, allChanged, null));
   }
 
-  return result("TEST", checks);
+  return checks;
+}
+
+/** One or more named targets are affected - bracketed per-target checks, aggregate criteria/skips. */
+function runTargetedGate(
+  ctx: GateContext,
+  resolved: ResolvedTarget[],
+  reportPath: string,
+  touched: string[],
+): Check[] {
+  const checks: Check[] = [];
+  const reports: NormalizedReport[] = [];
+  const { dir } = runPaths(ctx.root, ctx.run.id);
+  // Computed once - every target and the residual-coverage check below share
+  // the same changed-lines map instead of each re-invoking `git diff`.
+  const allChanged = changedLines(ctx.root, ctx.run.baseRef);
+
+  for (const t of resolved) {
+    const testCmd = t.commands.test;
+    if (!testCmd) {
+      checks.push(fail(checkName("test.command", t.target), "no test command configured (commands.test)"));
+      continue;
+    }
+    checks.push(commandCheck(checkName("test.build", t.target), t.commands.build, ctx.root, "build", true));
+    checks.push(commandCheck(checkName("test.lint", t.target), t.commands.lint, ctx.root, "lint", true));
+
+    const path = targetReportPath(reportPath, t.target);
+    const reportBefore = statReport(path);
+    const run = runCommand(testCmd, ctx.root, { GATE_RUN_DIR: dir, GATE_TEST_REPORT: path });
+    checks.push(
+      run.code === 0
+        ? pass(checkName("test.command", t.target), "test suite passed (exit 0)")
+        : fail(checkName("test.command", t.target), `test suite failed (exit ${run.code}): ${tail(run.stderr || run.stdout)}`),
+    );
+
+    const report = loadReport(path, run.stdout, reportBefore);
+    if (report) {
+      reports.push(report);
+    } else if (run.code === 0) {
+      // Fail closed, mirroring the bare path: a green exit alone proves
+      // nothing without a report naming what ran. Without this, this
+      // target's tests would just silently drop out of test.criteria /
+      // test.no-skips, which verify only the OTHER affected targets.
+      checks.push(
+        fail(
+          checkName("test.report", t.target),
+          "test suite passed (exit 0) but produced no parseable test report - " +
+            "emit a JSON report on stdout or write it to $GATE_TEST_REPORT",
+        ),
+      );
+    }
+
+    const threshold = t.thresholds.diff_coverage;
+    if (threshold !== undefined && t.target) {
+      const scopeFiles = filesForTarget(ctx.config, t.target, touched);
+      checks.push(
+        coverageCheck(ctx, threshold, checkName("test.coverage", t.target), t.commands.coverage, allChanged, scopeFiles),
+      );
+    }
+  }
+
+  checks.push(...residualCoverageChecks(ctx, resolved, touched, allChanged));
+
+  const combined: NormalizedReport | null =
+    reports.length > 0
+      ? { tests: reports.flatMap((r) => r.tests), skipped: reports.reduce((a, r) => a + r.skipped, 0) }
+      : null;
+
+  const { plan } = parsePlanFile(runPaths(ctx.root, ctx.run.id).plan);
+  const testCriteria = (plan?.criteria ?? []).filter((c) => c.verify.toLowerCase().startsWith("test:"));
+  if (testCriteria.length === 0) {
+    checks.push(pass("test.criteria", "no test-verified criteria to map"));
+  } else if (!combined) {
+    checks.push(fail("test.criteria", "cannot verify criterion→test mapping: no parseable test report found"));
+  } else {
+    checks.push(criteriaCheck("test.criteria", testCriteria, combined));
+  }
+
+  if (combined) {
+    checks.push(
+      combined.skipped === 0
+        ? pass("test.no-skips", "no skipped tests")
+        : fail("test.no-skips", `${combined.skipped} skipped test(s); un-skip or split into a separate run`),
+    );
+  }
+
+  return checks;
+}
+
+/**
+ * Changed lines in files that fall under NO affected target's `match` globs
+ * never get scoped into any per-target `test.coverage[name]` check above, so
+ * without this they'd escape diff coverage entirely once ≥1 target is
+ * affected. Scoped to the top-level coverage command/threshold - the same
+ * command set a bare (untargeted) run would have used for these files.
+ */
+function residualCoverageChecks(
+  ctx: GateContext,
+  resolved: ResolvedTarget[],
+  touched: string[],
+  allChanged: Map<string, Set<number>>,
+): Check[] {
+  const threshold = ctx.config.thresholds.diff_coverage;
+  if (threshold === undefined) return [];
+
+  const affected = resolved.map((r) => r.target).filter((t): t is string => t !== null);
+  const matched = new Set(affected.flatMap((name) => filesForTarget(ctx.config, name, touched)));
+  const unmatched = touched.filter((f) => !matched.has(f));
+  if (unmatched.length === 0) return [];
+
+  return [coverageCheck(ctx, threshold, "test.coverage", ctx.config.commands.coverage, allChanged, unmatched)];
+}
+
+function criteriaCheck(
+  name: string,
+  testCriteria: Array<{ id: string; verify: string }>,
+  report: NormalizedReport,
+): Check {
+  const passing = report.tests.filter((t) => t.status === "passed").map((t) => t.name.toLowerCase());
+  const unmapped = testCriteria.filter((c) => {
+    const needle = c.verify.slice(c.verify.indexOf(":") + 1).trim().toLowerCase();
+    return !passing.some((n) => n.includes(needle));
+  });
+  return unmapped.length === 0
+    ? pass(name, `all ${testCriteria.length} test-verified criteria map to a passing test`)
+    : fail(name, `criteria without a passing named test: ${unmapped.map((c) => `${c.id} (${c.verify})`).join(", ")}`);
+}
+
+function tail(s: string): string {
+  return s.trim().split("\n").slice(-3).join(" ⏎ ");
+}
+
+/** Per-target report path: unchanged for the bare case, `<base>.<target>.json` otherwise. */
+export function targetReportPath(basePath: string, target: string | null): string {
+  return target ? basePath.replace(/\.json$/, `.${target}.json`) : basePath;
 }
 
 /** Identity of a report file's on-disk state, for was-it-rewritten detection. */
@@ -120,7 +263,7 @@ export function statReport(reportPath: string): ReportStat | null {
  * Normalized report for the test run Gate just executed. Evidence integrity:
  * if the agent could hand Gate the report, enforcement would be fiction, so
  * the sources are, in order:
- *  1. the command's stdout (captured by Gate itself) — Gate then persists the
+ *  1. the command's stdout (captured by Gate itself) - Gate then persists the
  *     normalized report to `test-report.json` for the audit trail;
  *  2. a `test-report.json` the command wrote *during this run* (runners can
  *     target it via $GATE_TEST_REPORT), detected by the file's stat changing
@@ -150,25 +293,40 @@ export function loadReport(reportPath: string, stdout: string, before: ReportSta
   return null;
 }
 
-function coverageCheck(ctx: GateContext, threshold: number): Check {
-  const covCmd = ctx.config.commands.coverage;
+/**
+ * Diff coverage. `scopeFiles === null` covers every changed line (the
+ * bare/legacy case and the top-level residual check) - coverage command run
+ * unscoped, identical to pre-targets behavior. A non-null `scopeFiles` scopes
+ * to only the changed lines under those files (a target's `match` globs, or
+ * the files matching no target at all), using the given coverage command.
+ */
+function coverageCheck(
+  ctx: GateContext,
+  threshold: number,
+  name: string,
+  covCmd: string | undefined,
+  allChanged: Map<string, Set<number>>,
+  scopeFiles: string[] | null,
+): Check {
   if (covCmd) runCommand(covCmd, ctx.root);
   const coverage = loadCoverage(ctx.root, ctx.config.coverage_format);
   if (!coverage) {
     return fail(
-      "test.coverage",
+      name,
       `diff coverage threshold is ${threshold}% but no coverage report was found ` +
         `(expected coverage/coverage-final.json or coverage/gate-coverage.json)`,
     );
   }
-  const changed = changedLines(ctx.root, ctx.run.baseRef);
+  const changed = scopeFiles
+    ? new Map([...allChanged].filter(([f]) => scopeFiles.includes(f)))
+    : allChanged;
   const dc = diffCoverage(changed, coverage);
   if (dc.percent >= threshold) {
-    return pass("test.coverage", `diff coverage ${dc.percent}% ≥ ${threshold}%`);
+    return pass(name, `diff coverage ${dc.percent}% ≥ ${threshold}%`);
   }
   const gap = dc.gaps
     .slice(0, 5)
     .map((g) => `${g.file}:${g.uncovered.slice(0, 10).join(",")}`)
     .join("; ");
-  return fail("test.coverage", `diff coverage ${dc.percent}% < ${threshold}% — uncovered changed lines: ${gap}`);
+  return fail(name, `diff coverage ${dc.percent}% < ${threshold}% - uncovered changed lines: ${gap}`);
 }

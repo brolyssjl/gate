@@ -1,8 +1,25 @@
 {
-  "name": "gate",
+  "name": "gate-cli",
   "version": "0.2.0",
   "private": true,
   "description": "Agent-agnostic quality harness: turns the dev flow into an enforced state machine with deterministic gates.",
+  "keywords": [
+    "ai",
+    "agent",
+    "quality",
+    "gate",
+    "state-machine",
+    "claude",
+    "cursor",
+    "agents.md",
+    "coding-agent",
+    "cli"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/brolyssjl/gate.git"
+  },
   "type": "module",
   "bin": {
     "gate": "dist/cli.js"
@@ -15,12 +32,14 @@
     "node": ">=20"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "node scripts/embedPlaybooks.mjs && tsc -p tsconfig.json",
+    "build:binary": "node scripts/buildBinary.mjs",
     "dev": "tsx src/cli.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "tsc -p tsconfig.json --noEmit"
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "prepublishOnly": "npm run build && npm test"
   },
   "dependencies": {
     "yaml": "^2.5.1"

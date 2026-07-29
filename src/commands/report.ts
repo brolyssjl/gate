@@ -1,6 +1,6 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { gatePaths, runPaths } from "../core/paths.js";
+import { archivePath, gatePaths, runPaths } from "../core/paths.js";
 import { readCurrentRunId } from "../core/current.js";
 import { readRun, type HistoryEntry, type Run } from "../core/run.js";
 import { parseReviewFile, SEVERITIES, STATUSES } from "../artifacts/review.js";
@@ -12,26 +12,36 @@ interface PhaseReport {
   gateFailures: number;
 }
 
-/**
- * `gate report [runId]` — a per-run summary: how long each phase took, how many
- * gate attempts failed, and any review findings. Read-only; it never runs a gate
- * or a command. Defaults to the active run, else the most recently updated one,
- * so `gate report` works right after a run reaches DONE.
- */
-export function cmdReport(args: ParsedArgs): void {
-  const root = requireRoot();
-  const runId = args.positionals[0] ?? readCurrentRunId(root) ?? mostRecentRunId(root);
-  if (!runId) throw new GateError("no run to report on — pass a run id: gate report <id>");
+export interface ReportData {
+  id: string;
+  title: string;
+  profile: string;
+  phase: string;
+  status: string;
+  totalSeconds: number;
+  gateFailures: number;
+  phases: PhaseReport[];
+  findings: ReturnType<typeof summarizeFindings>;
+  overrides: Array<{ phase: string; reason: string; at: string; by: string | null }>;
+  artifacts: string[];
+}
 
-  const run = readRun(root, runId);
+/**
+ * Pure summary of a run: everything `gate report` prints, with no I/O beyond
+ * what the caller already did (reading run.json and review.md). Shared by the
+ * live path (`cmdReport`) and `gate prune`, which persists exactly this shape
+ * to `.gate/archive/<id>.json` before deleting the run folder - the archive
+ * summary and a live report are the same data, computed the same way.
+ */
+export function buildReportData(root: string, run: Run): ReportData {
   const phases = phaseReports(run.history);
   const totalSeconds = phases.reduce((a, p) => a + p.seconds, 0);
   const gateFailures = phases.reduce((a, p) => a + p.gateFailures, 0);
-  const findings = summarizeFindings(root, runId);
+  const findings = summarizeFindings(root, run.id);
   const overrides = run.overrides.map((o) => ({ phase: o.phase, reason: o.reason, at: o.at, by: o.by ?? null }));
   const artifacts = Object.keys(run.artifacts);
 
-  const data = {
+  return {
     id: run.id,
     title: run.title,
     profile: run.profile,
@@ -44,31 +54,62 @@ export function cmdReport(args: ParsedArgs): void {
     overrides,
     artifacts,
   };
+}
 
-  const human = [
-    `Report: ${run.id}`,
-    `  Title:    ${run.title}`,
-    `  Profile:  ${run.profile}    Phase: ${run.phase}    Status: ${run.status}`,
-    `  Duration: ${formatDuration(totalSeconds)} total, ${gateFailures} gate failure(s)`,
+/** Render `buildReportData`'s output as the human-readable report text. */
+export function renderReportHuman(data: ReportData, archived: boolean): string {
+  return [
+    `Report: ${data.id}${archived ? " (archived)" : ""}`,
+    `  Title:    ${data.title}`,
+    `  Profile:  ${data.profile}    Phase: ${data.phase}    Status: ${data.status}`,
+    `  Duration: ${formatDuration(data.totalSeconds)} total, ${data.gateFailures} gate failure(s)`,
     "",
     "  Phase durations:",
-    ...phases.map(
+    ...data.phases.map(
       (p) => `    ${p.phase.padEnd(10)} ${formatDuration(p.seconds).padStart(8)}` +
         (p.gateFailures ? `   (${p.gateFailures} failed attempt(s))` : ""),
     ),
     "",
-    findings
-      ? `  Findings: ${findings.total} total — ` +
-        `${findings.blocker} blocker, ${findings.major} major, ${findings.minor} minor, ${findings.nit} nit ` +
-        `(${findings.open} open, ${findings.resolved} resolved, ${findings.waived} waived)`
+    data.findings
+      ? `  Findings: ${data.findings.total} total - ` +
+        `${data.findings.blocker} blocker, ${data.findings.major} major, ${data.findings.minor} minor, ${data.findings.nit} nit ` +
+        `(${data.findings.open} open, ${data.findings.resolved} resolved, ${data.findings.waived} waived)`
       : "  Findings: (no review.md)",
-    overrides.length
-      ? `  Overrides: ${overrides.map((o) => `${o.phase} (${o.reason}${o.by ? `, by ${o.by}` : ""})`).join(", ")}`
+    data.overrides.length
+      ? `  Overrides: ${data.overrides.map((o) => `${o.phase} (${o.reason}${o.by ? `, by ${o.by}` : ""})`).join(", ")}`
       : "  Overrides: none",
-    artifacts.length ? `  Artifacts: ${artifacts.join(", ")}` : "  Artifacts: none",
+    data.artifacts.length ? `  Artifacts: ${data.artifacts.join(", ")}` : "  Artifacts: none",
   ].join("\n");
+}
 
-  emit(human, data, args.flags);
+/**
+ * `gate report [runId]` - a per-run summary: how long each phase took, how many
+ * gate attempts failed, and any review findings. Read-only; it never runs a gate
+ * or a command. Defaults to the active run, else the most recently updated live
+ * one, so `gate report` works right after a run reaches DONE. Falls back to the
+ * newest archived summary (`.gate/archive/<id>.json`) when `gate prune` has
+ * already removed every live run folder - otherwise an argless `gate report`
+ * right after a full prune would error even though summaries still exist.
+ */
+export function cmdReport(args: ParsedArgs): void {
+  const root = requireRoot();
+  const runId =
+    args.positionals[0] ?? readCurrentRunId(root) ?? mostRecentRunId(root) ?? mostRecentArchivedRunId(root);
+  if (!runId) throw new GateError("no run to report on - pass a run id: gate report <id>");
+
+  const { data, archived } = loadReportData(root, runId);
+  emit(renderReportHuman(data, archived), data, args.flags);
+}
+
+function loadReportData(root: string, runId: string): { data: ReportData; archived: boolean } {
+  if (existsSync(runPaths(root, runId).runJson)) {
+    return { data: buildReportData(root, readRun(root, runId)), archived: false };
+  }
+  const archived = archivePath(root, runId);
+  if (existsSync(archived)) {
+    return { data: JSON.parse(readFileSync(archived, "utf8")) as ReportData, archived: true };
+  }
+  throw new GateError(`run "${runId}" not found (not live, and no archive summary at ${archived})`);
 }
 
 /** Per-phase wall-clock, summed across re-entries, plus failed-attempt counts. */
@@ -149,6 +190,25 @@ function mostRecentRunId(root: string): string | null {
     } catch {
       // ignore unreadable runs
     }
+  }
+  return best?.id ?? null;
+}
+
+/**
+ * The most recently archived run's id, by archive-file mtime (`ReportData`
+ * carries no timestamp of its own - `gate prune` writes archives in order, so
+ * mtime is a faithful recency proxy). Used only when no live run exists at
+ * all (e.g. `gate report` with no args right after a full `gate prune`).
+ */
+function mostRecentArchivedRunId(root: string): string | null {
+  const archiveDir = gatePaths(root).archive;
+  if (!existsSync(archiveDir)) return null;
+  let best: { id: string; at: number } | null = null;
+  for (const file of readdirSync(archiveDir)) {
+    if (!file.endsWith(".json")) continue;
+    const at = statSync(join(archiveDir, file)).mtimeMs;
+    const id = file.slice(0, -".json".length);
+    if (!best || at > best.at) best = { id, at };
   }
   return best?.id ?? null;
 }

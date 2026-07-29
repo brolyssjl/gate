@@ -1,14 +1,15 @@
 import { treeFingerprint } from "../core/git.js";
-import { resolvePlaybook } from "../core/playbooks.js";
+import { resolvePlaybookWithOverlays } from "../core/playbooks.js";
 import { nowIso, writeRun } from "../core/run.js";
 import { isTerminal } from "../core/stateMachine.js";
+import { resolveDisplayTargets } from "../core/targets.js";
 import { runGate } from "../gates/index.js";
 import { advance } from "./advance.js";
 import { renderGate } from "./gateRun.js";
 import { requireActiveRun, type ParsedArgs } from "./shared.js";
 
 /**
- * `gate next` — check the current gate and advance on pass. On failure it prints
+ * `gate next` - check the current gate and advance on pass. On failure it prints
  * exactly what's missing and exits non-zero without changing state.
  */
 export function cmdNext(args: ParsedArgs): void {
@@ -50,7 +51,8 @@ export function cmdNext(args: ParsedArgs): void {
     return;
   }
 
-  const playbook = resolvePlaybook(root, run.phase) ?? "";
+  const targetNames = resolveDisplayTargets(root, run, config);
+  const playbook = resolvePlaybookWithOverlays(root, run.phase, config, targetNames) ?? "";
   renderGate(res, { advanced: true, from, to: run.phase }, args.flags);
   if (args.flags.json !== true && args.flags.format === undefined && playbook) {
     process.stdout.write(`\nEntered ${run.phase}.\n\n${playbook}\n`);

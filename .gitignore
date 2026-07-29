@@ -7,6 +7,7 @@ coverage/
 # Gate's own ephemeral run folders (config + playbooks stay tracked)
 .gate/runs/
 .gate/current
+.gate/archive/
 
 # Local design docs, not part of the published repo
 kickoff-gate.md

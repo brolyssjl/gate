@@ -1,15 +1,19 @@
 import { existsSync, writeFileSync } from "node:fs";
+import { RETRO_TEMPLATE } from "../artifacts/retro.js";
+import { loadConfig } from "../core/config.js";
 import { clearCurrentRunId, readCurrentRunId, setCurrentRunId } from "../core/current.js";
 import { headSha } from "../core/git.js";
 import { runPaths } from "../core/paths.js";
-import { resolvePlaybook } from "../core/playbooks.js";
+import { resolvePlaybookWithOverlays } from "../core/playbooks.js";
 import { makeRunId, newRun, readRun, writeRun } from "../core/run.js";
 import { DEFAULT_PROFILE, isProfile, phaseSequence, PROFILES } from "../core/stateMachine.js";
+import { resolveDisplayTargets } from "../core/targets.js";
 import { detect, planHints } from "../integrations/index.js";
 import { emit, GateError, requireRoot, UsageError, type ParsedArgs } from "./shared.js";
 
 const PLAN_TEMPLATE = `---
 goal:
+spec:
 files:
   -
 out_of_scope: []
@@ -18,6 +22,7 @@ criteria:
     text:
     verify: "test: "
 risks: []
+acknowledgments: []
 ---
 
 # Plan: %TITLE%
@@ -40,7 +45,7 @@ cycles:
 
 `;
 
-/** `gate start "<title>"` — create a run, enter PLAN, print the plan playbook. */
+/** `gate start "<title>"` - create a run, enter PLAN, print the plan playbook. */
 export function cmdStart(args: ParsedArgs): void {
   const root = requireRoot();
   const title = args.positionals.join(" ").trim();
@@ -67,23 +72,43 @@ export function cmdStart(args: ParsedArgs): void {
     (typeof args.flags.session === "string" ? args.flags.session : undefined) ??
     process.env.GATE_SESSION_ID ??
     null;
+  const targetOverride =
+    typeof args.flags.target === "string"
+      ? args.flags.target.split(",").map((t) => t.trim()).filter(Boolean)
+      : undefined;
+
+  const config = loadConfig(root);
+  if (targetOverride && targetOverride.length > 0) {
+    const known = Object.keys(config.targets);
+    const unknown = targetOverride.filter((t) => !known.includes(t));
+    if (unknown.length > 0) {
+      throw new UsageError(
+        `unknown --target name(s): ${unknown.join(", ")} ` +
+          (known.length > 0 ? `(valid targets: ${known.join(", ")})` : "(no targets configured in .gate/config.yml)"),
+      );
+    }
+  }
 
   const id = uniqueRunId(root, title);
-  const run = newRun({ id, title, profile, baseRef: headSha(root), sessionId });
+  const run = newRun({ id, title, profile, baseRef: headSha(root), sessionId, targetOverride });
   writeRun(root, run);
   setCurrentRunId(root, id);
 
-  // Scaffold a plan.md for the agent to fill in, plus a debug-log.md when the
-  // profile walks through DEBUG so the protocol template is waiting for them.
+  // Scaffold a plan.md for the agent to fill in, plus a debug-log.md / retro.md
+  // when the profile walks through DEBUG / RETRO so the templates are waiting.
   const paths = runPaths(root, id);
   if (!existsSync(paths.plan)) writeFileSync(paths.plan, PLAN_TEMPLATE.replace("%TITLE%", title));
   const sequence = phaseSequence(profile);
   if (sequence.includes("DEBUG") && !existsSync(paths.debugLog)) {
     writeFileSync(paths.debugLog, DEBUG_TEMPLATE.replace("%TITLE%", title));
   }
+  if (sequence.includes("RETRO") && !existsSync(paths.retro)) {
+    writeFileSync(paths.retro, RETRO_TEMPLATE.replace("%TITLE%", title));
+  }
 
   const hints = planHints(detect(root));
-  const playbook = resolvePlaybook(root, "PLAN") ?? "(no PLAN playbook found)";
+  const targetNames = resolveDisplayTargets(root, run, config);
+  const playbook = resolvePlaybookWithOverlays(root, "PLAN", config, targetNames) ?? "(no PLAN playbook found)";
   const human = [
     `Started run "${id}" (profile: ${profile}, phases: ${sequence.join(" → ")}) → phase PLAN`,
     `Edit the plan at: ${paths.plan}`,

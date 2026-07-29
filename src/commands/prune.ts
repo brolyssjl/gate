@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { loadConfig } from "../core/config.js";
-import { readCurrentRunId } from "../core/current.js";
+import { readCurrentRunId, resolveBranchKey } from "../core/current.js";
 import { archivePath, gatePaths, runPaths } from "../core/paths.js";
 import { readRun, type Run } from "../core/run.js";
 import { buildReportData, type ReportData } from "./report.js";
@@ -33,7 +33,12 @@ export function cmdPrune(args: ParsedArgs): void {
   const days = args.flags.days !== undefined ? parseIntFlag(args.flags.days, 0, "--days") : (config.retention.days ?? null);
   const dryRun = args.flags["dry-run"] === true;
 
-  const activeId = readCurrentRunId(root);
+  // Just a shortcut to skip re-reading the current branch's run.json; every
+  // active run everywhere is already protected below by its `status` field
+  // (Milestone 4: runs are concurrent across branches, not just one global
+  // "active"), so a detached HEAD (no key to look up) costs nothing here.
+  const resolved = resolveBranchKey(root);
+  const activeId = resolved.kind === "key" ? readCurrentRunId(root, resolved.key) : null;
   const candidates = listCandidates(root, activeId);
   const toPrune = selectForPrune(candidates, keep, days);
 

@@ -13,7 +13,7 @@ import { emit, GateError, requireActiveRun, UsageError, type ParsedArgs } from "
  * only trust reports produced by the test run Gate executes itself.
  */
 export function cmdLog(args: ParsedArgs): void {
-  const { root, run } = requireActiveRun();
+  const { root, run } = requireActiveRun(args);
 
   const arg = args.positionals[0];
   if (!arg) throw new UsageError("gate log needs a file: gate log <file>");

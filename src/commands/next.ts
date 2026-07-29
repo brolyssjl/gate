@@ -13,7 +13,7 @@ import { requireActiveRun, type ParsedArgs } from "./shared.js";
  * exactly what's missing and exits non-zero without changing state.
  */
 export function cmdNext(args: ParsedArgs): void {
-  const { root, run, config } = requireActiveRun();
+  const { root, run, config } = requireActiveRun(args);
   const res = runGate({ root, run, config });
 
   if (!res.ok) {

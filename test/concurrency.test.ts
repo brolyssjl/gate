@@ -1,0 +1,172 @@
+import { execFileSync, spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { beforeAll, describe, expect, it } from "vitest";
+import { makeRepo } from "./helpers.js";
+
+const pkgRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
+const CLI = join(pkgRoot, "dist", "cli.js");
+
+function gate(cwd: string, args: string[]): { code: number; stdout: string; stderr: string; json: () => unknown } {
+  const res = spawnSync("node", [CLI, ...args], { cwd, encoding: "utf8" });
+  return { code: res.status ?? 1, stdout: res.stdout, stderr: res.stderr, json: () => JSON.parse(res.stdout) };
+}
+
+function git(cwd: string, args: string[]): string {
+  return execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
+}
+
+/** Write a minimal, valid, active schema-2 run.json directly (pre-Milestone-4). */
+function seedLegacyRun(repo: string, id: string): void {
+  const dir = join(repo, ".gate", "runs", id);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    join(dir, "run.json"),
+    JSON.stringify({
+      schema: 2,
+      id,
+      title: id,
+      profile: "docs",
+      phase: "PLAN",
+      status: "active",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      baseRef: null,
+      sessionId: null,
+      history: [{ phase: "PLAN", event: "entered", at: "2026-01-01T00:00:00.000Z" }],
+      overrides: [],
+      artifacts: {},
+    }),
+  );
+}
+
+describe("branch-keyed run concurrency", () => {
+  beforeAll(() => {
+    execFileSync("npm", ["run", "build"], { cwd: pkgRoot, stdio: "pipe" });
+  }, 120_000);
+
+  it("keys runs by branch: independent runs on separate branches, status shows the current one plus others in flight", () => {
+    const repo = makeRepo({ "package.json": JSON.stringify({ name: "fx", scripts: { test: "node -e 0" } }) });
+    gate(repo, ["init"]);
+    gate(repo, ["trust"]);
+    const mainBranch = git(repo, ["branch", "--show-current"]);
+
+    const started = gate(repo, ["start", "run on main", "--profile", "docs", "--json"]);
+    expect(started.code).toBe(0);
+    const mainRun = started.json() as { id: string; branch: string };
+    expect(mainRun.branch).toBe(mainBranch);
+
+    git(repo, ["checkout", "-b", "other-branch"]);
+    const startedOther = gate(repo, ["start", "run on other branch", "--profile", "docs", "--json"]);
+    expect(startedOther.code).toBe(0);
+    const otherRun = startedOther.json() as { id: string; branch: string };
+    expect(otherRun.branch).toBe("other-branch");
+    expect(otherRun.id).not.toBe(mainRun.id);
+
+    const statusOther = gate(repo, ["status", "--json"]).json() as {
+      id: string;
+      branch: string;
+      others: Array<{ branch: string; id: string }>;
+    };
+    expect(statusOther.id).toBe(otherRun.id);
+    expect(statusOther.branch).toBe("other-branch");
+    expect(statusOther.others).toEqual([{ branch: mainBranch, id: mainRun.id, phase: "PLAN" }]);
+
+    git(repo, ["checkout", mainBranch]);
+    const statusMain = gate(repo, ["status", "--json"]).json() as { id: string; branch: string };
+    expect(statusMain.id).toBe(mainRun.id);
+    expect(statusMain.branch).toBe(mainBranch);
+  });
+
+  it("gate start resumes a branch's existing active run instead of erroring", () => {
+    const repo = makeRepo();
+    gate(repo, ["init"]);
+    const first = gate(repo, ["start", "first title", "--profile", "docs", "--json"]).json() as { id: string };
+
+    const second = gate(repo, ["start", "a different title", "--profile", "docs", "--json"]);
+    expect(second.code).toBe(0);
+    const resumed = second.json() as { id: string; resumed: boolean };
+    expect(resumed.resumed).toBe(true);
+    expect(resumed.id).toBe(first.id);
+  });
+
+  it("gate start refuses to resume when the plan changed since approval", () => {
+    const repo = makeRepo({ "package.json": JSON.stringify({ name: "fx", scripts: { test: "node -e 0" } }) });
+    gate(repo, ["init"]);
+    gate(repo, ["trust"]);
+    const started = gate(repo, ["start", "needs a plan", "--json"]).json() as { id: string; plan: string };
+
+    const planContent = [
+      "---",
+      "goal: ship it",
+      "files:",
+      "  - a.txt",
+      "criteria:",
+      "  - id: c1",
+      "    text: it works",
+      '    verify: "manual"',
+      "---",
+      "",
+    ].join("\n");
+    writeFileSync(started.plan, planContent);
+    expect(gate(repo, ["approve", "--by", "tester"]).code).toBe(0);
+
+    // Edit the plan post-approval without re-approving.
+    writeFileSync(started.plan, planContent + "\nextra line\n");
+
+    const retry = gate(repo, ["start", "needs a plan again"]);
+    expect(retry.code).not.toBe(0);
+    expect(retry.stderr).toContain("changed since");
+  });
+
+  it("refuses to start on a detached HEAD (no branch to key the run by)", () => {
+    const repo = makeRepo();
+    gate(repo, ["init"]);
+    const sha = git(repo, ["rev-parse", "HEAD"]);
+    git(repo, ["checkout", sha]);
+
+    const res = gate(repo, ["start", "detached attempt"]);
+    expect(res.code).not.toBe(0);
+    expect(res.stderr).toContain("detached");
+  });
+
+  it("detached HEAD: gate status reports it without throwing; phase commands require --run", () => {
+    const repo = makeRepo({ "package.json": JSON.stringify({ name: "fx", scripts: { test: "node -e 0" } }) });
+    gate(repo, ["init"]);
+    gate(repo, ["trust"]);
+    const started = gate(repo, ["start", "run before detaching", "--json"]).json() as { id: string };
+
+    const sha = git(repo, ["rev-parse", "HEAD"]);
+    git(repo, ["checkout", sha]);
+
+    const status = gate(repo, ["status", "--json"]).json() as { active: boolean; detached: boolean };
+    expect(status.active).toBe(false);
+    expect(status.detached).toBe(true);
+
+    const withoutRun = gate(repo, ["check"]);
+    expect(withoutRun.code).not.toBe(0);
+    expect(withoutRun.stderr).toContain("detached");
+
+    const withRun = gate(repo, ["check", "--run", started.id]);
+    expect(withRun.stderr).not.toContain("detached");
+  });
+
+  it("migrates the legacy single-run .gate/current pointer into per-branch current.json", () => {
+    const repo = makeRepo();
+    gate(repo, ["init"]);
+    seedLegacyRun(repo, "legacy-run");
+    const branch = git(repo, ["branch", "--show-current"]);
+    writeFileSync(join(repo, ".gate", "current"), "legacy-run\n");
+
+    const status = gate(repo, ["status", "--json"]).json() as { id: string; active: boolean };
+    expect(status.active).toBe(true);
+    expect(status.id).toBe("legacy-run");
+
+    expect(existsSync(join(repo, ".gate", "current"))).toBe(false);
+    const migrated = JSON.parse(readFileSync(join(repo, ".gate", "current.json"), "utf8")) as {
+      branches: Record<string, string>;
+    };
+    expect(migrated.branches[branch]).toBe("legacy-run");
+  });
+});

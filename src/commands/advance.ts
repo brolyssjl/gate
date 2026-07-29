@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { RETRO_TEMPLATE } from "../artifacts/retro.js";
-import { clearCurrentRunId } from "../core/current.js";
+import { clearCurrentRunId, NO_GIT_BRANCH_KEY } from "../core/current.js";
 import { writeFileAtomic } from "../core/fsx.js";
 import { runPaths } from "../core/paths.js";
 import { nowIso, writeRun, type Run } from "../core/run.js";
@@ -21,7 +21,10 @@ export function advance(root: string, run: Run): { from: Phase; to: Phase } {
     if (to === "RETRO") scaffoldRetroIfMissing(root, run);
   }
   writeRun(root, run);
-  if (isTerminal(run.phase)) clearCurrentRunId(root);
+  // Keyed by the run's own recorded branch, not whatever's checked out right
+  // now - a run's identity in `current.json` shouldn't drift if the working
+  // tree switches branches mid-run.
+  if (isTerminal(run.phase)) clearCurrentRunId(root, run.branch ?? NO_GIT_BRANCH_KEY);
   return { from, to: run.phase };
 }
 

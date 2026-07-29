@@ -34,7 +34,7 @@ waive with a human rationale.
  * accidental re-run cannot silently re-baseline what the reviewer saw.
  */
 export function cmdReview(args: ParsedArgs): void {
-  const { root, run, config } = requireActiveRun();
+  const { root, run, config } = requireActiveRun(args);
   if (run.phase !== "REVIEW") {
     throw new GateError(`nothing to review - run is in ${run.phase}, not REVIEW`);
   }

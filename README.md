@@ -128,9 +128,10 @@ first); a new branch gets its own independent run. `gate status` shows the
 current branch's run plus a list of any other branches with one in flight.
 
 A detached `HEAD` has no branch to resolve "current" from - that's genuinely
-ambiguous, not a missing-run case - so every phase command (`check`, `next`,
-`review`, `retro`, `skip`, `log`, `playbook`) accepts an explicit `--run <id>`
-to select a run without relying on the checked-out branch.
+ambiguous, not a missing-run case - so every phase command (`approve`,
+`check`, `next`, `review`, `retro`, `skip`, `log`, `playbook`) accepts an
+explicit `--run <id>` to select a run without relying on the checked-out
+branch.
 
 ## Review & report
 

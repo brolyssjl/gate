@@ -36,7 +36,7 @@ Commands:
     [--profile <p>]       Phases to run: feature|bugfix|refactor|docs (default feature)
     [--target <a,b>]      Override target resolution (comma-separated names);
                           wins over file-based resolution for this run
-  approve [--by] [--reason]  Record PLAN sign-off, bound to the plan's content
+  approve [--by] [--reason] [--run <id>]  Record PLAN sign-off, bound to the plan's content
   status                  Active run for the current branch, plus any other
                           branches with a run in flight
   check [--run <id>]      Run the current gate; exit code = verdict

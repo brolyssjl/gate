@@ -74,7 +74,11 @@ function migrateLegacy(root: string): void {
     const key = resolved.kind === "key" ? resolved.key : NO_GIT_BRANCH_KEY;
     writeState(root, { schema: 1, branches: { [key]: runId } });
   }
-  rmSync(legacyCurrent);
+  // force: a second gate invocation racing through this same one-time
+  // migration can pass the existsSync guard above right before the first
+  // process's rmSync runs; without force, the second process's rmSync would
+  // throw ENOENT on a file that's already gone.
+  rmSync(legacyCurrent, { force: true });
 }
 
 export function readCurrentRunId(root: string, key: string): string | null {

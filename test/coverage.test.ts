@@ -115,6 +115,19 @@ describe("loadCoverage: Go cover profile", () => {
     const root = withCoverageFile("go-cover.out", "");
     expect(loadCoverage(root, "go-cover")).toBeNull();
   });
+
+  it("a later block's covered hit wins when overlapping blocks disagree on the same line (merged multi-package profiles)", () => {
+    const overlapping = [
+      "mode: set",
+      "example.com/mod/pkg/file.go:1.1,2.2 1 0",
+      "example.com/mod/pkg/file.go:2.1,3.2 1 1",
+      "",
+    ].join("\n");
+    const root = withCoverageFile("go-cover.out", overlapping);
+    const map = loadCoverage(root, "go-cover");
+    // Line 2 is uncovered per the first block, covered per the second - covered wins.
+    expect(map?.get("example.com/mod/pkg/file.go")).toEqual({ covered: new Set([2, 3]), uncovered: new Set([1]) });
+  });
 });
 
 describe("loadCoverage: lcov", () => {

@@ -164,8 +164,15 @@ async function cmdReviewHuman(root: string, run: Run, config: GateConfig, args: 
       "minor/nit are advisory, blocker/major must be resolved or waived with a rationale.\n\n",
   );
 
-  const existing = parseReviewFile(res.findingsFile).review;
-  const findings: Finding[] = existing ? [...existing.findings] : [];
+  // A parse failure on a *pre-existing, non-scaffold* review.md must not
+  // silently discard whatever findings it already held - refuse instead of
+  // guessing; the scaffold template itself always parses cleanly (empty
+  // findings), so this only fires on genuinely invalid hand-edited content.
+  const { review: existing, errors } = parseReviewFile(res.findingsFile);
+  if (!existing) {
+    throw new GateError(`cannot walk the review - existing review.md is invalid: ${errors.join("; ")}`);
+  }
+  const findings: Finding[] = [...existing.findings];
 
   const prompter = createPrompter();
   try {

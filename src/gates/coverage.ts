@@ -196,6 +196,12 @@ function parseGoCover(raw: string, root: string): CoverageMap | null {
       else if (!entry.covered.has(ln)) entry.uncovered.add(ln);
     }
   }
+  // A later block's covered hit wins over an earlier uncovered record of the
+  // same line (blocks from separate packages in a merged `go test ./...`
+  // profile can overlap) - same cleanup parseIstanbul/parseLcov do.
+  for (const entry of map.values()) {
+    for (const line of entry.covered) entry.uncovered.delete(line);
+  }
   return map;
 }
 

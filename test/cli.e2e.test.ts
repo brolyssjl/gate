@@ -307,6 +307,9 @@ describe("gate CLI end-to-end", () => {
     expect(review.rubric).toContain("Check the api error envelope.");
   });
 
+  // ~19 sequential `gate` subprocess spawns; vitest's 5s default test timeout
+  // can be tight under a fully parallel `npm test` run (many other suites'
+  // subprocesses competing for CPU), independent of this test's own logic.
   it("refuses to reach DONE when a review fix breaks the code (staleness guard)", () => {
     const repo = makeRepo({
       "package.json": JSON.stringify({ name: "fx", scripts: { test: "node test.js" } }),
@@ -370,7 +373,7 @@ describe("gate CLI end-to-end", () => {
     );
     expect(gate(repo, ["next"]).code).toBe(0);
     expect((gate(repo, ["status", "--json"]).json() as { active: boolean }).active).toBe(false);
-  });
+  }, 15000);
 
   it("gate retro syncs the journal (fallback path - no agnosgram binary in this sandbox) and is idempotent", () => {
     const repo = makeRepo();

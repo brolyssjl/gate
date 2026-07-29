@@ -2,17 +2,11 @@ import { existsSync, writeFileSync } from "node:fs";
 import { RETRO_TEMPLATE } from "../artifacts/retro.js";
 import { hashPlanFile } from "../artifacts/plan.js";
 import { loadConfig } from "../core/config.js";
-import {
-  clearCurrentRunId,
-  NO_GIT_BRANCH_KEY,
-  readCurrentRunId,
-  resolveBranchKey,
-  setCurrentRunId,
-} from "../core/current.js";
+import { NO_GIT_BRANCH_KEY, resolveBranchKey, withCurrentLock } from "../core/current.js";
 import { headSha } from "../core/git.js";
 import { runPaths } from "../core/paths.js";
 import { resolvePlaybookWithOverlays } from "../core/playbooks.js";
-import { makeRunId, newRun, readRun, writeRun } from "../core/run.js";
+import { makeRunId, newRun, readRun, writeRun, type Run } from "../core/run.js";
 import { DEFAULT_PROFILE, isProfile, phaseSequence, PROFILES } from "../core/stateMachine.js";
 import { resolveDisplayTargets } from "../core/targets.js";
 import { detect, planHints } from "../integrations/index.js";
@@ -67,34 +61,6 @@ export function cmdStart(args: ParsedArgs): void {
   const branchKey = resolved.key;
   const branch = branchKey === NO_GIT_BRANCH_KEY ? null : branchKey;
 
-  const existingId = readCurrentRunId(root, branchKey);
-  if (existingId) {
-    const existing = safeRead(root, existingId);
-    if (existing && existing.status === "active") {
-      const planPath = runPaths(root, existingId).plan;
-      if (existing.approval && hashPlanFile(planPath) !== existing.approval.planHash) {
-        throw new GateError(
-          `run "${existingId}" on this branch is approved but plan.md has changed since — ` +
-            "re-run `gate approve` or resolve the run before starting fresh",
-        );
-      }
-      // Resuming, not starting fresh: this branch already has work in flight.
-      const sequence = phaseSequence(existing.profile);
-      const human = [
-        `Branch already has an active run: "${existingId}" (phase ${existing.phase}) — resuming it.`,
-        `Flow: ${sequence.map((p) => (p === existing.phase ? `[${p}]` : p)).join(" → ")}`,
-        `Next: run \`gate status\` or \`gate playbook\` to continue.`,
-      ].join("\n");
-      emit(
-        human,
-        { id: existing.id, phase: existing.phase, profile: existing.profile, phases: sequence, resumed: true },
-        args.flags,
-      );
-      return;
-    }
-    clearCurrentRunId(root, branchKey);
-  }
-
   const profile = typeof args.flags.profile === "string" ? args.flags.profile : DEFAULT_PROFILE;
   if (!isProfile(profile)) {
     throw new UsageError(
@@ -122,10 +88,55 @@ export function cmdStart(args: ParsedArgs): void {
     }
   }
 
-  const id = uniqueRunId(root, title);
-  const run = newRun({ id, title, profile, branch, baseRef: headSha(root), sessionId, targetOverride });
-  writeRun(root, run);
-  setCurrentRunId(root, branchKey, id);
+  // The whole "read this branch's existing mapping -> decide resume/create ->
+  // create the new run -> point the branch at it" sequence runs under one
+  // lock, so a concurrent `gate start` on the same branch can't interleave
+  // between the decision and the write (the milestone's own use case is
+  // several agents in flight at once).
+  type Outcome = { kind: "resumed"; run: Run } | { kind: "created"; run: Run };
+  const outcome = withCurrentLock(root, (branches): Outcome => {
+    const existingId = branches[branchKey];
+    if (existingId) {
+      const existing = safeRead(root, existingId);
+      if (existing && existing.status === "active") {
+        const planPath = runPaths(root, existingId).plan;
+        if (existing.approval && hashPlanFile(planPath) !== existing.approval.planHash) {
+          throw new GateError(
+            `run "${existingId}" on this branch is approved but plan.md has changed since — ` +
+              "re-run `gate approve` or resolve the run before starting fresh",
+          );
+        }
+        return { kind: "resumed", run: existing };
+      }
+      delete branches[branchKey];
+    }
+
+    const id = uniqueRunId(root, title);
+    const run = newRun({ id, title, profile, branch, baseRef: headSha(root), sessionId, targetOverride });
+    writeRun(root, run);
+    branches[branchKey] = id;
+    return { kind: "created", run };
+  });
+
+  if (outcome.kind === "resumed") {
+    // Resuming, not starting fresh: this branch already has work in flight.
+    const existing = outcome.run;
+    const sequence = phaseSequence(existing.profile);
+    const human = [
+      `Branch already has an active run: "${existing.id}" (phase ${existing.phase}) — resuming it.`,
+      `Flow: ${sequence.map((p) => (p === existing.phase ? `[${p}]` : p)).join(" → ")}`,
+      `Next: run \`gate status\` or \`gate playbook\` to continue.`,
+    ].join("\n");
+    emit(
+      human,
+      { id: existing.id, phase: existing.phase, profile: existing.profile, phases: sequence, resumed: true },
+      args.flags,
+    );
+    return;
+  }
+
+  const run = outcome.run;
+  const id = run.id;
 
   // Scaffold a plan.md for the agent to fill in, plus a debug-log.md / retro.md
   // when the profile walks through DEBUG / RETRO so the templates are waiting.

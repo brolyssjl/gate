@@ -152,6 +152,20 @@ export function readCurrentRunId(root: string, key: string): string | null {
 }
 
 /**
+ * The current branch's mapped run id, or null - including on a detached HEAD
+ * (nothing "current" to resolve a key from). Convenience for callers that
+ * only want "whatever's current, if anything" and don't otherwise need the
+ * resolved branch key or the detached/key distinction; callers that do
+ * (e.g. `gate status`, or anything that must react differently to a
+ * detached HEAD) should call `resolveBranchKey` themselves instead of this,
+ * to avoid resolving it twice.
+ */
+export function currentRunIdOrNull(root: string): string | null {
+  const resolved = resolveBranchKey(root);
+  return resolved.kind === "key" ? readCurrentRunId(root, resolved.key) : null;
+}
+
+/**
  * Run `fn` with exclusive access to `current.json`'s branch map: locks,
  * reads (fail-closed on corruption, migrating the legacy pointer first),
  * lets `fn` mutate the map in place and return a result, then persists and

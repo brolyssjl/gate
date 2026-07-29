@@ -1,5 +1,5 @@
 import { loadConfig } from "../core/config.js";
-import { readCurrentRunId, resolveBranchKey } from "../core/current.js";
+import { currentRunIdOrNull } from "../core/current.js";
 import { resolvePlaybookWithOverlays } from "../core/playbooks.js";
 import { readRun } from "../core/run.js";
 import { isPhase, type Phase } from "../core/stateMachine.js";
@@ -36,7 +36,7 @@ export function cmdPlaybook(args: ParsedArgs): void {
     // run degrades to no targets rather than failing - printing a phase's
     // base playbook must keep working with no run in the picture at all.
     const explicitRunId = typeof args.flags.run === "string" ? args.flags.run : undefined;
-    const runId = explicitRunId ?? currentRunIdForBranch(root);
+    const runId = explicitRunId ?? currentRunIdOrNull(root);
     const run = runId ? safeReadRun(root, runId) : null;
     targetNames = run ? resolveDisplayTargets(root, run, config) : [];
   } else {
@@ -56,12 +56,6 @@ export function cmdPlaybook(args: ParsedArgs): void {
     : playbook;
 
   emit(human, { phase, playbook, hints }, args.flags);
-}
-
-/** The current branch's mapped run id, or null (including on a detached HEAD - nothing "current" to resolve). */
-function currentRunIdForBranch(root: string): string | null {
-  const resolved = resolveBranchKey(root);
-  return resolved.kind === "key" ? readCurrentRunId(root, resolved.key) : null;
 }
 
 function safeReadRun(root: string, id: string) {

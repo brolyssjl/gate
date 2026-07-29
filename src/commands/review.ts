@@ -179,7 +179,7 @@ async function cmdReviewHuman(root: string, run: Run, config: GateConfig, args: 
     for (;;) {
       const again = (await prompter.ask(`Add a finding? [y/N] (${findings.length} recorded so far) `)).toLowerCase();
       if (again !== "y" && again !== "yes") break;
-      findings.push(await askFinding(prompter, findings.length + 1));
+      findings.push(await askFinding(prompter, findings));
     }
 
     let reviewer = (typeof args.flags.by === "string" ? args.flags.by : "").trim();
@@ -231,8 +231,31 @@ function createPrompter(): { ask(prompt: string): Promise<string>; close(): void
 }
 type Prompter = ReturnType<typeof createPrompter>;
 
-async function askFinding(prompter: Prompter, index: number): Promise<Finding> {
-  const id = (await prompter.ask(`  id [f${index}]: `)) || `f${index}`;
+/**
+ * The default id is the lowest-numbered `f<N>` not already taken - not just
+ * `existing.length + 1`. Positional numbering collides the moment any
+ * earlier finding was given (or kept) an id out of strict f1/f2/f3 sequence
+ * - e.g. deleting f1 by hand leaves just f2, and length+1 would default the
+ * next new finding to "f2" again. serializeReview would then write the
+ * duplicate, parseReview rejects it on the very next read, and every
+ * subsequent `--human` run throws "existing review.md is invalid" until
+ * someone hand-edits the file - wedged over what should be routine review
+ * housekeeping.
+ */
+function nextDefaultId(existing: Finding[]): string {
+  const used = new Set(existing.map((f) => f.id));
+  let n = existing.length + 1;
+  while (used.has(`f${n}`)) n++;
+  return `f${n}`;
+}
+
+async function askFinding(prompter: Prompter, existing: Finding[]): Promise<Finding> {
+  const used = new Set(existing.map((f) => f.id));
+  const defaultId = nextDefaultId(existing);
+  let id = (await prompter.ask(`  id [${defaultId}]: `)) || defaultId;
+  while (used.has(id)) {
+    id = (await prompter.ask(`  id "${id}" is already used - choose another [${defaultId}]: `)) || defaultId;
+  }
   const severity = await askChoice(prompter, "  severity", SEVERITIES);
   const note = await prompter.ask("  note (what's wrong): ");
   const status = await askChoice(prompter, "  status", STATUSES);

@@ -26,7 +26,13 @@ export function gatePaths(root: string) {
     playbooks: join(gate, "playbooks"),
     runs: join(gate, "runs"),
     current: join(gate, "current"), // file holding the id of the active run
+    archive: join(gate, "archive"), // gate prune: summaries of pruned runs
   };
+}
+
+/** Where `gate prune` archives a run's summary once its folder is removed. */
+export function archivePath(root: string, runId: string): string {
+  return join(gatePaths(root).archive, `${runId}.json`);
 }
 
 export type GatePaths = ReturnType<typeof gatePaths>;
@@ -43,5 +49,6 @@ export function runPaths(root: string, runId: string) {
     debugLog: join(dir, "debug-log.md"),
     reviewPacket: join(dir, "review-packet.md"),
     review: join(dir, "review.md"),
+    retro: join(dir, "retro.md"),
   };
 }

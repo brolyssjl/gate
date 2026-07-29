@@ -1,7 +1,7 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { beforeAll, describe, expect, it } from "vitest";
 import { makeRepo } from "./helpers.js";
 
@@ -99,6 +99,17 @@ describe("gate CLI end-to-end", () => {
       `---\nreviewer: fresh-eyes\nfindings: []\n---\n# Review\n`,
     );
     expect(gate(repo, ["next"]).code).toBe(0);
+    expect((gate(repo, ["status", "--json"]).json() as { phase: string }).phase).toBe("RETRO");
+
+    // RETRO: the empty scaffold has no substance and must not pass; a filled-in
+    // retro (no .agnosgram/ store in this fixture repo, so no journal sync is
+    // required) reaches DONE.
+    expect(gate(repo, ["check"]).code).toBe(1);
+    writeFileSync(
+      join(repo, `.gate/runs/${reviewRunId}/retro.md`),
+      `---\nbroke: []\navoid:\n  - "Do not skip the reproduce step"\nconventions: []\n---\n# Retro\n`,
+    );
+    expect(gate(repo, ["next"]).code).toBe(0);
 
     const done = gate(repo, ["status", "--json"]).json() as { active: boolean };
     expect(done.active).toBe(false);
@@ -153,7 +164,7 @@ describe("gate CLI end-to-end", () => {
     expect(gate(repo, ["start", "fix login", "--profile", "bugfix"]).code).toBe(0);
     const status = gate(repo, ["status", "--json"]).json() as { profile: string; phases: string[] };
     expect(status.profile).toBe("bugfix");
-    expect(status.phases).toEqual(["PLAN", "DEBUG", "TEST", "REVIEW", "DONE"]);
+    expect(status.phases).toEqual(["PLAN", "DEBUG", "TEST", "REVIEW", "RETRO", "DONE"]);
     const runId = (gate(repo, ["status", "--json"]).json() as { id: string }).id;
     expect(existsSync(join(repo, `.gate/runs/${runId}/debug-log.md`))).toBe(true);
   });
@@ -162,6 +173,143 @@ describe("gate CLI end-to-end", () => {
     const repo = makeRepo();
     gate(repo, ["init"]);
     expect(gate(repo, ["start", "x", "--profile", "bogus"]).code).toBe(2);
+  });
+
+  it("targets: --target override wins, and playbook overlays surface for affected targets", () => {
+    const repo = makeRepo();
+    gate(repo, ["init"]);
+    writeFileSync(
+      join(repo, ".gate", "playbooks", "test.web.md"),
+      "# Web overlay\n\nRun the visual regression suite.\n",
+    );
+    writeFileSync(
+      join(repo, ".gate", "config.yml"),
+      [
+        "commands: {}",
+        "thresholds: {}",
+        "targets:",
+        "  web:",
+        "    match: [\"apps/web/**\"]",
+        "    playbooks: { test: \".gate/playbooks/test.web.md\" }",
+        "  api:",
+        "    match: [\"apps/api/**\"]",
+        "phases: {}",
+        "integrations: { agnosgram: off, sdd: off }",
+        "",
+      ].join("\n"),
+    );
+
+    expect(gate(repo, ["start", "target override demo", "--target", "web"]).code).toBe(0);
+    const playbook = gate(repo, ["playbook", "TEST", "--json"]).json() as { playbook: string };
+    expect(playbook.playbook).toContain("## Target overlay: web");
+    expect(playbook.playbook).toContain("Run the visual regression suite.");
+  });
+
+  it("rejects `gate start --target` with an unknown target name", () => {
+    const repo = makeRepo();
+    gate(repo, ["init"]);
+    writeFileSync(
+      join(repo, ".gate", "config.yml"),
+      [
+        "commands: {}",
+        "thresholds: {}",
+        "targets:",
+        "  api:",
+        "    match: [\"apps/api/**\"]",
+        "phases: {}",
+        "integrations: { agnosgram: off, sdd: off }",
+        "",
+      ].join("\n"),
+    );
+    const res = gate(repo, ["start", "bad target demo", "--target", "does-not-exist"]);
+    expect(res.code).toBe(2); // UsageError
+    expect(existsSync(join(repo, ".gate", "current"))).toBe(false); // no run created
+  });
+
+  it("target playbook overlays surface inline at `gate start`, not just the standalone `gate playbook`", () => {
+    const repo = makeRepo();
+    gate(repo, ["init"]);
+    writeFileSync(join(repo, ".gate", "playbooks", "plan.api.md"), "# PLAN overlay\n\nCite the api spec.\n");
+    writeFileSync(
+      join(repo, ".gate", "config.yml"),
+      [
+        "commands: {}",
+        "thresholds: {}",
+        "targets:",
+        "  api:",
+        "    match: [\"apps/api/**\"]",
+        "    playbooks: { plan: .gate/playbooks/plan.api.md }",
+        "phases: {}",
+        "integrations: { agnosgram: off, sdd: off }",
+        "",
+      ].join("\n"),
+    );
+
+    const started = gate(repo, ["start", "api overlay demo", "--target", "api"]);
+    expect(started.code).toBe(0);
+    expect(started.stdout).toContain("## Target overlay: api");
+    expect(started.stdout).toContain("Cite the api spec.");
+  });
+
+  it("target playbook overlays surface inline at `gate next`'s phase-entry print", () => {
+    const repo = makeRepo();
+    gate(repo, ["init"]);
+    writeFileSync(join(repo, ".gate", "playbooks", "test.api.md"), "# TEST overlay\n\nRun the api contract suite.\n");
+    writeFileSync(
+      join(repo, ".gate", "config.yml"),
+      [
+        "commands: {}",
+        "thresholds: {}",
+        "targets:",
+        "  api:",
+        "    match: [\"apps/api/**\"]",
+        "    playbooks: { test: .gate/playbooks/test.api.md }",
+        "phases: {}",
+        "integrations: { agnosgram: off, sdd: off }",
+        "",
+      ].join("\n"),
+    );
+    gate(repo, ["start", "api overlay demo", "--target", "api"]);
+    const runId = (gate(repo, ["status", "--json"]).json() as { id: string }).id;
+    writeFileSync(
+      join(repo, `.gate/runs/${runId}/plan.md`),
+      `---\ngoal: g\nfiles:\n  - apps/api/**\ncriteria:\n  - id: c1\n    text: t\n    verify: manual\n---\n# Plan\n`,
+    );
+    gate(repo, ["approve", "--by", "human"]);
+    expect(gate(repo, ["next"]).code).toBe(0); // PLAN -> IMPLEMENT
+    mkdirSync(join(repo, "apps", "api"), { recursive: true });
+    writeFileSync(join(repo, "apps/api/x.py"), "changed\n");
+    const enteredTest = gate(repo, ["next"]); // IMPLEMENT -> TEST
+    expect(enteredTest.code).toBe(0);
+    expect(enteredTest.stdout).toContain("## Target overlay: api");
+    expect(enteredTest.stdout).toContain("Run the api contract suite.");
+  });
+
+  it("target playbook overlays surface inline in `gate review`'s emitted rubric", () => {
+    const repo = makeRepo();
+    gate(repo, ["init"]);
+    writeFileSync(join(repo, ".gate", "playbooks", "review.api.md"), "# REVIEW overlay\n\nCheck the api error envelope.\n");
+    writeFileSync(
+      join(repo, ".gate", "config.yml"),
+      [
+        "commands: {}",
+        "thresholds: {}",
+        "targets:",
+        "  api:",
+        "    match: [\"apps/api/**\"]",
+        "    playbooks: { review: .gate/playbooks/review.api.md }",
+        "phases: {}",
+        "integrations: { agnosgram: off, sdd: off }",
+        "",
+      ].join("\n"),
+    );
+    gate(repo, ["start", "api overlay demo", "--target", "api"]);
+    expect(gate(repo, ["skip", "PLAN", "--reason", "test"]).code).toBe(0);
+    expect(gate(repo, ["skip", "IMPLEMENT", "--reason", "test"]).code).toBe(0);
+    expect(gate(repo, ["skip", "TEST", "--reason", "test"]).code).toBe(0);
+    const review = gate(repo, ["review", "--fresh", "--json"]).json() as { rubric: string };
+    expect(review.rubric).toContain("## Target overlay: api");
+    expect(review.rubric).toContain("Check the api error envelope.");
   });
 
   it("refuses to reach DONE when a review fix breaks the code (staleness guard)", () => {
@@ -216,11 +364,76 @@ describe("gate CLI end-to-end", () => {
     gate(repo, ["review", "--fresh"]);
     expect(gate(repo, ["next"]).code).toBe(1);
 
-    // A real fix, re-packeted, goes green and reaches DONE.
+    // A real fix, re-packeted, goes green and enters RETRO.
     writeFileSync(join(repo, "greet.js"), "module.exports = (n) => 'Hello, ' + n\n");
     gate(repo, ["review", "--fresh"]);
     expect(gate(repo, ["next"]).code).toBe(0);
+    expect((gate(repo, ["status", "--json"]).json() as { phase: string }).phase).toBe("RETRO");
+    writeFileSync(
+      join(repo, `.gate/runs/${runId}/retro.md`),
+      `---\nbroke:\n  - "Fixing a blocker by breaking the build almost shipped"\navoid: []\nconventions: []\n---\n# Retro\n`,
+    );
+    expect(gate(repo, ["next"]).code).toBe(0);
     expect((gate(repo, ["status", "--json"]).json() as { active: boolean }).active).toBe(false);
+  });
+
+  it("gate retro syncs the journal (fallback path - no agnosgram binary in this sandbox) and is idempotent", () => {
+    const repo = makeRepo();
+    mkdirSync(join(repo, ".agnosgram"), { recursive: true });
+    writeFileSync(join(repo, ".agnosgram", "config.yml"), "version: 1\n");
+    gate(repo, ["init"]);
+    gate(repo, ["start", "retro sync demo"]);
+    const runId = (gate(repo, ["status", "--json"]).json() as { id: string }).id;
+    // Walk PLAN -> RETRO the short way: skip every gated phase up to RETRO.
+    expect(gate(repo, ["skip", "PLAN", "--reason", "test"]).code).toBe(0);
+    expect(gate(repo, ["skip", "IMPLEMENT", "--reason", "test"]).code).toBe(0);
+    expect(gate(repo, ["skip", "TEST", "--reason", "test"]).code).toBe(0);
+    expect(gate(repo, ["skip", "REVIEW", "--reason", "test"]).code).toBe(0);
+    expect((gate(repo, ["status", "--json"]).json() as { phase: string }).phase).toBe("RETRO");
+
+    // No substance yet: gate retro refuses.
+    expect(gate(repo, ["retro"]).code).toBe(1);
+
+    writeFileSync(
+      join(repo, `.gate/runs/${runId}/retro.md`),
+      `---\nbroke: []\navoid:\n  - "Do not skip reproduce"\nconventions: []\n---\n# Retro\n`,
+    );
+    const synced = gate(repo, ["retro", "--json"]);
+    expect(synced.code).toBe(0);
+    const syncedData = synced.json() as { synced: boolean; method: string; journalFile: string };
+    expect(syncedData.synced).toBe(true);
+    expect(syncedData.method).toBe("fallback");
+    const journal = readFileSync(join(repo, syncedData.journalFile), "utf8");
+    expect(journal).toContain(runId);
+    expect(journal).toContain("- **Avoid:** Do not skip reproduce");
+
+    // Idempotent: re-running does not duplicate the entry - byte-identical file.
+    const again = gate(repo, ["retro", "--json"]).json() as { alreadySynced: boolean };
+    expect(again.alreadySynced).toBe(true);
+    const journalAfter = readFileSync(join(repo, syncedData.journalFile), "utf8");
+    expect(journalAfter).toBe(journal);
+
+    expect(gate(repo, ["next"]).code).toBe(0);
+    expect((gate(repo, ["status", "--json"]).json() as { active: boolean }).active).toBe(false);
+  });
+
+  it("gate adapt writes every adapter by default and is idempotent across the CLI", () => {
+    const repo = makeRepo();
+    gate(repo, ["init"]);
+
+    const first = gate(repo, ["adapt", "--json"]);
+    expect(first.code).toBe(0);
+    const firstData = first.json() as { adapters: Array<{ path: string; action: string }> };
+    expect(firstData.adapters.length).toBeGreaterThanOrEqual(6);
+    expect(firstData.adapters.every((a) => a.action === "created")).toBe(true);
+    for (const a of firstData.adapters) expect(existsSync(join(repo, a.path))).toBe(true);
+
+    const second = gate(repo, ["adapt", "--json"]);
+    const secondData = second.json() as { adapters: Array<{ action: string }> };
+    expect(secondData.adapters.every((a) => a.action === "unchanged")).toBe(true);
+
+    expect(gate(repo, ["adapt", "cursor", "--json"]).code).toBe(0);
+    expect(gate(repo, ["adapt", "not-a-real-adapter"]).code).toBe(2);
   });
 
   it("reports per-run durations, gate failures, and findings", () => {

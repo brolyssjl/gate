@@ -14,24 +14,37 @@ import { cmdSkip } from "./commands/skip.js";
 import { cmdLog } from "./commands/log.js";
 import { cmdReview } from "./commands/review.js";
 import { cmdReport } from "./commands/report.js";
+import { cmdRetro } from "./commands/retro.js";
+import { cmdPrune } from "./commands/prune.js";
+import { cmdAdapt } from "./commands/adapt.js";
+import { ADAPTER_KEYS } from "./adapters/index.js";
 
-const HELP = `gate — an agent-agnostic quality harness (umpire, not a driver).
+const HELP = `gate - an agent-agnostic quality harness (umpire, not a driver).
 
 Usage: gate <command> [options]
 
 Commands:
+  adapt [adapter...]      Write/refresh agent config pointer blocks (default:
+                          all of ${ADAPTER_KEYS.join(", ")})
   init [--refresh]        Scaffold .gate/, infer commands, detect integrations
   trust [--check] [--by]  Approve the config commands block (TOFU); required
                           before gates will execute build/test/lint
   start "<title>"         Create a run, enter PLAN, print the plan playbook
     [--profile <p>]       Phases to run: feature|bugfix|refactor|docs (default feature)
+    [--target <a,b>]      Override target resolution (comma-separated names);
+                          wins over file-based resolution for this run
   approve [--by] [--reason]  Record PLAN sign-off, bound to the plan's content
   status                  Current run, phase, what the gate waits for
   check                   Run the current gate; exit code = verdict
   next                    Check + advance on pass; on fail, print what's missing
   review [--fresh] [--by] Emit a self-contained review packet (REVIEW phase);
                           --fresh regenerates it from the current code
+  retro                   Sync retro.md into the Agnosgram journal (RETRO
+                          phase); no-op without a .agnosgram/ store
   report [<run-id>]       Per-run summary: durations, gate failures, findings
+                          (falls back to an archived summary after prune)
+  prune [--keep n] [--days n] [--dry-run]  Archive non-active runs past the
+                          retention window to .gate/archive/, then remove them
   skip <phase> --reason [--by]  Human-authorized skip of the current phase
                           (recorded with who and why; shown by \`gate report\`)
   log <file>              Register an artifact against the current phase
@@ -50,6 +63,7 @@ type Handler = (args: ReturnType<typeof parseArgs>) => void;
 
 const COMMANDS: Record<string, Handler> = {
   init: cmdInit,
+  adapt: cmdAdapt,
   trust: cmdTrust,
   start: cmdStart,
   approve: cmdApprove,
@@ -57,7 +71,9 @@ const COMMANDS: Record<string, Handler> = {
   check: cmdCheck,
   next: cmdNext,
   review: cmdReview,
+  retro: cmdRetro,
   report: cmdReport,
+  prune: cmdPrune,
   skip: cmdSkip,
   log: cmdLog,
   playbook: cmdPlaybook,

@@ -71,4 +71,10 @@ criteria:
     expect(hashPlan(VALID)).toBe(hashPlan(VALID));
     expect(hashPlan(VALID)).not.toBe(hashPlan(VALID + "\nextra"));
   });
+
+  it("parses an optional spec citation, defaulting to null", () => {
+    expect(parsePlan(VALID).plan?.spec).toBeNull();
+    const withSpec = VALID.replace("goal: Do the thing.", "goal: Do the thing.\nspec: openspec/changes/x/spec.md");
+    expect(parsePlan(withSpec).plan?.spec).toBe("openspec/changes/x/spec.md");
+  });
 });

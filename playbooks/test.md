@@ -9,7 +9,7 @@ Gate will not let you call this done over a red or hollow suite.
    **title contains that substring**. That is the mechanical link the gate checks.
 2. **Never weaken an assertion** to make a suite pass. Never delete a failing test
    to make it green. If a test reveals a bug, that is a DEBUG concern (later
-   milestone) — do not paper over it here.
+   milestone) - do not paper over it here.
 3. Run the **full suite**, not just the new tests.
 4. **No skipped/pending tests.** If something can't run yet, it belongs in a
    separate run, not skipped here.

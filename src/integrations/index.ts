@@ -19,11 +19,32 @@ export function detect(root: string): Detection {
   };
 }
 
+/** Directory name for each SDD framework `detectSdd` recognizes, in detection order. */
+const SDD_DIRS: Array<[Detection["sdd"] & string, string]> = [
+  ["openspec", "openspec"],
+  ["spec-kit", ".specify"],
+  ["bmad", "_bmad"],
+  ["bmad", ".bmad"],
+];
+
 function detectSdd(root: string): Detection["sdd"] {
-  if (existsSync(join(root, "openspec"))) return "openspec";
-  if (existsSync(join(root, ".specify"))) return "spec-kit";
-  if (existsSync(join(root, "_bmad")) || existsSync(join(root, ".bmad"))) return "bmad";
+  for (const [kind, dir] of SDD_DIRS) {
+    if (existsSync(join(root, dir))) return kind;
+  }
   return false;
+}
+
+/**
+ * The repo-relative SDD directory Gate detected, or null if none. Used by the
+ * PLAN gate to check a cited `spec:` path lives under it. Distinct from
+ * `detect().sdd` (which names the *framework*) because `bmad` has two possible
+ * directory names; this resolves to the one actually present.
+ */
+export function sddDir(root: string): string | null {
+  for (const [, dir] of SDD_DIRS) {
+    if (existsSync(join(root, dir))) return dir;
+  }
+  return null;
 }
 
 /** Hint lines appended to the PLAN playbook output when integrations are present. */

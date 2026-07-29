@@ -2,6 +2,7 @@ import { closeSync, existsSync, openSync, readFileSync, rmSync, unlinkSync } fro
 import { writeFileAtomic } from "./fsx.js";
 import { gatePaths } from "./paths.js";
 import { branchState } from "./git.js";
+import { readRun, writeRun } from "./run.js";
 import { GateError } from "../cli/output.js";
 
 /**
@@ -110,7 +111,11 @@ function writeState(root: string, state: CurrentState): void {
  * whatever branch is checked out right now (best-effort - Gate has no record
  * of which branch a pre-Milestone-4 run actually started on), or the "no git
  * branch" sentinel when that can't be determined (detached HEAD or no repo
- * at migration time).
+ * at migration time). The migrated run's own `branch` field is backfilled to
+ * match (when it's still null, i.e. its schema-2->3 migration couldn't infer
+ * it) - belt-and-suspenders with `clearRunEverywhere`, which doesn't trust
+ * `run.branch` for exactly this reason, but a correct record is still worth
+ * having for `gate status`'s display and future lookups.
  */
 function migrateLegacy(root: string): void {
   const { legacyCurrent, current } = gatePaths(root);
@@ -120,12 +125,26 @@ function migrateLegacy(root: string): void {
     const resolved = resolveBranchKey(root);
     const key = resolved.kind === "key" ? resolved.key : NO_GIT_BRANCH_KEY;
     writeState(root, { schema: 1, branches: { [key]: runId } });
+    backfillMigratedBranch(root, runId, key);
   }
   // force: a second gate invocation racing through this same one-time
   // migration can pass the existsSync guard above right before the first
   // process's rmSync runs; without force, the second process's rmSync would
   // throw ENOENT on a file that's already gone.
   rmSync(legacyCurrent, { force: true });
+}
+
+function backfillMigratedBranch(root: string, runId: string, key: string): void {
+  try {
+    const run = readRun(root, runId);
+    if (run.branch == null) {
+      run.branch = key === NO_GIT_BRANCH_KEY ? null : key;
+      writeRun(root, run);
+    }
+  } catch {
+    // Run unreadable or missing - nothing to backfill; the current.json
+    // mapping itself is still migrated above regardless.
+  }
 }
 
 export function readCurrentRunId(root: string, key: string): string | null {
@@ -167,6 +186,25 @@ export function setCurrentRunId(root: string, key: string, runId: string): void 
 export function clearCurrentRunId(root: string, key: string): void {
   withCurrentLock(root, (branches) => {
     delete branches[key];
+  });
+}
+
+/**
+ * Remove every mapping pointing at `runId`, regardless of which branch key
+ * it's filed under - used when a run reaches a terminal phase. Deliberately
+ * does not trust `run.branch` to compute the one key to clear: a run's own
+ * branch record can be stale or never backfilled (a schema-2 run migrated
+ * from the legacy single-run pointer before `migrateLegacy`'s backfill
+ * existed, for instance), in which case clearing by the wrong key leaves the
+ * real mapping - and the finished run - resolvable forever. The mapping
+ * itself, not the run's memory of its own branch, is the source of truth for
+ * where it's filed.
+ */
+export function clearRunEverywhere(root: string, runId: string): void {
+  withCurrentLock(root, (branches) => {
+    for (const [key, id] of Object.entries(branches)) {
+      if (id === runId) delete branches[key];
+    }
   });
 }
 

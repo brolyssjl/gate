@@ -212,6 +212,41 @@ describe("branch-keyed run concurrency", () => {
     expect(migrated.branches[branch]).toBe("legacy-run");
   });
 
+  it("finishing a migrated legacy run backfills its branch and clears its current.json mapping on DONE", () => {
+    const repo = makeRepo();
+    gate(repo, ["init"]);
+    seedLegacyRun(repo, "legacy-run"); // schema 2, profile docs, phase PLAN
+    const branch = git(repo, ["branch", "--show-current"]);
+    writeFileSync(join(repo, ".gate", "current"), "legacy-run\n");
+
+    // Trigger the migration.
+    expect((gate(repo, ["status", "--json"]).json() as { id: string }).id).toBe("legacy-run");
+
+    // Backfilled: the migrated run now records the branch it was filed under
+    // (schema-2->3 migration alone leaves `branch: null` - it has no way to
+    // infer it - so without this the terminal-advance cleanup below would
+    // have nothing correct to trust from run.branch).
+    const migratedRun = JSON.parse(
+      readFileSync(join(repo, ".gate", "runs", "legacy-run", "run.json"), "utf8"),
+    ) as { branch: string | null };
+    expect(migratedRun.branch).toBe(branch);
+
+    // Walk it to DONE (docs profile: PLAN -> IMPLEMENT -> DONE).
+    expect(gate(repo, ["skip", "PLAN", "--reason", "test"]).code).toBe(0);
+    expect(gate(repo, ["skip", "IMPLEMENT", "--reason", "test"]).code).toBe(0);
+    expect((gate(repo, ["report", "legacy-run", "--json"]).json() as { status: string }).status).toBe("done");
+
+    // The mapping must be cleared on the mechanism level (scanning for the
+    // run id), not by trusting run.branch - status must not keep resolving
+    // the finished run for this branch.
+    const finalStatus = gate(repo, ["status", "--json"]).json() as { active: boolean };
+    expect(finalStatus.active).toBe(false);
+    const state = JSON.parse(readFileSync(join(repo, ".gate", "current.json"), "utf8")) as {
+      branches: Record<string, string>;
+    };
+    expect(state.branches[branch]).toBeUndefined();
+  });
+
   it("resolves the branch name on an unborn branch (git init, zero commits yet) - distinct from detached HEAD", () => {
     // Not makeRepo() - that helper always commits. A fresh `git init` repo has
     // no commits, so `git rev-parse --abbrev-ref HEAD` fails exactly as it

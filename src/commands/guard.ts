@@ -161,19 +161,32 @@ export function runGuardChecks(root: string): GuardResult {
   }
 
   const reasons: string[] = [];
+  let ok = true;
+
   if (run.phase === "PLAN") {
     reasons.push(`run "${id}" is still in PLAN - nothing should be committed until IMPLEMENT starts`);
+    ok = false;
   }
 
   const staged = stagedFiles(root);
   const { plan } = parsePlanFile(runPaths(root, id).plan);
-  const declared = plan?.files ?? [];
-  const undeclared = staged.filter((f) => !matchesAny(f, declared));
-  if (undeclared.length > 0) {
-    reasons.push(`staged files outside the declared plan scope: ${undeclared.join(", ")}`);
+  if (!plan) {
+    // No plan to check scope against (missing, or the untouched scaffold -
+    // reachable via a legitimate `gate skip PLAN`) is a different situation
+    // from "these specific files are out of scope", and must not report it
+    // as one: `declared = []` would otherwise flag every single staged file
+    // as "outside scope", a misleading hard block on what's meant to be an
+    // advisory hook. Informational only - it doesn't fail the check.
+    reasons.push("plan.md not parseable - scope check skipped");
+  } else {
+    const undeclared = staged.filter((f) => !matchesAny(f, plan.files));
+    if (undeclared.length > 0) {
+      reasons.push(`staged files outside the declared plan scope: ${undeclared.join(", ")}`);
+      ok = false;
+    }
   }
 
-  return { ok: reasons.length === 0, reasons };
+  return { ok, reasons };
 }
 
 function guardRun(root: string, args: ParsedArgs): void {

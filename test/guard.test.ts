@@ -142,6 +142,26 @@ describe("gate guard", () => {
     expect(data.reasons.join(" ")).toContain("no active run");
   });
 
+  it("gate guard run informs rather than misleadingly blocks on an unparseable/missing plan.md (e.g. after `gate skip PLAN`)", () => {
+    const repo = makeRepo();
+    gate(repo, ["init"]);
+    gate(repo, ["trust"]);
+    gate(repo, ["start", "skip planning", "--profile", "docs"]); // plan.md left as the untouched scaffold
+    expect(gate(repo, ["skip", "PLAN", "--reason", "trivial change"]).code).toBe(0); // -> IMPLEMENT
+
+    writeFile(repo, "whatever.txt", "anything\n");
+    git(repo, ["add", "whatever.txt"]);
+
+    const res = gate(repo, ["guard", "run", "--json"]);
+    expect(res.code).toBe(0);
+    const data = res.json() as { ok: boolean; reasons: string[] };
+    expect(data.ok).toBe(true);
+    expect(data.reasons.join(" ")).toContain("not parseable");
+    // The old behavior: declared = [] flagged every staged file as "outside
+    // the declared plan scope" - a misleading hard block on an advisory hook.
+    expect(data.reasons.join(" ")).not.toContain("outside the declared plan scope");
+  });
+
   it("gate guard run blocks while still in PLAN", () => {
     const repo = makeRepo();
     startActiveRun(repo, ["a.txt"]);

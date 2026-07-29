@@ -1,4 +1,4 @@
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
@@ -12,6 +12,18 @@ const CLI = join(pkgRoot, "dist", "cli.js");
 function gate(cwd: string, args: string[]): { code: number; stdout: string; stderr: string; json: () => unknown } {
   const res = spawnSync("node", [CLI, ...args], { cwd, encoding: "utf8" });
   return { code: res.status ?? 1, stdout: res.stdout, stderr: res.stderr, json: () => JSON.parse(res.stdout) };
+}
+
+/** Async spawn, for launching several `gate` invocations genuinely concurrently. */
+function gateAsync(cwd: string, args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
+  return new Promise((resolve) => {
+    const child = spawn("node", [CLI, ...args], { cwd });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (d: Buffer) => (stdout += d));
+    child.stderr.on("data", (d: Buffer) => (stderr += d));
+    child.on("close", (code) => resolve({ code: code ?? 1, stdout, stderr }));
+  });
 }
 
 function git(cwd: string, args: string[]): string {
@@ -238,5 +250,48 @@ describe("branch-keyed run concurrency", () => {
     const again = gate(repo, ["start", "different title", "--json"]).json() as { resumed: boolean; id: string };
     expect(again.resumed).toBe(true);
     expect(again.id).toBe(startedData.id);
+  });
+
+  it("fails closed on a corrupt current.json instead of silently discarding every branch's mapping", () => {
+    const repo = makeRepo();
+    gate(repo, ["init"]);
+    gate(repo, ["start", "will be corrupted", "--profile", "docs"]);
+    writeFileSync(join(repo, ".gate", "current.json"), "{ not: valid json");
+
+    const status = gate(repo, ["status"]);
+    expect(status.code).not.toBe(0);
+    expect(status.stderr).toContain("corrupt");
+    expect(status.stderr).toContain("current.json");
+  });
+
+  it("serializes concurrent `gate start` on the same branch: exactly one run wins, current.json never corrupts", async () => {
+    const repo = makeRepo();
+    gate(repo, ["init"]);
+    const branch = git(repo, ["branch", "--show-current"]);
+
+    const N = 8;
+    const results = await Promise.all(
+      Array.from({ length: N }, (_, i) =>
+        gateAsync(repo, ["start", `concurrent run ${i}`, "--profile", "docs", "--json"]),
+      ),
+    );
+    expect(results.every((r) => r.code === 0)).toBe(true);
+
+    const parsed = results.map((r) => JSON.parse(r.stdout) as { id: string; resumed?: boolean });
+    const created = parsed.filter((p) => !p.resumed);
+    const resumed = parsed.filter((p) => p.resumed);
+    // With the whole read-decide-write sequence under one lock, every
+    // process but the first to acquire it must see the first's write and
+    // resume - never two winners, never a lost mapping.
+    expect(created.length).toBe(1);
+    expect(resumed.length).toBe(N - 1);
+    const winningId = created[0]!.id;
+    expect(parsed.every((p) => p.id === winningId)).toBe(true);
+
+    const state = JSON.parse(readFileSync(join(repo, ".gate", "current.json"), "utf8")) as {
+      branches: Record<string, string>;
+    };
+    expect(state.branches[branch]).toBe(winningId);
+    expect(Object.keys(state.branches)).toEqual([branch]);
   });
 });

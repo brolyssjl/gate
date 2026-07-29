@@ -92,6 +92,26 @@ describe("gate prune", () => {
     expect(existsSync(join(repo, ".gate", "runs", activeId))).toBe(true);
   });
 
+  it("protects every run current.json maps to, even a done run mapped under a branch other than the one checked out", () => {
+    const repo = makeRepo();
+    gate(repo, ["init"]);
+    // A done-but-still-mapped run (the failure mode a migration/advance bug
+    // could produce): status is "done", so nothing about its own record
+    // marks it active, but current.json still points a branch at it.
+    seedRun(repo, "stale-mapped-run", daysAgo(30), "done");
+    writeFileSync(
+      join(repo, ".gate", "current.json"),
+      JSON.stringify({ schema: 1, branches: { "some-other-branch": "stale-mapped-run" } }),
+    );
+    seedRun(repo, "genuinely-finished", daysAgo(1));
+
+    const res = gate(repo, ["prune", "--keep", "0", "--json"]);
+    const data = res.json() as { pruned: string[] };
+    expect(data.pruned).toEqual(["genuinely-finished"]);
+    expect(data.pruned).not.toContain("stale-mapped-run");
+    expect(existsSync(join(repo, ".gate", "runs", "stale-mapped-run"))).toBe(true);
+  });
+
   it("--days additionally requires a candidate to be older than N days", () => {
     const repo = makeRepo();
     gate(repo, ["init"]);

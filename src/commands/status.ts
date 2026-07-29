@@ -1,4 +1,10 @@
-import { listActiveBranches, NO_GIT_BRANCH_KEY, readCurrentRunId, resolveBranchKey } from "../core/current.js";
+import {
+  clearCurrentRunId,
+  listActiveBranches,
+  NO_GIT_BRANCH_KEY,
+  readCurrentRunId,
+  resolveBranchKey,
+} from "../core/current.js";
 import { loadConfig } from "../core/config.js";
 import { readRun, type Run } from "../core/run.js";
 import { phaseSequence } from "../core/stateMachine.js";
@@ -47,7 +53,25 @@ export function cmdStatus(args: ParsedArgs): void {
     emit(human, { active: false, others }, args.flags);
     return;
   }
-  const run = readRun(root, id);
+  let run: Run;
+  try {
+    run = readRun(root, id);
+  } catch {
+    // Dangling mapping - e.g. the run folder was pruned or removed by hand
+    // after something left a stale current.json entry. Degrade gracefully
+    // and self-heal instead of crashing with an uncaught "run not found":
+    // clear the stale pointer so this branch stops resolving a run that no
+    // longer exists.
+    clearCurrentRunId(root, resolved.key);
+    const human = [
+      `No active run (a stale pointer to "${id}" was cleared - its run folder is gone).`,
+      others.length ? "\nOther runs in flight:\n" + others.map(formatOther).join("\n") : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
+    emit(human, { active: false, healed: id, others }, args.flags);
+    return;
+  }
   const artifacts = Object.keys(run.artifacts);
   const phases = phaseSequence(run.profile);
   const nextAction = hasGate(run.phase)

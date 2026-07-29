@@ -100,6 +100,55 @@ describe("branch-keyed run concurrency", () => {
     expect(resumed.id).toBe(first.id);
   });
 
+  it("gate start refuses to resume on an explicit --profile conflict instead of silently discarding it", () => {
+    const repo = makeRepo();
+    gate(repo, ["init"]);
+    gate(repo, ["start", "first title", "--profile", "docs"]);
+
+    const res = gate(repo, ["start", "second title", "--profile", "bugfix"]);
+    expect(res.code).not.toBe(0);
+    expect(res.stderr).toContain("docs");
+    expect(res.stderr).toContain("bugfix");
+  });
+
+  it("gate start refuses to resume on an explicit --target conflict instead of silently discarding it", () => {
+    const repo = makeRepo();
+    gate(repo, ["init"]);
+    const configPath = join(repo, ".gate", "config.yml");
+    writeFileSync(
+      configPath,
+      readFileSync(configPath, "utf8") + '\ntargets:\n  api:\n    match: ["apps/api/**"]\n  web:\n    match: ["apps/web/**"]\n',
+    );
+
+    gate(repo, ["start", "first title", "--profile", "docs", "--target", "api"]);
+    const res = gate(repo, ["start", "second title", "--profile", "docs", "--target", "web"]);
+    expect(res.code).not.toBe(0);
+    expect(res.stderr).toContain("api");
+    expect(res.stderr).toContain("web");
+  });
+
+  it("gate start warns instead of silently discarding a title mismatch when resuming (title alone never blocks)", () => {
+    const repo = makeRepo();
+    gate(repo, ["init"]);
+    const first = gate(repo, ["start", "original title", "--profile", "docs", "--json"]).json() as { id: string };
+
+    const jsonRes = gate(repo, ["start", "a totally different title", "--profile", "docs", "--json"]);
+    expect(jsonRes.code).toBe(0);
+    const data = jsonRes.json() as {
+      resumed: boolean;
+      titleMismatch: boolean;
+      requestedTitle: string;
+      id: string;
+    };
+    expect(data.resumed).toBe(true);
+    expect(data.titleMismatch).toBe(true);
+    expect(data.requestedTitle).toBe("a totally different title");
+    expect(data.id).toBe(first.id);
+
+    const humanRes = gate(repo, ["start", "yet another title", "--profile", "docs"]);
+    expect(humanRes.stdout).toContain("WARNING");
+  });
+
   it("gate start refuses to resume when the plan changed since approval", () => {
     const repo = makeRepo({ "package.json": JSON.stringify({ name: "fx", scripts: { test: "node -e 0" } }) });
     gate(repo, ["init"]);

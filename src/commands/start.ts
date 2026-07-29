@@ -93,7 +93,7 @@ export function cmdStart(args: ParsedArgs): void {
   // lock, so a concurrent `gate start` on the same branch can't interleave
   // between the decision and the write (the milestone's own use case is
   // several agents in flight at once).
-  type Outcome = { kind: "resumed"; run: Run } | { kind: "created"; run: Run };
+  type Outcome = { kind: "resumed"; run: Run; titleMismatch: boolean } | { kind: "created"; run: Run };
   const outcome = withCurrentLock(root, (branches): Outcome => {
     const existingId = branches[branchKey];
     if (existingId) {
@@ -106,7 +106,34 @@ export function cmdStart(args: ParsedArgs): void {
               "re-run `gate approve` or resolve the run before starting fresh",
           );
         }
-        return { kind: "resumed", run: existing };
+        // Resuming silently on a real profile/target conflict would let an
+        // agent believe it started (say) a bugfix-profile run when it's
+        // actually driving an old docs-profile one - a hard error only when
+        // the flag was *explicitly* requested (an unset flag defaulting to
+        // "feature" must not manufacture a false conflict against whatever
+        // profile the resumed run happens to be).
+        if (typeof args.flags.profile === "string" && profile !== existing.profile) {
+          throw new GateError(
+            `run "${existingId}" on this branch is profile "${existing.profile}", but --profile ${profile} ` +
+              "was requested for a resumed run — drop --profile to resume it as-is, or finish/abandon it first",
+          );
+        }
+        const existingTargets = existing.targetOverride ?? [];
+        const requestedTargets = targetOverride ?? [];
+        const targetsDiffer =
+          requestedTargets.length !== existingTargets.length ||
+          requestedTargets.some((t, i) => t !== existingTargets[i]);
+        if (typeof args.flags.target === "string" && targetsDiffer) {
+          throw new GateError(
+            `run "${existingId}" on this branch has --target ${existingTargets.join(",") || "(none)"}, but ` +
+              `${requestedTargets.join(",") || "(none)"} was requested for a resumed run — ` +
+              "drop --target to resume it as-is, or finish/abandon it first",
+          );
+        }
+        // A title mismatch is cosmetic (it doesn't change gate behavior the
+        // way profile/target do) - surfaced as a loud warning, not a hard
+        // error, so the resumed run's own title is always what's kept.
+        return { kind: "resumed", run: existing, titleMismatch: existing.title !== title };
       }
       delete branches[branchKey];
     }
@@ -124,12 +151,26 @@ export function cmdStart(args: ParsedArgs): void {
     const sequence = phaseSequence(existing.profile);
     const human = [
       `Branch already has an active run: "${existing.id}" (phase ${existing.phase}) — resuming it.`,
+      outcome.titleMismatch
+        ? `WARNING: requested title "${title}" differs from the resumed run's title "${existing.title}" - ` +
+          "the resumed run's own title was kept; pass --profile/--target to detect a real conflict instead of guessing from the title."
+        : "",
       `Flow: ${sequence.map((p) => (p === existing.phase ? `[${p}]` : p)).join(" → ")}`,
       `Next: run \`gate status\` or \`gate playbook\` to continue.`,
-    ].join("\n");
+    ]
+      .filter(Boolean)
+      .join("\n");
     emit(
       human,
-      { id: existing.id, phase: existing.phase, profile: existing.profile, phases: sequence, resumed: true },
+      {
+        id: existing.id,
+        phase: existing.phase,
+        profile: existing.profile,
+        phases: sequence,
+        resumed: true,
+        requestedTitle: title,
+        titleMismatch: outcome.titleMismatch,
+      },
       args.flags,
     );
     return;

@@ -193,4 +193,30 @@ describe("gate guard", () => {
     const disabled = git(repo, ["commit", "-m", "guard disabled"], envDisabled);
     expect(disabled.code).toBe(0);
   });
+
+  it("GATE_GUARD=0 disables only the gate check - a chained pre-existing hook still runs", () => {
+    const repo = makeRepo();
+    startActiveRun(repo, ["a.txt"]);
+    gate(repo, ["approve"]);
+    gate(repo, ["next"]); // -> IMPLEMENT
+
+    const hookPath = join(repo, ".git", "hooks", "pre-commit");
+    mkdirSync(dirname(hookPath), { recursive: true });
+    const marker = join(repo, "chained-hook-ran");
+    writeFileSync(hookPath, `#!/bin/sh\ntouch "${marker}"\nexit 0\n`);
+    chmodSync(hookPath, 0o755);
+    gate(repo, ["guard", "install"]);
+    expect(gate(repo, ["guard", "install", "--json"]).json()).toMatchObject({ chained: false, alreadyInstalled: true });
+
+    // Out of scope - gate guard's own check would block this (proven by the
+    // "should be blocked" case above); GATE_GUARD=0 must skip only that
+    // check, not the commit's chained hook.
+    writeFile(repo, "b.txt", "not declared in the plan\n");
+    git(repo, ["add", "b.txt"]);
+    const env = { ...withGateOnPath(), GATE_GUARD: "0" };
+    const res = git(repo, ["commit", "-m", "guard disabled, hook still chained"], env);
+
+    expect(res.code).toBe(0);
+    expect(existsSync(marker)).toBe(true);
+  });
 });

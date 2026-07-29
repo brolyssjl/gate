@@ -76,16 +76,24 @@ load-bearing; pointers, never copies.
       prep landed (placeholder name, `install.sh`, `build:binary`, CI/release
       workflows); the owner still decides the final name and publish timing
 
+## Milestone 4 - Concurrency & guardrails ⏳ (v0.3.0)
+
+- [ ] Multi-run concurrency - one active run per branch, keyed by branch name;
+      `gate start` resumes a branch's existing run or starts an independent
+      one; detached HEAD falls back to explicit `--run` selection
+- [ ] `gate guard` pre-commit hook (default-off, opt-in) - cheap deterministic
+      checks only (active run, scope, phase); never load-bearing, always
+      escapable (`--no-verify`, `GATE_GUARD=0`)
+- [ ] Broader diff-coverage parsers - coverage.py JSON, Go cover profiles, LCOV
+      - alongside jest/vitest and the generic JSON contract
+- [ ] `gate review --human` - minimal terminal rubric walk for solo devs (no
+      TUI framework, no dependencies); satisfies the same REVIEW gate as agent
+      review
+
 ## Deferred / v2
 
 - [ ] Go port (startup-latency escape hatch)
-- [ ] `gate guard` pre-commit hook (default-off, opt-in)
-- [ ] Human-review TUI mode for solo devs
-- [ ] Broader diff-coverage parsers beyond jest/vitest + generic JSON
 
 ## Open questions
 
-- Multi-run concurrency: one active run per branch, keyed by branch name?
-- Diff coverage: how many built-in parsers before falling back to the generic
-  JSON contract?
 - Approval identity: how far can a CLI go toward proving a *human* approved?

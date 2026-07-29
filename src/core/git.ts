@@ -53,9 +53,17 @@ export type BranchState =
  * non-repo has no ambiguity to resolve (there's only ever one project).
  */
 export function branchState(root: string): BranchState {
-  if (!isGitRepo(root)) return { kind: "none" };
-  const branch = currentBranch(root);
-  return branch ? { kind: "branch", name: branch } : { kind: "detached" };
+  // A successful symbolic-ref alone proves both "this is a git repo" and "on
+  // a branch" - the common case needs only this one subprocess. Reading the
+  // raw result (not through currentBranch(), which conflates "the command
+  // failed" with "it succeeded but printed nothing") lets that single call
+  // decide the common case; isGitRepo() is only needed to disambiguate
+  // "not a repo" from "genuinely detached", and only on the rarer path where
+  // symbolic-ref didn't resolve a branch.
+  const res = git(root, ["symbolic-ref", "--quiet", "--short", "HEAD"]);
+  const branch = res.stdout.trim();
+  if (res.ok && branch.length > 0) return { kind: "branch", name: branch };
+  return isGitRepo(root) ? { kind: "detached" } : { kind: "none" };
 }
 
 /**

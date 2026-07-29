@@ -210,6 +210,27 @@ describe("branch-keyed run concurrency", () => {
     expect(withRun.stderr).not.toContain("detached");
   });
 
+  it("detached HEAD: gate report with no run id refuses instead of silently describing another branch's run", () => {
+    const repo = makeRepo();
+    gate(repo, ["init"]);
+    gate(repo, ["start", "run before detaching", "--profile", "docs"]);
+    const runId = (gate(repo, ["status", "--json"]).json() as { id: string }).id;
+
+    git(repo, ["checkout", "-b", "other-branch"]);
+    gate(repo, ["start", "an unrelated run on another branch", "--profile", "docs"]);
+
+    const sha = git(repo, ["rev-parse", "HEAD"]);
+    git(repo, ["checkout", sha]);
+
+    const withoutId = gate(repo, ["report"]);
+    expect(withoutId.code).not.toBe(0);
+    expect(withoutId.stderr).toContain("detached");
+
+    // Explicit run id still works on a detached HEAD.
+    const withId = gate(repo, ["report", runId, "--json"]).json() as { id: string };
+    expect(withId.id).toBe(runId);
+  });
+
   it("--run refuses a non-active (done/abandoned) run instead of letting phase gates pass vacuously", () => {
     const repo = makeRepo();
     gate(repo, ["init"]);

@@ -93,9 +93,18 @@ export function renderReportHuman(data: ReportData, archived: boolean): string {
  */
 export function cmdReport(args: ParsedArgs): void {
   const root = requireRoot();
+  const explicitId = args.positionals[0];
   const resolved = resolveBranchKey(root);
+  // A detached HEAD has no branch to resolve a default run from - same
+  // policy as the phase commands (check/next/review/...): refuse rather than
+  // silently falling back to mostRecentRunId, which could describe a
+  // completely different branch's run with nothing indicating that's what
+  // happened.
+  if (!explicitId && resolved.kind === "detached") {
+    throw new GateError("HEAD is detached — no branch to resolve a default run from; pass a run id: gate report <id>");
+  }
   const currentId = resolved.kind === "key" ? readCurrentRunId(root, resolved.key) : null;
-  const runId = args.positionals[0] ?? currentId ?? mostRecentRunId(root) ?? mostRecentArchivedRunId(root);
+  const runId = explicitId ?? currentId ?? mostRecentRunId(root) ?? mostRecentArchivedRunId(root);
   if (!runId) throw new GateError("no run to report on - pass a run id: gate report <id>");
 
   const { data, archived } = loadReportData(root, runId);

@@ -16,6 +16,11 @@ re-verifies build/lint/test on its own. Hand the packet to a reviewer who is
 not you; the gate rejects a reviewer equal to your session id when both are
 known.
 
+Solo, with no second session to hand the packet to: run `gate review --human`
+instead. It emits the same packet, prints this rubric, then prompts for
+findings and a reviewer name at the terminal and writes `review.md` itself -
+the same gate checks apply, no special-casing.
+
 ## For the reviewer - the rubric
 
 Read the packet end to end, then judge:

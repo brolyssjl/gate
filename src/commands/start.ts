@@ -1,7 +1,14 @@
 import { existsSync, writeFileSync } from "node:fs";
 import { RETRO_TEMPLATE } from "../artifacts/retro.js";
+import { hashPlanFile } from "../artifacts/plan.js";
 import { loadConfig } from "../core/config.js";
-import { clearCurrentRunId, readCurrentRunId, setCurrentRunId } from "../core/current.js";
+import {
+  clearCurrentRunId,
+  NO_GIT_BRANCH_KEY,
+  readCurrentRunId,
+  resolveBranchKey,
+  setCurrentRunId,
+} from "../core/current.js";
 import { headSha } from "../core/git.js";
 import { runPaths } from "../core/paths.js";
 import { resolvePlaybookWithOverlays } from "../core/playbooks.js";
@@ -51,15 +58,41 @@ export function cmdStart(args: ParsedArgs): void {
   const title = args.positionals.join(" ").trim();
   if (!title) throw new UsageError('gate start needs a title: gate start "<title>"');
 
-  const existingId = readCurrentRunId(root);
+  const resolved = resolveBranchKey(root);
+  if (resolved.kind === "detached") {
+    throw new GateError(
+      "HEAD is detached — runs are keyed by branch; checkout a branch before `gate start`",
+    );
+  }
+  const branchKey = resolved.key;
+  const branch = branchKey === NO_GIT_BRANCH_KEY ? null : branchKey;
+
+  const existingId = readCurrentRunId(root, branchKey);
   if (existingId) {
     const existing = safeRead(root, existingId);
     if (existing && existing.status === "active") {
-      throw new GateError(
-        `run "${existingId}" is still active (phase ${existing.phase}); finish or abandon it first`,
+      const planPath = runPaths(root, existingId).plan;
+      if (existing.approval && hashPlanFile(planPath) !== existing.approval.planHash) {
+        throw new GateError(
+          `run "${existingId}" on this branch is approved but plan.md has changed since — ` +
+            "re-run `gate approve` or resolve the run before starting fresh",
+        );
+      }
+      // Resuming, not starting fresh: this branch already has work in flight.
+      const sequence = phaseSequence(existing.profile);
+      const human = [
+        `Branch already has an active run: "${existingId}" (phase ${existing.phase}) — resuming it.`,
+        `Flow: ${sequence.map((p) => (p === existing.phase ? `[${p}]` : p)).join(" → ")}`,
+        `Next: run \`gate status\` or \`gate playbook\` to continue.`,
+      ].join("\n");
+      emit(
+        human,
+        { id: existing.id, phase: existing.phase, profile: existing.profile, phases: sequence, resumed: true },
+        args.flags,
       );
+      return;
     }
-    clearCurrentRunId(root);
+    clearCurrentRunId(root, branchKey);
   }
 
   const profile = typeof args.flags.profile === "string" ? args.flags.profile : DEFAULT_PROFILE;
@@ -90,9 +123,9 @@ export function cmdStart(args: ParsedArgs): void {
   }
 
   const id = uniqueRunId(root, title);
-  const run = newRun({ id, title, profile, baseRef: headSha(root), sessionId, targetOverride });
+  const run = newRun({ id, title, profile, branch, baseRef: headSha(root), sessionId, targetOverride });
   writeRun(root, run);
-  setCurrentRunId(root, id);
+  setCurrentRunId(root, branchKey, id);
 
   // Scaffold a plan.md for the agent to fill in, plus a debug-log.md / retro.md
   // when the profile walks through DEBUG / RETRO so the templates are waiting.
@@ -110,7 +143,8 @@ export function cmdStart(args: ParsedArgs): void {
   const targetNames = resolveDisplayTargets(root, run, config);
   const playbook = resolvePlaybookWithOverlays(root, "PLAN", config, targetNames) ?? "(no PLAN playbook found)";
   const human = [
-    `Started run "${id}" (profile: ${profile}, phases: ${sequence.join(" → ")}) → phase PLAN`,
+    `Started run "${id}" (profile: ${profile}, phases: ${sequence.join(" → ")}) → phase PLAN` +
+      (branch ? ` on branch "${branch}"` : ""),
     `Edit the plan at: ${paths.plan}`,
     "When it's ready and signed off, run `gate approve`, then `gate next`.",
     hints.length ? "\nHints:\n" + hints.map((h) => "  - " + h).join("\n") : "",
@@ -119,7 +153,7 @@ export function cmdStart(args: ParsedArgs): void {
     .filter(Boolean)
     .join("\n");
 
-  emit(human, { id, phase: run.phase, profile, phases: sequence, plan: paths.plan, hints }, args.flags);
+  emit(human, { id, phase: run.phase, profile, branch, phases: sequence, plan: paths.plan, hints }, args.flags);
 }
 
 function safeRead(root: string, id: string) {

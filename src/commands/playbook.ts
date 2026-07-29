@@ -1,5 +1,5 @@
 import { loadConfig } from "../core/config.js";
-import { readCurrentRunId } from "../core/current.js";
+import { readCurrentRunId, resolveBranchKey } from "../core/current.js";
 import { resolvePlaybookWithOverlays } from "../core/playbooks.js";
 import { readRun } from "../core/run.js";
 import { isPhase, type Phase } from "../core/stateMachine.js";
@@ -29,10 +29,11 @@ export function cmdPlaybook(args: ParsedArgs): void {
     // No active-run context to reuse here - an explicit phase argument works
     // even with no run started, so targets (if any) come from whatever run is
     // current, read directly.
-    const activeRunId = readCurrentRunId(root);
+    const resolved = resolveBranchKey(root);
+    const activeRunId = resolved.kind === "key" ? readCurrentRunId(root, resolved.key) : null;
     targetNames = activeRunId ? resolveDisplayTargets(root, readRun(root, activeRunId), config) : [];
   } else {
-    const ctx = requireActiveRun();
+    const ctx = requireActiveRun(args);
     root = ctx.root;
     phase = ctx.run.phase;
     config = ctx.config;

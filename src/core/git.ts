@@ -31,6 +31,25 @@ export function currentBranch(root: string): string | null {
   return branch && branch !== "HEAD" ? branch : null;
 }
 
+export type BranchState =
+  | { kind: "branch"; name: string }
+  | { kind: "detached" }
+  | { kind: "none" };
+
+/**
+ * Tri-state read of the repo's branch identity, for branch-keyed run
+ * concurrency (Milestone 4). `"none"` (not a git repo at all) is distinct from
+ * `"detached"` (a git repo, but HEAD points at a commit, not a branch): a
+ * detached HEAD is genuinely ambiguous - which run should "current" resolve
+ * to? - so callers must fall back to explicit `--run` selection, while a
+ * non-repo has no ambiguity to resolve (there's only ever one project).
+ */
+export function branchState(root: string): BranchState {
+  if (!isGitRepo(root)) return { kind: "none" };
+  const branch = currentBranch(root);
+  return branch ? { kind: "branch", name: branch } : { kind: "detached" };
+}
+
 /** Current HEAD sha, or null if there are no commits yet / not a repo. */
 export function headSha(root: string): string | null {
   const res = git(root, ["rev-parse", "HEAD"]);

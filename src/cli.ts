@@ -29,30 +29,38 @@ Commands:
   init [--refresh]        Scaffold .gate/, infer commands, detect integrations
   trust [--check] [--by]  Approve the config commands block (TOFU); required
                           before gates will execute build/test/lint
-  start "<title>"         Create a run, enter PLAN, print the plan playbook
+  start "<title>"         Create a run, enter PLAN, print the plan playbook.
+                          One active run per branch: a branch with a run
+                          already in flight is resumed, not restarted
     [--profile <p>]       Phases to run: feature|bugfix|refactor|docs (default feature)
     [--target <a,b>]      Override target resolution (comma-separated names);
                           wins over file-based resolution for this run
   approve [--by] [--reason]  Record PLAN sign-off, bound to the plan's content
-  status                  Current run, phase, what the gate waits for
-  check                   Run the current gate; exit code = verdict
-  next                    Check + advance on pass; on fail, print what's missing
-  review [--fresh] [--by] Emit a self-contained review packet (REVIEW phase);
-                          --fresh regenerates it from the current code
-  retro                   Sync retro.md into the Agnosgram journal (RETRO
+  status                  Active run for the current branch, plus any other
+                          branches with a run in flight
+  check [--run <id>]      Run the current gate; exit code = verdict
+  next [--run <id>]       Check + advance on pass; on fail, print what's missing
+  review [--fresh] [--by] [--run <id>]  Emit a self-contained review packet
+                          (REVIEW phase); --fresh regenerates it from the
+                          current code
+  retro [--run <id>]      Sync retro.md into the Agnosgram journal (RETRO
                           phase); no-op without a .agnosgram/ store
   report [<run-id>]       Per-run summary: durations, gate failures, findings
                           (falls back to an archived summary after prune)
   prune [--keep n] [--days n] [--dry-run]  Archive non-active runs past the
                           retention window to .gate/archive/, then remove them
-  skip <phase> --reason [--by]  Human-authorized skip of the current phase
-                          (recorded with who and why; shown by \`gate report\`)
-  log <file>              Register an artifact against the current phase
-  playbook [phase]        Print the active playbook for a phase
+  skip <phase> --reason [--by] [--run <id>]  Human-authorized skip of the
+                          current phase (recorded with who and why; shown by
+                          \`gate report\`)
+  log <file> [--run <id>] Register an artifact against the current phase
+  playbook [phase] [--run <id>]  Print the active playbook for a phase
 
 Global options:
   --json                  Machine-readable JSON output
   --format json|toon      Choose the serializer (toon: uniform arrays only)
+  --run <id>              Act on a specific run instead of resolving the
+                          current branch's active run (required on a detached
+                          HEAD, where there's no branch to resolve from)
   -h, --help              Show this help
   -v, --version           Show version
 

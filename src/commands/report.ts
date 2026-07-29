@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { archivePath, gatePaths, runPaths } from "../core/paths.js";
-import { readCurrentRunId } from "../core/current.js";
+import { readCurrentRunId, resolveBranchKey } from "../core/current.js";
 import { readRun, type HistoryEntry, type Run } from "../core/run.js";
 import { parseReviewFile, SEVERITIES, STATUSES } from "../artifacts/review.js";
 import { emit, GateError, requireRoot, type ParsedArgs } from "./shared.js";
@@ -93,8 +93,9 @@ export function renderReportHuman(data: ReportData, archived: boolean): string {
  */
 export function cmdReport(args: ParsedArgs): void {
   const root = requireRoot();
-  const runId =
-    args.positionals[0] ?? readCurrentRunId(root) ?? mostRecentRunId(root) ?? mostRecentArchivedRunId(root);
+  const resolved = resolveBranchKey(root);
+  const currentId = resolved.kind === "key" ? readCurrentRunId(root, resolved.key) : null;
+  const runId = args.positionals[0] ?? currentId ?? mostRecentRunId(root) ?? mostRecentArchivedRunId(root);
   if (!runId) throw new GateError("no run to report on - pass a run id: gate report <id>");
 
   const { data, archived } = loadReportData(root, runId);

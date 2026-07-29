@@ -8,7 +8,7 @@ import { requireActiveRun, type ParsedArgs } from "./shared.js";
  * Gate never advances here; use `gate next` to advance on pass.
  */
 export function cmdCheck(args: ParsedArgs): void {
-  const { root, run, config } = requireActiveRun();
+  const { root, run, config } = requireActiveRun(args);
   const res = runGate({ root, run, config });
   const ok = renderGate(res, {}, args.flags);
   process.exitCode = ok ? 0 : 1;

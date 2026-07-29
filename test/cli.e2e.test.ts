@@ -472,6 +472,7 @@ describe("gate --json schema", () => {
   it("init/start/status expose stable top-level keys", () => {
     expect(keys(gate(repo, ["init", "--json"]))).toEqual(["detected", "initialized", "refreshed", "root"]);
     expect(keys(gate(repo, ["start", "schema demo", "--json"]))).toEqual([
+      "branch",
       "hints",
       "id",
       "phase",
@@ -483,8 +484,10 @@ describe("gate --json schema", () => {
       "active",
       "artifacts",
       "baseRef",
+      "branch",
       "id",
       "nextAction",
+      "others",
       "phase",
       "phases",
       "profile",

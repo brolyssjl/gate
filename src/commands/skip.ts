@@ -9,7 +9,7 @@ import { emit, GateError, requireActiveRun, UsageError, type ParsedArgs } from "
  * current phase can be skipped, and never DONE.
  */
 export function cmdSkip(args: ParsedArgs): void {
-  const { root, run } = requireActiveRun();
+  const { root, run } = requireActiveRun(args);
 
   const arg = args.positionals[0];
   if (!arg) throw new UsageError('gate skip needs a phase: gate skip <phase> --reason "..."');

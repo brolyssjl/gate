@@ -1,7 +1,8 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 import { makeRepo } from "./helpers.js";
 
@@ -164,5 +165,45 @@ describe("branch-keyed run concurrency", () => {
       branches: Record<string, string>;
     };
     expect(migrated.branches[branch]).toBe("legacy-run");
+  });
+
+  it("resolves the branch name on an unborn branch (git init, zero commits yet) - distinct from detached HEAD", () => {
+    // Not makeRepo() - that helper always commits. A fresh `git init` repo has
+    // no commits, so `git rev-parse --abbrev-ref HEAD` fails exactly as it
+    // does on a real detached HEAD; this must still resolve the branch name.
+    const repo = mkdtempSync(join(tmpdir(), "gate-unborn-"));
+    execFileSync("git", ["init", "-q"], { cwd: repo });
+    gate(repo, ["init"]);
+
+    const started = gate(repo, ["start", "first run ever", "--json"]);
+    expect(started.code).toBe(0);
+    const data = started.json() as { branch: string | null };
+    expect(data.branch).not.toBeNull();
+
+    const status = gate(repo, ["status", "--json"]).json() as { detached?: boolean; active: boolean };
+    expect(status.detached).toBeFalsy();
+    expect(status.active).toBe(true);
+  });
+
+  it("works with no git repo at all: a single implicit key, no branch ambiguity", () => {
+    // Not makeRepo() - a plain directory with no `git init`, exercising the
+    // NO_GIT_BRANCH_KEY path (distinct from detached HEAD, which *is* a repo).
+    const repo = mkdtempSync(join(tmpdir(), "gate-no-git-"));
+    gate(repo, ["init"]);
+
+    const started = gate(repo, ["start", "no-git run", "--profile", "docs", "--json"]);
+    expect(started.code).toBe(0);
+    const startedData = started.json() as { branch: string | null; id: string };
+    expect(startedData.branch).toBeNull();
+
+    const status = gate(repo, ["status", "--json"]).json() as { active: boolean; id: string; branch: string | null };
+    expect(status.active).toBe(true);
+    expect(status.id).toBe(startedData.id);
+    expect(status.branch).toBeNull();
+
+    // A second `gate start` on the same (non-)branch resumes rather than erroring.
+    const again = gate(repo, ["start", "different title", "--json"]).json() as { resumed: boolean; id: string };
+    expect(again.resumed).toBe(true);
+    expect(again.id).toBe(startedData.id);
   });
 });

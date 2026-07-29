@@ -23,12 +23,20 @@ export function isGitRepo(root: string): boolean {
   return git(root, ["rev-parse", "--is-inside-work-tree"]).ok;
 }
 
-/** Current branch name, or null when not a repo, unborn, or detached HEAD. */
+/**
+ * Current branch name, or null when not a repo or on a detached HEAD.
+ * `symbolic-ref` (not `rev-parse --abbrev-ref`) so this resolves correctly on
+ * an *unborn* branch too - a freshly `git init`'d repo with zero commits still
+ * has `HEAD` pointing at `refs/heads/<branch>` symbolically, but no commit for
+ * `rev-parse` to resolve yet, so `rev-parse --abbrev-ref HEAD` fails exactly
+ * as it does on a real detached HEAD - a real regression here otherwise, since
+ * branch-keyed runs (Milestone 4) treat "detached" as a hard blocker.
+ */
 export function currentBranch(root: string): string | null {
-  const res = git(root, ["rev-parse", "--abbrev-ref", "HEAD"]);
+  const res = git(root, ["symbolic-ref", "--quiet", "--short", "HEAD"]);
   if (!res.ok) return null;
   const branch = res.stdout.trim();
-  return branch && branch !== "HEAD" ? branch : null;
+  return branch.length > 0 ? branch : null;
 }
 
 export type BranchState =

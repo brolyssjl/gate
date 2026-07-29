@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { join, relative, isAbsolute } from "node:path";
+import { join, relative, isAbsolute, normalize } from "node:path";
 import type { CoverageFormat } from "../core/config.js";
 
 export interface FileCoverage {
@@ -48,14 +48,17 @@ export function loadCoverage(root: string, format: CoverageFormat = "auto"): Cov
     if (c) return c;
   }
   if ((format === "lcov" || format === "auto") && existsSync(lcovPath)) {
-    const l = parseLcov(readFileSync(lcovPath, "utf8"));
+    const l = parseLcov(readFileSync(lcovPath, "utf8"), root);
     if (l) return l;
   }
   return null;
 }
 
 function toRel(root: string, p: string): string {
-  const rel = isAbsolute(p) ? relative(root, p) : p;
+  // normalize() collapses a leading "./" (some lcov writers - genhtml,
+  // certain nyc/cargo-llvm-cov configs - emit `SF:./src/file.ts`), not just
+  // the absolute-path case every other parser already handled.
+  const rel = isAbsolute(p) ? relative(root, p) : normalize(p);
   return rel.split("\\").join("/");
 }
 
@@ -210,9 +213,14 @@ function parseGoCover(raw: string, root: string): CoverageMap | null {
  * `DA:<line>,<hits>` reports one line's hit count, `end_of_record` closes it.
  * Multiple records for the same `SF` (e.g. separate test suites) accumulate
  * into the same file entry. Function/branch lines (FN/FNDA/BRDA) are ignored
- * - Gate measures line coverage only.
+ * - Gate measures line coverage only. `SF:` paths are relativized via `toRel`
+ * like every other parser: gcov, genhtml, cargo-llvm-cov, and some nyc
+ * configs write absolute (or `./`-prefixed) paths, which otherwise never
+ * match git's repo-relative changed files - `diffCoverage` would then skip
+ * every file and report a vacuous 100%, the diff-coverage gate failing open
+ * at any threshold.
  */
-function parseLcov(raw: string): CoverageMap | null {
+function parseLcov(raw: string, root: string): CoverageMap | null {
   const lines = raw.split("\n");
   if (!lines.some((l) => l.trim().startsWith("SF:"))) return null;
 
@@ -221,7 +229,7 @@ function parseLcov(raw: string): CoverageMap | null {
   for (const rawLine of lines) {
     const line = rawLine.trim();
     if (line.startsWith("SF:")) {
-      const path = line.slice(3).trim().replace(/\\/g, "/");
+      const path = toRel(root, line.slice(3).trim());
       current = map.get(path) ?? { covered: new Set(), uncovered: new Set() };
       map.set(path, current);
     } else if (line.startsWith("DA:") && current) {

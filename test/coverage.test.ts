@@ -139,6 +139,32 @@ describe("loadCoverage: lcov", () => {
     expect(map?.get("src/file.ts")).toEqual({ covered: new Set([1, 3]), uncovered: new Set([2]) });
   });
 
+  it("relativizes an absolute SF: path (gcov, genhtml, cargo-llvm-cov style) instead of failing open", () => {
+    const root = mkdtempSync(join(tmpdir(), "gate-coverage-"));
+    mkdirSync(join(root, "coverage"), { recursive: true });
+    const absolute = join(root, "src", "file.ts");
+    writeFileSync(
+      join(root, "coverage", "lcov.info"),
+      ["SF:" + absolute, "DA:1,1", "DA:2,0", "end_of_record", ""].join("\n"),
+    );
+    const map = loadCoverage(root, "lcov");
+    // Un-relativized, this would key under the absolute path and never match
+    // a repo-relative changed-file entry - diffCoverage would then see no
+    // coverage data at all for src/file.ts and silently report 100%.
+    expect(map?.get("src/file.ts")).toEqual({ covered: new Set([1]), uncovered: new Set([2]) });
+    expect(map?.has(absolute)).toBe(false);
+  });
+
+  it("relativizes a `./`-prefixed SF: path instead of failing open", () => {
+    const root = withCoverageFile(
+      "lcov.info",
+      ["SF:./src/file.ts", "DA:1,1", "DA:2,0", "end_of_record", ""].join("\n"),
+    );
+    const map = loadCoverage(root, "lcov");
+    expect(map?.get("src/file.ts")).toEqual({ covered: new Set([1]), uncovered: new Set([2]) });
+    expect(map?.has("./src/file.ts")).toBe(false);
+  });
+
   it("merges multiple record blocks for the same file", () => {
     const twoBlocks = [
       "SF:src/file.ts",

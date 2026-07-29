@@ -71,11 +71,18 @@ export function gitHooksDir(root: string): string | null {
   return isAbsolute(p) ? p : join(root, p);
 }
 
-/** Staged (index) files, excluding `.gate/` bookkeeping - what a pre-commit hook cares about. */
+/**
+ * Staged (index) files, excluding `.gate/` bookkeeping - what a pre-commit
+ * hook cares about. `-z` (NUL-separated, unquoted paths) rather than the
+ * default newline-separated output: with `core.quotepath` (git's default),
+ * a non-ASCII filename otherwise arrives C-quoted with surrounding quotes
+ * (e.g. `"caf\303\251.ts"`), which fails glob matching outright and even
+ * defeats the `.gate/` exclusion below (a leading quote character beats
+ * `startsWith(".gate/")`).
+ */
 export function stagedFiles(root: string): string[] {
-  return git(root, ["diff", "--cached", "--name-only", "--"])
-    .stdout.split("\n")
-    .map((l) => l.trim())
+  return git(root, ["diff", "--cached", "--name-only", "-z", "--"])
+    .stdout.split("\0")
     .filter((f) => f.length > 0 && !f.startsWith(".gate/"));
 }
 

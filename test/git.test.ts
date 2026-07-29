@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { execFileSync } from "node:child_process";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
-import { changedLines, diffText, headSha as head, treeFingerprint } from "../src/core/git.js";
+import { changedLines, diffText, headSha as head, stagedFiles, treeFingerprint } from "../src/core/git.js";
 import { makeRepo, writeFile } from "./helpers.js";
 
 describe("diffText", () => {
@@ -63,5 +64,25 @@ describe("treeFingerprint", () => {
     const before = treeFingerprint(root);
     writeFile(root, ".gate/runs/r1/review.md", "reviewer notes\n");
     expect(treeFingerprint(root)).toBe(before);
+  });
+});
+
+describe("stagedFiles", () => {
+  it("returns exact, unquoted filenames for a staged non-ASCII path (core.quotepath C-quotes them by default without -z)", () => {
+    const root = makeRepo();
+    const name = "café.ts";
+    writeFile(root, name, "export const x = 1;\n");
+    execFileSync("git", ["add", name], { cwd: root });
+    expect(stagedFiles(root)).toEqual([name]);
+  });
+
+  it("excludes .gate/ bookkeeping even when staged", () => {
+    const root = makeRepo();
+    writeFile(root, ".gate/runs/r1/run.json", "{}\n");
+    writeFile(root, "code.js", "x\n");
+    execFileSync("git", ["add", "-A"], { cwd: root });
+    const files = stagedFiles(root);
+    expect(files).toContain("code.js");
+    expect(files.some((f) => f.includes("run.json"))).toBe(false);
   });
 });

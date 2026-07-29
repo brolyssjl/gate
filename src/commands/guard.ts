@@ -1,8 +1,9 @@
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { matchesAny } from "../core/glob.js";
 import { gitHooksDir, stagedFiles } from "../core/git.js";
 import { NO_GIT_BRANCH_KEY, readCurrentRunId, resolveBranchKey } from "../core/current.js";
+import { writeFileAtomic } from "../core/fsx.js";
 import { runPaths } from "../core/paths.js";
 import { readRun, type Run } from "../core/run.js";
 import { parsePlanFile } from "../artifacts/plan.js";
@@ -74,7 +75,7 @@ function guardInstall(root: string, args: ParsedArgs): void {
       );
     }
     renameSync(hookPath, backupPath);
-    writeFileSync(hookPath, hookScript(true));
+    writeFileAtomic(hookPath, hookScript(true));
     chmodSync(hookPath, 0o755);
     emit(
       [
@@ -88,7 +89,7 @@ function guardInstall(root: string, args: ParsedArgs): void {
     return;
   }
 
-  writeFileSync(hookPath, hookScript(false));
+  writeFileAtomic(hookPath, hookScript(false));
   chmodSync(hookPath, 0o755);
   emit(
     [

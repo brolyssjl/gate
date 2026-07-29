@@ -200,6 +200,52 @@ describe("gate CLI end-to-end", () => {
     expect(playbook.playbook).toContain("Run the visual regression suite.");
   });
 
+  it("gate playbook <phase> --run honors the named run's targets, not the current branch's own run", () => {
+    const repo = makeRepo();
+    gate(repo, ["init"]);
+    writeFileSync(join(repo, ".gate", "playbooks", "test.web.md"), "# Web overlay\n\nWEB_OVERLAY_MARKER\n");
+    writeFileSync(join(repo, ".gate", "playbooks", "test.api.md"), "# Api overlay\n\nAPI_OVERLAY_MARKER\n");
+    writeFileSync(
+      join(repo, ".gate", "config.yml"),
+      [
+        "commands: {}",
+        "thresholds: {}",
+        "targets:",
+        "  web:",
+        "    match: [\"apps/web/**\"]",
+        "    playbooks: { test: \".gate/playbooks/test.web.md\" }",
+        "  api:",
+        "    match: [\"apps/api/**\"]",
+        "    playbooks: { test: \".gate/playbooks/test.api.md\" }",
+        "phases: {}",
+        "integrations: { agnosgram: off, sdd: off }",
+        "",
+      ].join("\n"),
+    );
+    const mainBranch = spawnSync("git", ["branch", "--show-current"], { cwd: repo, encoding: "utf8" }).stdout.trim();
+
+    expect(gate(repo, ["start", "api run", "--target", "api"]).code).toBe(0);
+    const apiRunId = (gate(repo, ["status", "--json"]).json() as { id: string }).id;
+
+    spawnSync("git", ["checkout", "-b", "web-branch"], { cwd: repo });
+    expect(gate(repo, ["start", "web run", "--target", "web"]).code).toBe(0);
+    const webRunId = (gate(repo, ["status", "--json"]).json() as { id: string }).id;
+
+    spawnSync("git", ["checkout", mainBranch], { cwd: repo });
+    // Current branch (main) is the api run - the default (no --run) path.
+    const defaultPlaybook = gate(repo, ["playbook", "TEST", "--json"]).json() as { playbook: string };
+    expect(defaultPlaybook.playbook).toContain("API_OVERLAY_MARKER");
+    expect(defaultPlaybook.playbook).not.toContain("WEB_OVERLAY_MARKER");
+
+    // --run must override that default, even though it names a run filed
+    // under a completely different branch.
+    const viaRun = gate(repo, ["playbook", "TEST", "--run", webRunId, "--json"]).json() as { playbook: string };
+    expect(viaRun.playbook).toContain("WEB_OVERLAY_MARKER");
+    expect(viaRun.playbook).not.toContain("API_OVERLAY_MARKER");
+
+    expect(apiRunId).not.toBe(webRunId);
+  });
+
   it("rejects `gate start --target` with an unknown target name", () => {
     const repo = makeRepo();
     gate(repo, ["init"]);

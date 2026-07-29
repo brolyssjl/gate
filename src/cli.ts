@@ -44,6 +44,9 @@ Commands:
   review [--fresh] [--by] [--run <id>]  Emit a self-contained review packet
                           (REVIEW phase); --fresh regenerates it from the
                           current code
+    [--human]              Walk the rubric via terminal prompts instead of
+                          handing the packet to another session (solo-dev
+                          review mode; readline only, no new dependencies)
   retro [--run <id>]      Sync retro.md into the Agnosgram journal (RETRO
                           phase); no-op without a .agnosgram/ store
   report [<run-id>]       Per-run summary: durations, gate failures, findings
@@ -74,7 +77,7 @@ Global options:
 The agent loop is two commands: \`gate playbook\` (what do I do?) → \`gate next\`
 (am I done?). All state lives on disk under .gate/.`;
 
-type Handler = (args: ReturnType<typeof parseArgs>) => void;
+type Handler = (args: ReturnType<typeof parseArgs>) => void | Promise<void>;
 
 const COMMANDS: Record<string, Handler> = {
   init: cmdInit,
@@ -119,18 +122,23 @@ function main(argv: string[]): void {
   }
 
   try {
-    handler(args);
+    const result = handler(args);
+    if (result instanceof Promise) result.catch(reportError);
   } catch (err) {
-    if (err instanceof UsageError) {
-      process.stderr.write(`gate: ${err.message}\n`);
-      process.exitCode = 2;
-    } else if (err instanceof GateError) {
-      process.stderr.write(`gate: ${err.message}\n`);
-      process.exitCode = err.exitCode;
-    } else {
-      process.stderr.write(`gate: ${(err as Error).message}\n`);
-      process.exitCode = 1;
-    }
+    reportError(err);
+  }
+}
+
+function reportError(err: unknown): void {
+  if (err instanceof UsageError) {
+    process.stderr.write(`gate: ${err.message}\n`);
+    process.exitCode = 2;
+  } else if (err instanceof GateError) {
+    process.stderr.write(`gate: ${err.message}\n`);
+    process.exitCode = err.exitCode;
+  } else {
+    process.stderr.write(`gate: ${(err as Error).message}\n`);
+    process.exitCode = 1;
   }
 }
 

@@ -190,8 +190,9 @@ Multi-stack repos declare named **targets** in `config.yml`:
 targets:
   api:
     match: ["apps/api/**"]
-    commands: { test: "pytest", coverage: "pytest --cov --cov-report=json" }
+    commands: { test: "pytest", coverage: "pytest --cov --cov-report=json:coverage/coverage.json" }
     thresholds: { diff_coverage: 85 }
+    coverage_format: coverage-py                          # overrides the top-level default for this target
     playbooks: { test: ".gate/playbooks/test.api.md" }   # overlay on the base playbook
   web:
     match: ["apps/web/**"]
@@ -295,9 +296,22 @@ targets: {}                      # optional - see "Targets (multi-stack repos)"
 retention: {}                    # optional - gate prune defaults, e.g. { keep: 10, days: 30 }
 ```
 
-Diff coverage understands istanbul `coverage/coverage-final.json` (jest, vitest)
-and a generic `coverage/gate-coverage.json` contract:
-`{ "files": [{ "path", "covered": [], "uncovered": [] }] }`.
+Diff coverage understands five report formats, auto-detected under `coverage/`
+(point your configured `coverage` command at the matching path), or pinned
+explicitly with `coverage_format`:
+
+- `istanbul` - `coverage/coverage-final.json` (jest, vitest --coverage)
+- `generic` - `coverage/gate-coverage.json`:
+  `{ "files": [{ "path", "covered": [], "uncovered": [] }] }`
+- `coverage-py` - `coverage/coverage.json` (`coverage json -o coverage/coverage.json`)
+- `go-cover` - `coverage/go-cover.out` (`go test -coverprofile=coverage/go-cover.out`);
+  profile paths are de-prefixed against `go.mod`'s `module` line so they line
+  up with git's repo-relative paths
+- `lcov` - `coverage/lcov.info` (nyc, gcov, and many others' standard output path)
+
+`coverage_format` can also be set per target (see "Targets"), overriding the
+top-level default for that stack only - useful in a multi-language repo where
+one target's tests emit lcov and another's emit coverage.py.
 
 ## Command trust (TOFU)
 

@@ -4,6 +4,7 @@ import { changedLines, changedFiles } from "../core/git.js";
 import { runCommand } from "../core/exec.js";
 import { writeFileAtomic } from "../core/fsx.js";
 import { isCommandsTrusted } from "../core/trust.js";
+import type { CoverageFormat } from "../core/config.js";
 import { parsePlanFile } from "../artifacts/plan.js";
 import {
   checkName,
@@ -107,7 +108,7 @@ function runBareTargetGate(ctx: GateContext, bare: ResolvedTarget, reportPath: s
   const threshold = bare.thresholds.diff_coverage;
   if (threshold !== undefined) {
     const allChanged = changedLines(ctx.root, ctx.run.baseRef);
-    checks.push(coverageCheck(ctx, threshold, "test.coverage", bare.commands.coverage, allChanged, null));
+    checks.push(coverageCheck(ctx, threshold, "test.coverage", bare.commands.coverage, allChanged, null, bare.coverageFormat));
   }
 
   return checks;
@@ -166,7 +167,15 @@ function runTargetedGate(
     if (threshold !== undefined && t.target) {
       const scopeFiles = filesForTarget(ctx.config, t.target, touched);
       checks.push(
-        coverageCheck(ctx, threshold, checkName("test.coverage", t.target), t.commands.coverage, allChanged, scopeFiles),
+        coverageCheck(
+          ctx,
+          threshold,
+          checkName("test.coverage", t.target),
+          t.commands.coverage,
+          allChanged,
+          scopeFiles,
+          t.coverageFormat,
+        ),
       );
     }
   }
@@ -220,7 +229,17 @@ function residualCoverageChecks(
   const unmatched = touched.filter((f) => !matched.has(f));
   if (unmatched.length === 0) return [];
 
-  return [coverageCheck(ctx, threshold, "test.coverage", ctx.config.commands.coverage, allChanged, unmatched)];
+  return [
+    coverageCheck(
+      ctx,
+      threshold,
+      "test.coverage",
+      ctx.config.commands.coverage,
+      allChanged,
+      unmatched,
+      ctx.config.coverage_format ?? "auto",
+    ),
+  ];
 }
 
 function criteriaCheck(
@@ -307,14 +326,16 @@ function coverageCheck(
   covCmd: string | undefined,
   allChanged: Map<string, Set<number>>,
   scopeFiles: string[] | null,
+  format: CoverageFormat,
 ): Check {
   if (covCmd) runCommand(covCmd, ctx.root);
-  const coverage = loadCoverage(ctx.root, ctx.config.coverage_format);
+  const coverage = loadCoverage(ctx.root, format);
   if (!coverage) {
     return fail(
       name,
       `diff coverage threshold is ${threshold}% but no coverage report was found ` +
-        `(expected coverage/coverage-final.json or coverage/gate-coverage.json)`,
+        "(expected one of coverage/coverage-final.json, coverage/gate-coverage.json, " +
+        "coverage/coverage.json, coverage/go-cover.out, coverage/lcov.info)",
     );
   }
   const changed = scopeFiles

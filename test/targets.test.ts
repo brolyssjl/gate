@@ -10,6 +10,7 @@ import {
   resolveRunTargets,
   resolveTargetsFromPlanFiles,
   targetCommands,
+  targetCoverageFormat,
   targetThresholds,
 } from "../src/core/targets.js";
 import { makeRepo, writeFile } from "./helpers.js";
@@ -27,7 +28,12 @@ const EMPTY_CONFIG: GateConfig = {
 const TWO_TARGETS: GateConfig = {
   ...EMPTY_CONFIG,
   targets: {
-    api: { match: ["apps/api/**"], commands: { test: "pytest" }, thresholds: { diff_coverage: 85 } },
+    api: {
+      match: ["apps/api/**"],
+      commands: { test: "pytest" },
+      thresholds: { diff_coverage: 85 },
+      coverage_format: "coverage-py",
+    },
     web: { match: ["apps/web/**"], commands: { test: "vitest run" } },
   },
 };
@@ -47,7 +53,7 @@ describe("resolveAffectedTargets", () => {
   });
 });
 
-describe("targetCommands / targetThresholds", () => {
+describe("targetCommands / targetThresholds / targetCoverageFormat", () => {
   it("layers a target's own values over the top-level defaults", () => {
     expect(targetCommands(TWO_TARGETS, "api")).toEqual({ test: "pytest", build: "top-level-build" });
     expect(targetThresholds(TWO_TARGETS, "api")).toEqual({ diff_coverage: 85 });
@@ -57,6 +63,11 @@ describe("targetCommands / targetThresholds", () => {
 
   it("returns the top-level values unchanged for an unknown target name", () => {
     expect(targetCommands(TWO_TARGETS, "nope")).toEqual(EMPTY_CONFIG.commands);
+  });
+
+  it("a target's own coverage_format wins over the top-level default; falls back without one", () => {
+    expect(targetCoverageFormat(TWO_TARGETS, "api")).toBe("coverage-py");
+    expect(targetCoverageFormat(TWO_TARGETS, "web")).toBe("auto");
   });
 });
 
@@ -94,13 +105,17 @@ describe("resolvePhaseTargets (the critical byte-identical invariant)", () => {
   it("collapses to a single bare entry with the top-level commands when no targets are configured", () => {
     const run = newRun({ id: "r1", title: "t", profile: "feature", baseRef: null, sessionId: null });
     const resolved = resolvePhaseTargets(EMPTY_CONFIG, run, ["src/x.ts"]);
-    expect(resolved).toEqual([{ target: null, commands: EMPTY_CONFIG.commands, thresholds: EMPTY_CONFIG.thresholds }]);
+    expect(resolved).toEqual([
+      { target: null, commands: EMPTY_CONFIG.commands, thresholds: EMPTY_CONFIG.thresholds, coverageFormat: "auto" },
+    ]);
   });
 
   it("collapses to a single bare entry when targets are configured but none are affected", () => {
     const run = newRun({ id: "r1", title: "t", profile: "feature", baseRef: null, sessionId: null });
     const resolved = resolvePhaseTargets(TWO_TARGETS, run, ["README.md"]);
-    expect(resolved).toEqual([{ target: null, commands: TWO_TARGETS.commands, thresholds: TWO_TARGETS.thresholds }]);
+    expect(resolved).toEqual([
+      { target: null, commands: TWO_TARGETS.commands, thresholds: TWO_TARGETS.thresholds, coverageFormat: "auto" },
+    ]);
   });
 
   it("returns one entry per affected target, each with its own effective commands", () => {
@@ -115,7 +130,14 @@ describe("resolvePhaseTargets (the critical byte-identical invariant)", () => {
   it("honors a --target override even when no files match it", () => {
     const run = newRun({ id: "r1", title: "t", profile: "feature", baseRef: null, sessionId: null, targetOverride: ["api"] });
     const resolved = resolvePhaseTargets(TWO_TARGETS, run, []);
-    expect(resolved).toEqual([{ target: "api", commands: targetCommands(TWO_TARGETS, "api"), thresholds: targetThresholds(TWO_TARGETS, "api") }]);
+    expect(resolved).toEqual([
+      {
+        target: "api",
+        commands: targetCommands(TWO_TARGETS, "api"),
+        thresholds: targetThresholds(TWO_TARGETS, "api"),
+        coverageFormat: "coverage-py",
+      },
+    ]);
   });
 });
 

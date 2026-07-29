@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
+import { stringify } from "yaml";
 import { splitFrontmatter } from "./frontmatter.js";
 
 /**
@@ -92,4 +93,30 @@ export function unjustifiedWaivers(review: Review): Finding[] {
   return review.findings.filter(
     (f) => (f.severity === "blocker" || f.severity === "major") && f.status === "waived" && !f.waiver,
   );
+}
+
+/**
+ * Render review.md from a reviewer + findings list (Milestone 4: `gate review
+ * --human` writes this after walking the rubric interactively) - the same
+ * shape the REVIEW gate parses via `parseReviewFile`, so a human-recorded
+ * review satisfies it exactly like an agent-edited one.
+ */
+export function serializeReview(reviewer: string, findings: Finding[]): string {
+  const frontmatter = stringify({ reviewer, findings: findings.map(({ id, severity, status, note, waiver }) => ({
+    id,
+    severity,
+    status,
+    note,
+    ...(status === "waived" ? { waiver } : {}),
+  })) });
+  return [
+    "---",
+    frontmatter.trimEnd(),
+    "---",
+    "",
+    "# Review",
+    "",
+    "Recorded via `gate review --human`.",
+    "",
+  ].join("\n");
 }

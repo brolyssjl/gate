@@ -17,6 +17,7 @@ import { cmdReport } from "./commands/report.js";
 import { cmdRetro } from "./commands/retro.js";
 import { cmdPrune } from "./commands/prune.js";
 import { cmdAdapt } from "./commands/adapt.js";
+import { cmdGuard } from "./commands/guard.js";
 import { ADAPTER_KEYS } from "./adapters/index.js";
 
 const HELP = `gate - an agent-agnostic quality harness (umpire, not a driver).
@@ -54,6 +55,12 @@ Commands:
                           \`gate report\`)
   log <file> [--run <id>] Register an artifact against the current phase
   playbook [phase] [--run <id>]  Print the active playbook for a phase
+  guard install|uninstall  Manage an opt-in .git/hooks/pre-commit guard;
+                          backs up and chains any existing hook. Cheap
+                          deterministic checks only (active run, staged files
+                          in plan scope, not still in PLAN) - never installed
+                          by \`init\`, never load-bearing. Bypass per commit
+                          with --no-verify, or always with GATE_GUARD=0
 
 Global options:
   --json                  Machine-readable JSON output
@@ -85,6 +92,7 @@ const COMMANDS: Record<string, Handler> = {
   skip: cmdSkip,
   log: cmdLog,
   playbook: cmdPlaybook,
+  guard: cmdGuard,
 };
 
 function main(argv: string[]): void {

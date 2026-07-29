@@ -2,7 +2,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { beforeAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { makeRepo } from "./helpers.js";
 
 const pkgRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -42,10 +42,6 @@ function seedLegacyRun(repo: string, id: string): void {
 }
 
 describe("branch-keyed run concurrency", () => {
-  beforeAll(() => {
-    execFileSync("npm", ["run", "build"], { cwd: pkgRoot, stdio: "pipe" });
-  }, 120_000);
-
   it("keys runs by branch: independent runs on separate branches, status shows the current one plus others in flight", () => {
     const repo = makeRepo({ "package.json": JSON.stringify({ name: "fx", scripts: { test: "node -e 0" } }) });
     gate(repo, ["init"]);

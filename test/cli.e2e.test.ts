@@ -1,4 +1,4 @@
-import { execFileSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -38,11 +38,6 @@ criteria:
 `;
 
 describe("gate CLI end-to-end", () => {
-  beforeAll(() => {
-    // Ensure the binary is built before spawning it.
-    execFileSync("npm", ["run", "build"], { cwd: pkgRoot, stdio: "pipe" });
-  }, 120_000);
-
   it("walks a run from PLAN to DONE, refusing every hollow gate", () => {
     const repo = makeRepo({
       "package.json": JSON.stringify({ name: "fx", scripts: { test: "node test.js" } }),

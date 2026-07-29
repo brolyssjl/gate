@@ -1,8 +1,8 @@
-import { execFileSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { beforeAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { makeRepo } from "./helpers.js";
 
 const pkgRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -42,10 +42,6 @@ function daysAgo(n: number): string {
 }
 
 describe("gate prune", () => {
-  beforeAll(() => {
-    execFileSync("npm", ["run", "build"], { cwd: pkgRoot, stdio: "pipe" });
-  }, 120_000);
-
   it("keeps the newest --keep runs and prunes the rest, archiving summaries", () => {
     const repo = makeRepo();
     gate(repo, ["init"]);

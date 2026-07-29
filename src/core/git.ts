@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 
 function git(root: string, args: string[]): { ok: boolean; stdout: string } {
   const res = spawnSync("git", args, { cwd: root, encoding: "utf8" });
@@ -48,6 +48,27 @@ export function branchState(root: string): BranchState {
   if (!isGitRepo(root)) return { kind: "none" };
   const branch = currentBranch(root);
   return branch ? { kind: "branch", name: branch } : { kind: "detached" };
+}
+
+/**
+ * The repo's git hooks directory, respecting worktrees and a custom
+ * `core.hooksPath` - not always a plain `.git/hooks` (`gate guard install`
+ * needs the real one). Null when not a git repo.
+ */
+export function gitHooksDir(root: string): string | null {
+  const res = git(root, ["rev-parse", "--git-path", "hooks"]);
+  if (!res.ok) return null;
+  const p = res.stdout.trim();
+  if (!p) return null;
+  return isAbsolute(p) ? p : join(root, p);
+}
+
+/** Staged (index) files, excluding `.gate/` bookkeeping - what a pre-commit hook cares about. */
+export function stagedFiles(root: string): string[] {
+  return git(root, ["diff", "--cached", "--name-only", "--"])
+    .stdout.split("\n")
+    .map((l) => l.trim())
+    .filter((f) => f.length > 0 && !f.startsWith(".gate/"));
 }
 
 /** Current HEAD sha, or null if there are no commits yet / not a repo. */

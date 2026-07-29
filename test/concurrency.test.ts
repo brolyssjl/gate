@@ -1,7 +1,7 @@
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 import { makeRepo } from "./helpers.js";
@@ -328,5 +328,31 @@ describe("branch-keyed run concurrency", () => {
     };
     expect(state.branches[branch]).toBe(winningId);
     expect(Object.keys(state.branches)).toEqual([branch]);
+  });
+
+  it("gate status degrades gracefully (and self-heals) on a dangling mapping instead of crashing with 'run not found'", () => {
+    const repo = makeRepo();
+    gate(repo, ["init"]);
+    const started = gate(repo, ["start", "will vanish", "--profile", "docs", "--json"]).json() as { id: string };
+
+    // Simulate the mapping outliving its run (e.g. the folder was pruned or
+    // removed by hand) without going through `gate prune`.
+    rmSync(join(repo, ".gate", "runs", started.id), { recursive: true, force: true });
+
+    const status = gate(repo, ["status", "--json"]);
+    expect(status.code).toBe(0);
+    const data = status.json() as { active: boolean; healed?: string };
+    expect(data.active).toBe(false);
+    expect(data.healed).toBe(started.id);
+
+    // Self-healed: the stale mapping is gone, not just papered over for one call.
+    const state = JSON.parse(readFileSync(join(repo, ".gate", "current.json"), "utf8")) as {
+      branches: Record<string, string>;
+    };
+    expect(Object.values(state.branches)).not.toContain(started.id);
+
+    const again = gate(repo, ["status", "--json"]).json() as { active: boolean; healed?: string };
+    expect(again.active).toBe(false);
+    expect(again.healed).toBeUndefined();
   });
 });

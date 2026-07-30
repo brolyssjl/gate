@@ -86,10 +86,10 @@ gate evidence).
 
 `gate check` runs the current gate without advancing; **its exit code is the
 verdict** (0 pass, 1 fail), so scripts and agents can branch on it. Note for CI:
-`.gate/runs/` and `.gate/current` are gitignored by default, so a CI checkout has
-no run to check - commit your run folders (or re-create the run in CI) if you
-want `gate check` as a pipeline step. `config.yml` and `trust.json` are tracked,
-so CI always inherits the command pin.
+`.gate/runs/` and `.gate/current.json` are gitignored by default, so a CI
+checkout has no run to check - commit your run folders (or re-create the run
+in CI) if you want `gate check` as a pipeline step. `config.yml` and
+`trust.json` are tracked, so CI always inherits the command pin.
 
 ## The gates
 
@@ -117,6 +117,22 @@ serves to the agent, never in the gates.
 | `refactor` | PLAN → IMPLEMENT → TEST → REVIEW → RETRO |
 | `docs` | PLAN → IMPLEMENT |
 
+## Concurrency (branch-keyed runs)
+
+One active run per branch, not one globally: `.gate/current.json` maps each
+branch to its own active run id, so parallel work-in-progress on separate
+branches never collides. `gate start` on a branch that already has an active
+run **resumes it** instead of erroring (unless the plan was approved and then
+edited since - that refuses, with a pointer to re-approve or resolve the run
+first); a new branch gets its own independent run. `gate status` shows the
+current branch's run plus a list of any other branches with one in flight.
+
+A detached `HEAD` has no branch to resolve "current" from - that's genuinely
+ambiguous, not a missing-run case - so every phase command (`approve`,
+`check`, `next`, `review`, `retro`, `skip`, `log`, `playbook`) accepts an
+explicit `--run <id>` to select a run without relying on the checked-out
+branch.
+
 ## Review & report
 
 `gate review` writes `review-packet.md` (plan + rubric + the full diff,
@@ -136,6 +152,14 @@ Fixes made during review change the code *after* IMPLEMENT/TEST certified it,
 so when the tree no longer matches the fingerprint recorded at the last gate
 pass, the REVIEW gate re-runs `build`/`lint`/`test` itself and requires them
 green before DONE.
+
+Solo, with no second agent session or human reviewer handy: `gate review
+--human` walks the same rubric as terminal prompts instead of handing the
+packet off. It emits the packet, prints the rubric, then asks for each
+finding (id, severity, note, status, waiver if waived) and a reviewer name,
+and writes `review.md` in the exact shape the REVIEW gate parses - no
+special-casing, so a human-recorded review satisfies the same gate as an
+agent-recorded one. No new dependencies (`node:readline` is a Node builtin).
 
 `gate report [<run-id>]` prints a per-run summary - phase durations, failed gate
 attempts, findings, and any skips (with who and why) - defaulting to the active
@@ -190,8 +214,9 @@ Multi-stack repos declare named **targets** in `config.yml`:
 targets:
   api:
     match: ["apps/api/**"]
-    commands: { test: "pytest", coverage: "pytest --cov --cov-report=json" }
+    commands: { test: "pytest", coverage: "pytest --cov --cov-report=json:coverage/coverage.json" }
     thresholds: { diff_coverage: 85 }
+    coverage_format: coverage-py                          # overrides the top-level default for this target
     playbooks: { test: ".gate/playbooks/test.api.md" }   # overlay on the base playbook
   web:
     match: ["apps/web/**"]
@@ -247,6 +272,25 @@ requirement, not a replacement for `--keep`. The active run is never a
 candidate. `retention:` in config.yml is deliberately outside the trust
 hash - it's not a command.
 
+## `gate guard` (opt-in pre-commit hook)
+
+Off by default; only the explicit `gate guard install` writes anything.
+It manages `.git/hooks/pre-commit`, backing up and chaining any hook already
+there (or refusing, with instructions, if it can't compose safely):
+
+```bash
+gate guard install      # writes .git/hooks/pre-commit (backs up + chains an existing one)
+gate guard uninstall    # removes it, restoring the backup if there was one
+```
+
+The hook runs only cheap, deterministic checks - never a build/test command:
+an active run exists for the branch, staged files stay within the plan's
+declared scope, and the run isn't still in PLAN (nothing should be committed
+before IMPLEMENT starts). It is **advisory, never load-bearing** - the real
+enforcement is `gate check`/`gate next`. Escape hatches always work: `git
+commit --no-verify` skips it for one commit; `GATE_GUARD=0 git commit`
+disables it globally without uninstalling. `init` never touches git hooks.
+
 ## Evidence integrity
 
 If an agent could hand Gate the evidence, enforcement would be fiction. So
@@ -295,9 +339,22 @@ targets: {}                      # optional - see "Targets (multi-stack repos)"
 retention: {}                    # optional - gate prune defaults, e.g. { keep: 10, days: 30 }
 ```
 
-Diff coverage understands istanbul `coverage/coverage-final.json` (jest, vitest)
-and a generic `coverage/gate-coverage.json` contract:
-`{ "files": [{ "path", "covered": [], "uncovered": [] }] }`.
+Diff coverage understands five report formats, auto-detected under `coverage/`
+(point your configured `coverage` command at the matching path), or pinned
+explicitly with `coverage_format`:
+
+- `istanbul` - `coverage/coverage-final.json` (jest, vitest --coverage)
+- `generic` - `coverage/gate-coverage.json`:
+  `{ "files": [{ "path", "covered": [], "uncovered": [] }] }`
+- `coverage-py` - `coverage/coverage.json` (`coverage json -o coverage/coverage.json`)
+- `go-cover` - `coverage/go-cover.out` (`go test -coverprofile=coverage/go-cover.out`);
+  profile paths are de-prefixed against `go.mod`'s `module` line so they line
+  up with git's repo-relative paths
+- `lcov` - `coverage/lcov.info` (nyc, gcov, and many others' standard output path)
+
+`coverage_format` can also be set per target (see "Targets"), overriding the
+top-level default for that stack only - useful in a multi-language repo where
+one target's tests emit lcov and another's emit coverage.py.
 
 ## Command trust (TOFU)
 
@@ -325,9 +382,7 @@ TOON is worse on small objects.
 
 ## Deliberately not yet
 
-A Go port, `gate guard` (a default-off pre-commit hook), a human-review TUI
-mode, and diff-coverage parsers beyond jest/vitest + the generic JSON
-contract. See `ROADMAP.md` for the full plan.
+A Go port (startup-latency escape hatch). See `ROADMAP.md` for the full plan.
 
 ## Development
 

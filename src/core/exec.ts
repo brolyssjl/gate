@@ -8,8 +8,8 @@ export interface ExecResult {
 
 /**
  * Run a configured command string through the shell, from `cwd`. Gate executes
- * commands from config.yml — the same trust class as npm scripts (proposal §9)
- * — and only after `gate trust` has pinned them. `env` entries are layered over
+ * commands from config.yml - the same trust class as npm scripts (proposal §9)
+ * - and only after `gate trust` has pinned them. `env` entries are layered over
  * the process env so gates can hand runners well-known paths (GATE_TEST_REPORT).
  */
 export function runCommand(command: string, cwd: string, env?: Record<string, string>): ExecResult {

@@ -73,7 +73,7 @@ export interface ReviewRequest {
 
 export interface Run {
   /** Schema version of this run.json, for forward migration. */
-  schema: 2;
+  schema: 3;
   id: string;
   title: string;
   profile: string;
@@ -81,6 +81,13 @@ export interface Run {
   status: RunStatus;
   createdAt: string;
   updatedAt: string;
+  /**
+   * Branch this run was started on (Milestone 4, additive); null when there
+   * was no branch to record (not a git repo, or detached HEAD at start time).
+   * Runs are keyed by branch for concurrency (`core/current.ts`) - this field
+   * is the audit trail of that key, not the key itself.
+   */
+  branch: string | null;
   /** git ref (sha) captured at `gate start`; the IMPLEMENT diff is measured from here. */
   baseRef: string | null;
   /** Explicit `gate start --target` override (Milestone 3, additive); wins over file-based resolution. */
@@ -119,13 +126,14 @@ export function newRun(params: {
   id: string;
   title: string;
   profile: string;
+  branch?: string | null;
   baseRef: string | null;
   sessionId: string | null;
   targetOverride?: string[];
 }): Run {
   const at = nowIso();
   return {
-    schema: 2,
+    schema: 3,
     id: params.id,
     title: params.title,
     profile: params.profile,
@@ -133,6 +141,7 @@ export function newRun(params: {
     status: "active",
     createdAt: at,
     updatedAt: at,
+    branch: params.branch ?? null,
     baseRef: params.baseRef,
     ...(params.targetOverride && params.targetOverride.length > 0 ? { targetOverride: params.targetOverride } : {}),
     sessionId: params.sessionId,
@@ -155,8 +164,12 @@ export function readRun(root: string, runId: string): Run {
  * Migrate older run.json schemas in place. Schema 1 (Milestone 1) predates
  * profiles and review requests: it gains `profile: "feature"` - deliberate:
  * a legacy run past TEST now owes the REVIEW phase the feature profile added -
- * and any schema-1 `review.reviewer` becomes `requestedBy`. The migrated run is
- * persisted on the next writeRun.
+ * and any schema-1 `review.reviewer` becomes `requestedBy`. Schema 2
+ * (Milestone 1-3) predates branch-keyed concurrency: it gains `branch: null` -
+ * honest, not a guess; Gate has no record of which branch a pre-Milestone-4
+ * run started on (contrast `core/current.ts`'s legacy-pointer migration, which
+ * *can* infer a key from the branch checked out at migration time). The
+ * migrated run is persisted on the next writeRun.
  */
 function migrateRun(raw: Run & { schema: number }, runId: string): Run {
   const parsed = raw as Omit<Run, "schema"> & { schema: number };
@@ -172,7 +185,11 @@ function migrateRun(raw: Run & { schema: number }, runId: string): Run {
     }
     parsed.schema = 2;
   }
-  if (parsed.schema !== 2) {
+  if (parsed.schema === 2) {
+    parsed.branch = parsed.branch ?? null;
+    parsed.schema = 3;
+  }
+  if (parsed.schema !== 3) {
     throw new Error(`Unsupported run.json schema ${String(parsed.schema)} in ${runId}.`);
   }
   return parsed as Run;

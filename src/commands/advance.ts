@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { RETRO_TEMPLATE } from "../artifacts/retro.js";
-import { clearCurrentRunId } from "../core/current.js";
+import { clearRunEverywhere } from "../core/current.js";
 import { writeFileAtomic } from "../core/fsx.js";
 import { runPaths } from "../core/paths.js";
 import { nowIso, writeRun, type Run } from "../core/run.js";
@@ -21,7 +21,13 @@ export function advance(root: string, run: Run): { from: Phase; to: Phase } {
     if (to === "RETRO") scaffoldRetroIfMissing(root, run);
   }
   writeRun(root, run);
-  if (isTerminal(run.phase)) clearCurrentRunId(root);
+  // Cleared by scanning current.json for whichever key maps to this run id,
+  // not by trusting run.branch: a run's own branch record can be stale or
+  // never backfilled (e.g. a schema-2 run migrated from the legacy
+  // single-run pointer before the migration's branch backfill existed), and
+  // clearing by the wrong key would leave the real mapping - and this
+  // now-finished run - resolvable forever.
+  if (isTerminal(run.phase)) clearRunEverywhere(root, run.id);
   return { from, to: run.phase };
 }
 

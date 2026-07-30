@@ -1,8 +1,8 @@
-import { execFileSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { beforeAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { makeRepo } from "./helpers.js";
 
 const pkgRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -42,10 +42,6 @@ function daysAgo(n: number): string {
 }
 
 describe("gate prune", () => {
-  beforeAll(() => {
-    execFileSync("npm", ["run", "build"], { cwd: pkgRoot, stdio: "pipe" });
-  }, 120_000);
-
   it("keeps the newest --keep runs and prunes the rest, archiving summaries", () => {
     const repo = makeRepo();
     gate(repo, ["init"]);
@@ -94,6 +90,26 @@ describe("gate prune", () => {
     expect(data.pruned).toEqual(["finished-run"]);
     expect(data.pruned).not.toContain(activeId);
     expect(existsSync(join(repo, ".gate", "runs", activeId))).toBe(true);
+  });
+
+  it("protects every run current.json maps to, even a done run mapped under a branch other than the one checked out", () => {
+    const repo = makeRepo();
+    gate(repo, ["init"]);
+    // A done-but-still-mapped run (the failure mode a migration/advance bug
+    // could produce): status is "done", so nothing about its own record
+    // marks it active, but current.json still points a branch at it.
+    seedRun(repo, "stale-mapped-run", daysAgo(30), "done");
+    writeFileSync(
+      join(repo, ".gate", "current.json"),
+      JSON.stringify({ schema: 1, branches: { "some-other-branch": "stale-mapped-run" } }),
+    );
+    seedRun(repo, "genuinely-finished", daysAgo(1));
+
+    const res = gate(repo, ["prune", "--keep", "0", "--json"]);
+    const data = res.json() as { pruned: string[] };
+    expect(data.pruned).toEqual(["genuinely-finished"]);
+    expect(data.pruned).not.toContain("stale-mapped-run");
+    expect(existsSync(join(repo, ".gate", "runs", "stale-mapped-run"))).toBe(true);
   });
 
   it("--days additionally requires a candidate to be older than N days", () => {

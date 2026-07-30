@@ -21,7 +21,7 @@ import { emit, GateError, requireActiveRun, type ParsedArgs } from "./shared.js"
  * no-op and the RETRO gate does not require it.
  */
 export function cmdRetro(args: ParsedArgs): void {
-  const { root, run, config } = requireActiveRun();
+  const { root, run, config } = requireActiveRun(args);
   if (run.phase !== "RETRO") {
     throw new GateError(`nothing to sync - run is in ${run.phase}, not RETRO`);
   }

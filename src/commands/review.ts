@@ -27,16 +27,19 @@ blocker/major finding; minor/nit are advisory. Resolve by fixing the code
 waive with a human rationale.
 `;
 
-interface PacketResult {
-  regenerated: boolean;
-  packet: string;
-  findingsFile: string;
-  rubric: string;
-  requestedBy?: string | null;
-  treeHash?: string | null;
-  plan?: string;
-  diff?: string;
-}
+type PacketResult =
+  | { regenerated: false; packet: string; findingsFile: string; rubric: string }
+  | {
+      regenerated: true;
+      packet: string;
+      findingsFile: string;
+      rubric: string;
+      requestedBy: string | null;
+      treeHash: string | null;
+      plan: string;
+      diff: string;
+      packetText: string;
+    };
 
 /**
  * Emit the self-contained review packet (diff + plan + rubric) and scaffold
@@ -81,7 +84,17 @@ function ensurePacket(root: string, run: Run, config: GateConfig, args: ParsedAr
   run.artifacts["review-packet.md"] = { phase: run.phase, at: nowIso() };
   writeRun(root, run);
 
-  return { regenerated: true, packet: paths.reviewPacket, findingsFile: paths.review, rubric, requestedBy, treeHash, plan, diff };
+  return {
+    regenerated: true,
+    packet: paths.reviewPacket,
+    findingsFile: paths.review,
+    rubric,
+    requestedBy,
+    treeHash,
+    plan,
+    diff,
+    packetText: packet,
+  };
 }
 
 /**
@@ -116,7 +129,6 @@ export function cmdReview(args: ParsedArgs): void | Promise<void> {
     return;
   }
 
-  const packetText = readFileSync(res.packet, "utf8");
   const human = [
     `Review packet written to: ${res.packet}`,
     `Record findings in:        ${res.findingsFile}`,
@@ -124,7 +136,7 @@ export function cmdReview(args: ParsedArgs): void | Promise<void> {
     "The reviewer signs off by filling in `reviewer:` in review.md. Resolve or",
     "waive every blocker/major finding, then run `gate next`.",
     "",
-    packetText,
+    res.packetText,
   ].join("\n");
 
   emit(

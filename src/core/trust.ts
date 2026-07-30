@@ -7,7 +7,7 @@ import { gatePaths } from "./paths.js";
 
 /**
  * Trust-on-first-use for the `commands:` block (proposal §9). Gate executes
- * shell commands from config.yml — the same trust class as npm scripts — so the
+ * shell commands from config.yml - the same trust class as npm scripts - so the
  * IMPLEMENT/TEST gates refuse to run them until a human has run `gate trust`.
  * The approved hash lives in `.gate/trust.json`, which is tracked: changing a
  * command and re-trusting land in the same diff, giving PR review the checkpoint.

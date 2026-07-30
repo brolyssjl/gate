@@ -4,7 +4,7 @@ import type { Commands } from "../core/config.js";
 
 /**
  * Best-effort command inference for common ecosystems. `gate init` writes these
- * as a starting point; anything unusual is hand-edited. Never fails — an unknown
+ * as a starting point; anything unusual is hand-edited. Never fails - an unknown
  * stack simply yields empty commands with commented placeholders.
  */
 export function inferCommands(root: string): Commands {

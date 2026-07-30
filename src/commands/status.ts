@@ -18,12 +18,12 @@ interface OtherRun {
 }
 
 /**
- * `gate status` — cheap metadata only. This is on the agent hot path (called
+ * `gate status` - cheap metadata only. This is on the agent hot path (called
  * constantly), so it never executes build/test commands; use `gate check` to
  * actually run the gate. Shows the active run for the current branch (if
  * any), plus every other branch with a run in flight (Milestone 4
  * concurrency) so an agent working across branches can see what else is
- * mid-flow. Never throws on detached HEAD — there's no branch to resolve a
+ * mid-flow. Never throws on detached HEAD - there's no branch to resolve a
  * "current" run from, but the in-flight list is still useful.
  */
 export function cmdStatus(args: ParsedArgs): void {
@@ -35,7 +35,7 @@ export function cmdStatus(args: ParsedArgs): void {
 
   if (resolved.kind === "detached") {
     const human = [
-      "HEAD is detached — no branch to resolve a current run from; pass --run <id> to a phase command.",
+      "HEAD is detached - no branch to resolve a current run from; pass --run <id> to a phase command.",
       others.length ? "\nOther runs in flight:\n" + others.map(formatOther).join("\n") : "No runs in flight.",
     ].join("\n");
     emit(human, { active: false, detached: true, others }, args.flags);

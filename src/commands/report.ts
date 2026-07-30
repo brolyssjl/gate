@@ -101,7 +101,7 @@ export function cmdReport(args: ParsedArgs): void {
   // completely different branch's run with nothing indicating that's what
   // happened.
   if (!explicitId && resolved.kind === "detached") {
-    throw new GateError("HEAD is detached — no branch to resolve a default run from; pass a run id: gate report <id>");
+    throw new GateError("HEAD is detached - no branch to resolve a default run from; pass a run id: gate report <id>");
   }
   const currentId = resolved.kind === "key" ? readCurrentRunId(root, resolved.key) : null;
   const runId = explicitId ?? currentId ?? mostRecentRunId(root) ?? mostRecentArchivedRunId(root);

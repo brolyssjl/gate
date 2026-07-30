@@ -296,7 +296,7 @@ export function diffCoverage(changed: Map<string, Set<number>>, coverage: Covera
 
   for (const [file, changedSet] of changed) {
     const cov = coverage.get(file);
-    if (!cov) continue; // no coverage data for this file (e.g. non-source) — skip
+    if (!cov) continue; // no coverage data for this file (e.g. non-source) - skip
     const executable = new Set<number>([...cov.covered, ...cov.uncovered]);
     const target = new Set([...changedSet].filter((l) => executable.has(l)));
     const missed: number[] = [];

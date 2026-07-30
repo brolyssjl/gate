@@ -7,7 +7,7 @@ import { GateError } from "./output.js";
 
 export function requireRoot(): string {
   const root = findGateRoot();
-  if (!root) throw new GateError("no .gate/ found — run `gate init` first");
+  if (!root) throw new GateError("no .gate/ found - run `gate init` first");
   return root;
 }
 
@@ -42,12 +42,12 @@ export function requireActiveRun(args?: ParsedArgs): ActiveContext {
   if (explicit) {
     const run = readRun(root, explicit);
     if (run.status !== "active") {
-      throw new GateError(`run "${explicit}" is ${run.status}, not active — --run only selects an in-flight run`);
+      throw new GateError(`run "${explicit}" is ${run.status}, not active - --run only selects an in-flight run`);
     }
     const resolved = resolveBranchKey(root);
     if (run.branch && resolved.kind === "key" && resolved.key !== run.branch) {
       throw new GateError(
-        `run "${explicit}" was started on branch "${run.branch}", but "${resolved.key}" is checked out — ` +
+        `run "${explicit}" was started on branch "${run.branch}", but "${resolved.key}" is checked out - ` +
           `checkout "${run.branch}" first (or detach HEAD) to act on this run`,
       );
     }
@@ -57,15 +57,15 @@ export function requireActiveRun(args?: ParsedArgs): ActiveContext {
   const resolved = resolveBranchKey(root);
   if (resolved.kind === "detached") {
     throw new GateError(
-      "HEAD is detached — no branch to resolve the active run from; pass --run <id> (see `gate status` for runs in flight)",
+      "HEAD is detached - no branch to resolve the active run from; pass --run <id> (see `gate status` for runs in flight)",
     );
   }
   const id = readCurrentRunId(root, resolved.key);
   if (!id) {
     throw new GateError(
       resolved.key === NO_GIT_BRANCH_KEY
-        ? "no active run — start one with `gate start \"<title>\"`"
-        : `no active run on branch "${resolved.key}" — start one with \`gate start "<title>"\``,
+        ? "no active run - start one with `gate start \"<title>\"`"
+        : `no active run on branch "${resolved.key}" - start one with \`gate start "<title>"\``,
     );
   }
   return { root, run: readRun(root, id), config };

@@ -5,10 +5,10 @@ import { nowIso, writeRun } from "../core/run.js";
 import { emit, GateError, requireActiveRun, UsageError, type ParsedArgs } from "./shared.js";
 
 /**
- * `gate log <file>` — register an artifact against the current phase. The file
+ * `gate log <file>` - register an artifact against the current phase. The file
  * is copied into the run folder under its basename (if not already there) and
  * recorded in run.artifacts, so gates and `gate report` can find it. Artifacts
- * are context for humans and reviewers — never gate evidence: in particular a
+ * are context for humans and reviewers - never gate evidence: in particular a
  * hand-registered test-report.json is ignored by the TEST/DEBUG gates, which
  * only trust reports produced by the test run Gate executes itself.
  */

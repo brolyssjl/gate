@@ -55,7 +55,7 @@ export function cmdStart(args: ParsedArgs): void {
   const resolved = resolveBranchKey(root);
   if (resolved.kind === "detached") {
     throw new GateError(
-      "HEAD is detached — runs are keyed by branch; checkout a branch before `gate start`",
+      "HEAD is detached - runs are keyed by branch; checkout a branch before `gate start`",
     );
   }
   const branchKey = resolved.key;
@@ -102,7 +102,7 @@ export function cmdStart(args: ParsedArgs): void {
         const planPath = runPaths(root, existingId).plan;
         if (existing.approval && hashPlanFile(planPath) !== existing.approval.planHash) {
           throw new GateError(
-            `run "${existingId}" on this branch is approved but plan.md has changed since — ` +
+            `run "${existingId}" on this branch is approved but plan.md has changed since - ` +
               "re-run `gate approve` or resolve the run before starting fresh",
           );
         }
@@ -115,7 +115,7 @@ export function cmdStart(args: ParsedArgs): void {
         if (typeof args.flags.profile === "string" && profile !== existing.profile) {
           throw new GateError(
             `run "${existingId}" on this branch is profile "${existing.profile}", but --profile ${profile} ` +
-              "was requested for a resumed run — drop --profile to resume it as-is, or finish/abandon it first",
+              "was requested for a resumed run - drop --profile to resume it as-is, or finish/abandon it first",
           );
         }
         const existingTargets = existing.targetOverride ?? [];
@@ -126,7 +126,7 @@ export function cmdStart(args: ParsedArgs): void {
         if (typeof args.flags.target === "string" && targetsDiffer) {
           throw new GateError(
             `run "${existingId}" on this branch has --target ${existingTargets.join(",") || "(none)"}, but ` +
-              `${requestedTargets.join(",") || "(none)"} was requested for a resumed run — ` +
+              `${requestedTargets.join(",") || "(none)"} was requested for a resumed run - ` +
               "drop --target to resume it as-is, or finish/abandon it first",
           );
         }
@@ -150,7 +150,7 @@ export function cmdStart(args: ParsedArgs): void {
     const existing = outcome.run;
     const sequence = phaseSequence(existing.profile);
     const human = [
-      `Branch already has an active run: "${existing.id}" (phase ${existing.phase}) — resuming it.`,
+      `Branch already has an active run: "${existing.id}" (phase ${existing.phase}) - resuming it.`,
       outcome.titleMismatch
         ? `WARNING: requested title "${title}" differs from the resumed run's title "${existing.title}" - ` +
           "the resumed run's own title was kept; pass --profile/--target to detect a real conflict instead of guessing from the title."

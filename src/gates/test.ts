@@ -13,7 +13,7 @@ import {
   type ResolvedTarget,
 } from "../core/targets.js";
 import { parseTestReport, type NormalizedReport } from "./testReport.js";
-import { diffCoverage, loadCoverage } from "./coverage.js";
+import { coverageReportPaths, diffCoverage, loadCoverage } from "./coverage.js";
 import { commandCheck } from "./implement.js";
 import { type Check, type GateContext, type GateResult, fail, pass, result } from "./types.js";
 
@@ -334,8 +334,7 @@ function coverageCheck(
     return fail(
       name,
       `diff coverage threshold is ${threshold}% but no coverage report was found ` +
-        "(expected one of coverage/coverage-final.json, coverage/gate-coverage.json, " +
-        "coverage/coverage.json, coverage/go-cover.out, coverage/lcov.info)",
+        `(expected one of ${coverageReportPaths().join(", ")})`,
     );
   }
   const changed = scopeFiles

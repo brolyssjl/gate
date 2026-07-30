@@ -2,7 +2,7 @@ import { currentCommandsHash, hasNoCommands, isCommandsTrusted, readTrust, write
 import { emit, requireRoot, type ParsedArgs } from "./shared.js";
 
 /**
- * `gate trust` — approve the current `commands:` block (TOFU). Writes the hash
+ * `gate trust` - approve the current `commands:` block (TOFU). Writes the hash
  * to `.gate/trust.json`; the IMPLEMENT/TEST gates refuse to execute commands
  * until this matches. `--check` reports status without writing (exit 0/1).
  */
@@ -14,7 +14,7 @@ export function cmdTrust(args: ParsedArgs): void {
     const record = readTrust(root);
     const human = trusted
       ? `trusted (${hasNoCommands(root) ? "no commands to run" : currentCommandsHash(root)})`
-      : `NOT trusted — run \`gate trust\` (current ${currentCommandsHash(root)}, stored ${record?.commandsHash ?? "none"})`;
+      : `NOT trusted - run \`gate trust\` (current ${currentCommandsHash(root)}, stored ${record?.commandsHash ?? "none"})`;
     emit(human, { trusted, currentHash: currentCommandsHash(root), storedHash: record?.commandsHash ?? null }, args.flags);
     process.exitCode = trusted ? 0 : 1;
     return;

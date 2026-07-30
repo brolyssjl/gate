@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 
 function git(root: string, args: string[]): { ok: boolean; stdout: string } {
   const res = spawnSync("git", args, { cwd: root, encoding: "utf8" });
@@ -23,12 +23,75 @@ export function isGitRepo(root: string): boolean {
   return git(root, ["rev-parse", "--is-inside-work-tree"]).ok;
 }
 
-/** Current branch name, or null when not a repo, unborn, or detached HEAD. */
+/**
+ * Current branch name, or null when not a repo or on a detached HEAD.
+ * `symbolic-ref` (not `rev-parse --abbrev-ref`) so this resolves correctly on
+ * an *unborn* branch too - a freshly `git init`'d repo with zero commits still
+ * has `HEAD` pointing at `refs/heads/<branch>` symbolically, but no commit for
+ * `rev-parse` to resolve yet, so `rev-parse --abbrev-ref HEAD` fails exactly
+ * as it does on a real detached HEAD - a real regression here otherwise, since
+ * branch-keyed runs (Milestone 4) treat "detached" as a hard blocker.
+ */
 export function currentBranch(root: string): string | null {
-  const res = git(root, ["rev-parse", "--abbrev-ref", "HEAD"]);
+  const res = git(root, ["symbolic-ref", "--quiet", "--short", "HEAD"]);
   if (!res.ok) return null;
   const branch = res.stdout.trim();
-  return branch && branch !== "HEAD" ? branch : null;
+  return branch.length > 0 ? branch : null;
+}
+
+export type BranchState =
+  | { kind: "branch"; name: string }
+  | { kind: "detached" }
+  | { kind: "none" };
+
+/**
+ * Tri-state read of the repo's branch identity, for branch-keyed run
+ * concurrency (Milestone 4). `"none"` (not a git repo at all) is distinct from
+ * `"detached"` (a git repo, but HEAD points at a commit, not a branch): a
+ * detached HEAD is genuinely ambiguous - which run should "current" resolve
+ * to? - so callers must fall back to explicit `--run` selection, while a
+ * non-repo has no ambiguity to resolve (there's only ever one project).
+ */
+export function branchState(root: string): BranchState {
+  // A successful symbolic-ref alone proves both "this is a git repo" and "on
+  // a branch" - the common case needs only this one subprocess. Reading the
+  // raw result (not through currentBranch(), which conflates "the command
+  // failed" with "it succeeded but printed nothing") lets that single call
+  // decide the common case; isGitRepo() is only needed to disambiguate
+  // "not a repo" from "genuinely detached", and only on the rarer path where
+  // symbolic-ref didn't resolve a branch.
+  const res = git(root, ["symbolic-ref", "--quiet", "--short", "HEAD"]);
+  const branch = res.stdout.trim();
+  if (res.ok && branch.length > 0) return { kind: "branch", name: branch };
+  return isGitRepo(root) ? { kind: "detached" } : { kind: "none" };
+}
+
+/**
+ * The repo's git hooks directory, respecting worktrees and a custom
+ * `core.hooksPath` - not always a plain `.git/hooks` (`gate guard install`
+ * needs the real one). Null when not a git repo.
+ */
+export function gitHooksDir(root: string): string | null {
+  const res = git(root, ["rev-parse", "--git-path", "hooks"]);
+  if (!res.ok) return null;
+  const p = res.stdout.trim();
+  if (!p) return null;
+  return isAbsolute(p) ? p : join(root, p);
+}
+
+/**
+ * Staged (index) files, excluding `.gate/` bookkeeping - what a pre-commit
+ * hook cares about. `-z` (NUL-separated, unquoted paths) rather than the
+ * default newline-separated output: with `core.quotepath` (git's default),
+ * a non-ASCII filename otherwise arrives C-quoted with surrounding quotes
+ * (e.g. `"caf\303\251.ts"`), which fails glob matching outright and even
+ * defeats the `.gate/` exclusion below (a leading quote character beats
+ * `startsWith(".gate/")`).
+ */
+export function stagedFiles(root: string): string[] {
+  return git(root, ["diff", "--cached", "--name-only", "-z", "--"])
+    .stdout.split("\0")
+    .filter((f) => f.length > 0 && !f.startsWith(".gate/"));
 }
 
 /** Current HEAD sha, or null if there are no commits yet / not a repo. */

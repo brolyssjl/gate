@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { loadConfig } from "../core/config.js";
-import { readCurrentRunId } from "../core/current.js";
+import { listActiveBranches } from "../core/current.js";
 import { archivePath, gatePaths, runPaths } from "../core/paths.js";
 import { readRun, type Run } from "../core/run.js";
 import { buildReportData, type ReportData } from "./report.js";
@@ -33,8 +33,14 @@ export function cmdPrune(args: ParsedArgs): void {
   const days = args.flags.days !== undefined ? parseIntFlag(args.flags.days, 0, "--days") : (config.retention.days ?? null);
   const dryRun = args.flags["dry-run"] === true;
 
-  const activeId = readCurrentRunId(root);
-  const candidates = listCandidates(root, activeId);
+  // Every run any branch's current.json entry points at is protected,
+  // regardless of its own `status` field: a stale done-but-still-mapped run
+  // (e.g. from a mapping that outlived its run, on some branch other than
+  // the one checked out) would otherwise get pruned while its mapping
+  // remains, leaving `gate status` on that branch pointing at a run whose
+  // folder no longer exists.
+  const mappedIds = new Set(listActiveBranches(root).map((b) => b.runId));
+  const candidates = listCandidates(root, mappedIds);
   const toPrune = selectForPrune(candidates, keep, days);
 
   if (dryRun) {
@@ -62,12 +68,12 @@ export function cmdPrune(args: ParsedArgs): void {
   emit(human, { dryRun: false, pruned }, args.flags);
 }
 
-function listCandidates(root: string, activeId: string | null): Candidate[] {
+function listCandidates(root: string, protectedIds: Set<string>): Candidate[] {
   const runsDir = gatePaths(root).runs;
   if (!existsSync(runsDir)) return [];
   const candidates: Candidate[] = [];
   for (const id of readdirSync(runsDir)) {
-    if (id === activeId) continue;
+    if (protectedIds.has(id)) continue;
     if (!existsSync(runPaths(root, id).runJson)) continue;
     let run: Run;
     try {

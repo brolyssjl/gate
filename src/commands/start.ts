@@ -1,11 +1,12 @@
 import { existsSync, writeFileSync } from "node:fs";
 import { RETRO_TEMPLATE } from "../artifacts/retro.js";
+import { hashPlanFile } from "../artifacts/plan.js";
 import { loadConfig } from "../core/config.js";
-import { clearCurrentRunId, readCurrentRunId, setCurrentRunId } from "../core/current.js";
+import { NO_GIT_BRANCH_KEY, resolveBranchKey, withCurrentLock } from "../core/current.js";
 import { headSha } from "../core/git.js";
 import { runPaths } from "../core/paths.js";
 import { resolvePlaybookWithOverlays } from "../core/playbooks.js";
-import { makeRunId, newRun, readRun, writeRun } from "../core/run.js";
+import { makeRunId, newRun, readRun, writeRun, type Run } from "../core/run.js";
 import { DEFAULT_PROFILE, isProfile, phaseSequence, PROFILES } from "../core/stateMachine.js";
 import { resolveDisplayTargets } from "../core/targets.js";
 import { detect, planHints } from "../integrations/index.js";
@@ -51,16 +52,14 @@ export function cmdStart(args: ParsedArgs): void {
   const title = args.positionals.join(" ").trim();
   if (!title) throw new UsageError('gate start needs a title: gate start "<title>"');
 
-  const existingId = readCurrentRunId(root);
-  if (existingId) {
-    const existing = safeRead(root, existingId);
-    if (existing && existing.status === "active") {
-      throw new GateError(
-        `run "${existingId}" is still active (phase ${existing.phase}); finish or abandon it first`,
-      );
-    }
-    clearCurrentRunId(root);
+  const resolved = resolveBranchKey(root);
+  if (resolved.kind === "detached") {
+    throw new GateError(
+      "HEAD is detached - runs are keyed by branch; checkout a branch before `gate start`",
+    );
   }
+  const branchKey = resolved.key;
+  const branch = branchKey === NO_GIT_BRANCH_KEY ? null : branchKey;
 
   const profile = typeof args.flags.profile === "string" ? args.flags.profile : DEFAULT_PROFILE;
   if (!isProfile(profile)) {
@@ -89,10 +88,96 @@ export function cmdStart(args: ParsedArgs): void {
     }
   }
 
-  const id = uniqueRunId(root, title);
-  const run = newRun({ id, title, profile, baseRef: headSha(root), sessionId, targetOverride });
-  writeRun(root, run);
-  setCurrentRunId(root, id);
+  // The whole "read this branch's existing mapping -> decide resume/create ->
+  // create the new run -> point the branch at it" sequence runs under one
+  // lock, so a concurrent `gate start` on the same branch can't interleave
+  // between the decision and the write (the milestone's own use case is
+  // several agents in flight at once).
+  type Outcome = { kind: "resumed"; run: Run; titleMismatch: boolean } | { kind: "created"; run: Run };
+  const outcome = withCurrentLock(root, (branches): Outcome => {
+    const existingId = branches[branchKey];
+    if (existingId) {
+      const existing = safeRead(root, existingId);
+      if (existing && existing.status === "active") {
+        const planPath = runPaths(root, existingId).plan;
+        if (existing.approval && hashPlanFile(planPath) !== existing.approval.planHash) {
+          throw new GateError(
+            `run "${existingId}" on this branch is approved but plan.md has changed since - ` +
+              "re-run `gate approve` or resolve the run before starting fresh",
+          );
+        }
+        // Resuming silently on a real profile/target conflict would let an
+        // agent believe it started (say) a bugfix-profile run when it's
+        // actually driving an old docs-profile one - a hard error only when
+        // the flag was *explicitly* requested (an unset flag defaulting to
+        // "feature" must not manufacture a false conflict against whatever
+        // profile the resumed run happens to be).
+        if (typeof args.flags.profile === "string" && profile !== existing.profile) {
+          throw new GateError(
+            `run "${existingId}" on this branch is profile "${existing.profile}", but --profile ${profile} ` +
+              "was requested for a resumed run - drop --profile to resume it as-is, or finish/abandon it first",
+          );
+        }
+        const existingTargets = existing.targetOverride ?? [];
+        const requestedTargets = targetOverride ?? [];
+        const targetsDiffer =
+          requestedTargets.length !== existingTargets.length ||
+          requestedTargets.some((t, i) => t !== existingTargets[i]);
+        if (typeof args.flags.target === "string" && targetsDiffer) {
+          throw new GateError(
+            `run "${existingId}" on this branch has --target ${existingTargets.join(",") || "(none)"}, but ` +
+              `${requestedTargets.join(",") || "(none)"} was requested for a resumed run - ` +
+              "drop --target to resume it as-is, or finish/abandon it first",
+          );
+        }
+        // A title mismatch is cosmetic (it doesn't change gate behavior the
+        // way profile/target do) - surfaced as a loud warning, not a hard
+        // error, so the resumed run's own title is always what's kept.
+        return { kind: "resumed", run: existing, titleMismatch: existing.title !== title };
+      }
+      delete branches[branchKey];
+    }
+
+    const id = uniqueRunId(root, title);
+    const run = newRun({ id, title, profile, branch, baseRef: headSha(root), sessionId, targetOverride });
+    writeRun(root, run);
+    branches[branchKey] = id;
+    return { kind: "created", run };
+  });
+
+  if (outcome.kind === "resumed") {
+    // Resuming, not starting fresh: this branch already has work in flight.
+    const existing = outcome.run;
+    const sequence = phaseSequence(existing.profile);
+    const human = [
+      `Branch already has an active run: "${existing.id}" (phase ${existing.phase}) - resuming it.`,
+      outcome.titleMismatch
+        ? `WARNING: requested title "${title}" differs from the resumed run's title "${existing.title}" - ` +
+          "the resumed run's own title was kept; pass --profile/--target to detect a real conflict instead of guessing from the title."
+        : "",
+      `Flow: ${sequence.map((p) => (p === existing.phase ? `[${p}]` : p)).join(" → ")}`,
+      `Next: run \`gate status\` or \`gate playbook\` to continue.`,
+    ]
+      .filter(Boolean)
+      .join("\n");
+    emit(
+      human,
+      {
+        id: existing.id,
+        phase: existing.phase,
+        profile: existing.profile,
+        phases: sequence,
+        resumed: true,
+        requestedTitle: title,
+        titleMismatch: outcome.titleMismatch,
+      },
+      args.flags,
+    );
+    return;
+  }
+
+  const run = outcome.run;
+  const id = run.id;
 
   // Scaffold a plan.md for the agent to fill in, plus a debug-log.md / retro.md
   // when the profile walks through DEBUG / RETRO so the templates are waiting.
@@ -110,7 +195,8 @@ export function cmdStart(args: ParsedArgs): void {
   const targetNames = resolveDisplayTargets(root, run, config);
   const playbook = resolvePlaybookWithOverlays(root, "PLAN", config, targetNames) ?? "(no PLAN playbook found)";
   const human = [
-    `Started run "${id}" (profile: ${profile}, phases: ${sequence.join(" → ")}) → phase PLAN`,
+    `Started run "${id}" (profile: ${profile}, phases: ${sequence.join(" → ")}) → phase PLAN` +
+      (branch ? ` on branch "${branch}"` : ""),
     `Edit the plan at: ${paths.plan}`,
     "When it's ready and signed off, run `gate approve`, then `gate next`.",
     hints.length ? "\nHints:\n" + hints.map((h) => "  - " + h).join("\n") : "",
@@ -119,7 +205,7 @@ export function cmdStart(args: ParsedArgs): void {
     .filter(Boolean)
     .join("\n");
 
-  emit(human, { id, phase: run.phase, profile, phases: sequence, plan: paths.plan, hints }, args.flags);
+  emit(human, { id, phase: run.phase, profile, branch, phases: sequence, plan: paths.plan, hints }, args.flags);
 }
 
 function safeRead(root: string, id: string) {

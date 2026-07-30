@@ -1,4 +1,4 @@
-import { execFileSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -38,11 +38,6 @@ criteria:
 `;
 
 describe("gate CLI end-to-end", () => {
-  beforeAll(() => {
-    // Ensure the binary is built before spawning it.
-    execFileSync("npm", ["run", "build"], { cwd: pkgRoot, stdio: "pipe" });
-  }, 120_000);
-
   it("walks a run from PLAN to DONE, refusing every hollow gate", () => {
     const repo = makeRepo({
       "package.json": JSON.stringify({ name: "fx", scripts: { test: "node test.js" } }),
@@ -205,6 +200,52 @@ describe("gate CLI end-to-end", () => {
     expect(playbook.playbook).toContain("Run the visual regression suite.");
   });
 
+  it("gate playbook <phase> --run honors the named run's targets, not the current branch's own run", () => {
+    const repo = makeRepo();
+    gate(repo, ["init"]);
+    writeFileSync(join(repo, ".gate", "playbooks", "test.web.md"), "# Web overlay\n\nWEB_OVERLAY_MARKER\n");
+    writeFileSync(join(repo, ".gate", "playbooks", "test.api.md"), "# Api overlay\n\nAPI_OVERLAY_MARKER\n");
+    writeFileSync(
+      join(repo, ".gate", "config.yml"),
+      [
+        "commands: {}",
+        "thresholds: {}",
+        "targets:",
+        "  web:",
+        "    match: [\"apps/web/**\"]",
+        "    playbooks: { test: \".gate/playbooks/test.web.md\" }",
+        "  api:",
+        "    match: [\"apps/api/**\"]",
+        "    playbooks: { test: \".gate/playbooks/test.api.md\" }",
+        "phases: {}",
+        "integrations: { agnosgram: off, sdd: off }",
+        "",
+      ].join("\n"),
+    );
+    const mainBranch = spawnSync("git", ["branch", "--show-current"], { cwd: repo, encoding: "utf8" }).stdout.trim();
+
+    expect(gate(repo, ["start", "api run", "--target", "api"]).code).toBe(0);
+    const apiRunId = (gate(repo, ["status", "--json"]).json() as { id: string }).id;
+
+    spawnSync("git", ["checkout", "-b", "web-branch"], { cwd: repo });
+    expect(gate(repo, ["start", "web run", "--target", "web"]).code).toBe(0);
+    const webRunId = (gate(repo, ["status", "--json"]).json() as { id: string }).id;
+
+    spawnSync("git", ["checkout", mainBranch], { cwd: repo });
+    // Current branch (main) is the api run - the default (no --run) path.
+    const defaultPlaybook = gate(repo, ["playbook", "TEST", "--json"]).json() as { playbook: string };
+    expect(defaultPlaybook.playbook).toContain("API_OVERLAY_MARKER");
+    expect(defaultPlaybook.playbook).not.toContain("WEB_OVERLAY_MARKER");
+
+    // --run must override that default, even though it names a run filed
+    // under a completely different branch.
+    const viaRun = gate(repo, ["playbook", "TEST", "--run", webRunId, "--json"]).json() as { playbook: string };
+    expect(viaRun.playbook).toContain("WEB_OVERLAY_MARKER");
+    expect(viaRun.playbook).not.toContain("API_OVERLAY_MARKER");
+
+    expect(apiRunId).not.toBe(webRunId);
+  });
+
   it("rejects `gate start --target` with an unknown target name", () => {
     const repo = makeRepo();
     gate(repo, ["init"]);
@@ -312,6 +353,9 @@ describe("gate CLI end-to-end", () => {
     expect(review.rubric).toContain("Check the api error envelope.");
   });
 
+  // ~19 sequential `gate` subprocess spawns; vitest's 5s default test timeout
+  // can be tight under a fully parallel `npm test` run (many other suites'
+  // subprocesses competing for CPU), independent of this test's own logic.
   it("refuses to reach DONE when a review fix breaks the code (staleness guard)", () => {
     const repo = makeRepo({
       "package.json": JSON.stringify({ name: "fx", scripts: { test: "node test.js" } }),
@@ -375,7 +419,7 @@ describe("gate CLI end-to-end", () => {
     );
     expect(gate(repo, ["next"]).code).toBe(0);
     expect((gate(repo, ["status", "--json"]).json() as { active: boolean }).active).toBe(false);
-  });
+  }, 15000);
 
   it("gate retro syncs the journal (fallback path - no agnosgram binary in this sandbox) and is idempotent", () => {
     const repo = makeRepo();
@@ -472,6 +516,7 @@ describe("gate --json schema", () => {
   it("init/start/status expose stable top-level keys", () => {
     expect(keys(gate(repo, ["init", "--json"]))).toEqual(["detected", "initialized", "refreshed", "root"]);
     expect(keys(gate(repo, ["start", "schema demo", "--json"]))).toEqual([
+      "branch",
       "hints",
       "id",
       "phase",
@@ -483,8 +528,10 @@ describe("gate --json schema", () => {
       "active",
       "artifacts",
       "baseRef",
+      "branch",
       "id",
       "nextAction",
+      "others",
       "phase",
       "phases",
       "profile",

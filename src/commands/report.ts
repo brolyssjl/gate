@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { archivePath, gatePaths, runPaths } from "../core/paths.js";
-import { readCurrentRunId } from "../core/current.js";
+import { readCurrentRunId, resolveBranchKey } from "../core/current.js";
 import { readRun, type HistoryEntry, type Run } from "../core/run.js";
 import { parseReviewFile, SEVERITIES, STATUSES } from "../artifacts/review.js";
 import { emit, GateError, requireRoot, type ParsedArgs } from "./shared.js";
@@ -93,8 +93,18 @@ export function renderReportHuman(data: ReportData, archived: boolean): string {
  */
 export function cmdReport(args: ParsedArgs): void {
   const root = requireRoot();
-  const runId =
-    args.positionals[0] ?? readCurrentRunId(root) ?? mostRecentRunId(root) ?? mostRecentArchivedRunId(root);
+  const explicitId = args.positionals[0];
+  const resolved = resolveBranchKey(root);
+  // A detached HEAD has no branch to resolve a default run from - same
+  // policy as the phase commands (check/next/review/...): refuse rather than
+  // silently falling back to mostRecentRunId, which could describe a
+  // completely different branch's run with nothing indicating that's what
+  // happened.
+  if (!explicitId && resolved.kind === "detached") {
+    throw new GateError("HEAD is detached - no branch to resolve a default run from; pass a run id: gate report <id>");
+  }
+  const currentId = resolved.kind === "key" ? readCurrentRunId(root, resolved.key) : null;
+  const runId = explicitId ?? currentId ?? mostRecentRunId(root) ?? mostRecentArchivedRunId(root);
   if (!runId) throw new GateError("no run to report on - pass a run id: gate report <id>");
 
   const { data, archived } = loadReportData(root, runId);

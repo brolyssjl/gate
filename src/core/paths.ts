@@ -25,7 +25,8 @@ export function gatePaths(root: string) {
     config: join(gate, "config.yml"),
     playbooks: join(gate, "playbooks"),
     runs: join(gate, "runs"),
-    current: join(gate, "current"), // file holding the id of the active run
+    current: join(gate, "current.json"), // per-branch map of branch key -> active run id
+    legacyCurrent: join(gate, "current"), // Milestone 1-3 single-run pointer; migrated on first read
     archive: join(gate, "archive"), // gate prune: summaries of pruned runs
   };
 }

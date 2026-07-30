@@ -1,8 +1,8 @@
 /**
  * Tiny glob matcher for repo-relative POSIX paths. Supports:
- *   `*`  — any run of characters except `/`
- *   `**` — any run of characters including `/` (spanning directories)
- *   `?`  — a single character except `/`
+ *   `*`  - any run of characters except `/`
+ *   `**` - any run of characters including `/` (spanning directories)
+ *   `?`  - a single character except `/`
  * A bare directory or file path also matches everything beneath it, so
  * `src/foo` matches `src/foo/bar.ts` and `src/foo.ts` matches itself.
  */

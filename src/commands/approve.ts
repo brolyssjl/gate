@@ -4,14 +4,14 @@ import { nowIso, writeRun } from "../core/run.js";
 import { emit, GateError, requireActiveRun, type ParsedArgs } from "./shared.js";
 
 /**
- * `gate approve` — record PLAN sign-off in run.json, bound to the plan's content
+ * `gate approve` - record PLAN sign-off in run.json, bound to the plan's content
  * hash. Separate from writing plan.md so the author can't self-approve in one
  * step; a later plan edit voids the approval (the PLAN gate re-checks the hash).
  */
 export function cmdApprove(args: ParsedArgs): void {
-  const { root, run } = requireActiveRun();
+  const { root, run } = requireActiveRun(args);
   if (run.phase !== "PLAN") {
-    throw new GateError(`nothing to approve — run is in ${run.phase}, not PLAN`);
+    throw new GateError(`nothing to approve - run is in ${run.phase}, not PLAN`);
   }
 
   const planPath = runPaths(root, run.id).plan;

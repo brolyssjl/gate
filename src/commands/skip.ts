@@ -4,12 +4,12 @@ import { advance } from "./advance.js";
 import { emit, GateError, requireActiveRun, UsageError, type ParsedArgs } from "./shared.js";
 
 /**
- * `gate skip <phase> --reason "..."` — human-authorized skip of the current
+ * `gate skip <phase> --reason "..."` - human-authorized skip of the current
  * gated phase, recorded in run.json overrides for the audit trail. Only the
  * current phase can be skipped, and never DONE.
  */
 export function cmdSkip(args: ParsedArgs): void {
-  const { root, run } = requireActiveRun();
+  const { root, run } = requireActiveRun(args);
 
   const arg = args.positionals[0];
   if (!arg) throw new UsageError('gate skip needs a phase: gate skip <phase> --reason "..."');

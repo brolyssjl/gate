@@ -90,6 +90,45 @@ load-bearing; pointers, never copies.
       TUI framework, no dependencies); satisfies the same REVIEW gate as agent
       review
 
+## Milestone 5 - Soak feedback: a tool, not a blocker ⏳
+
+_Scoped from the first real-world soak (2026-07-30): gate v0.3.0 run through
+full PLAN..DONE flows on a Nuxt repo and a Go repo, with OpenSpec SDD
+integration. Every item reproduced during a real gated task; details in the
+soak friction logs. The soak also validated the core machinery: the staleness
+guard, evidence-integrity refusal, SDD detection, reviewer/implementer
+separation, and RETRO-to-Agnosgram sync all worked first try - and the
+independent REVIEW round caught a real regression that self-review and a
+green 1435-test suite missed._
+
+- [ ] `scope_ignore:` glob list for the scope checks - stored inside the
+      trusted commands block (TOFU-hashed, re-trust to change), seeded by
+      `gate init` per detected stack (node caches, go build dirs); scope
+      report shows "matched scope_ignore" as info, never silently. Motivation:
+      untracked environment cruft (a node compile-cache dir rewritten by every
+      command, including gate's own runs) produced hundreds of false scope
+      violations that hard-blocked a DEBUG gate.
+- [ ] Approved-plan drift detection + `gate amend` - record the approved
+      plan's content hash in run.json; every later gate fails on drift
+      (restores void-on-edit for the whole run, today it ends at PLAN: post-
+      PLAN edits to plan.md, including scope widening, are accepted with no
+      re-approval and no mechanism to record one). `gate amend` shows the
+      diff vs the approved plan and `gate approve --amend` records a cheap
+      delta re-approval under the same no-self-approval rules.
+- [ ] Fix the TEST playbook's report section - it still claims a
+      hand-registered `test-report.json` (via `gate log`) is valid evidence;
+      the CLI correctly refuses exactly that since the M2 hardening. Document
+      the real contract (trusted command stdout or `$GATE_TEST_REPORT`) plus
+      runner-wiring notes (vitest/jest `--reporter=json`, `go test -json`),
+      and make `gate init` actually write the `.gate/runs/` gitignore entries
+      the docs already claim ("gitignored by default" is prose today, not
+      behavior).
+
+_Deferred from the same soak (logged, not scheduled): separate `typecheck`
+command slot; `coverage_format` docs/example mismatch; `plan.spec` doc example
+vs change-directory paths; bugfix-vs-feature profile guidance for known-cause
+bugs._
+
 ## Deferred / v2
 
 - [ ] Go port (startup-latency escape hatch)

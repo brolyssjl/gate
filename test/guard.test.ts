@@ -1,17 +1,12 @@
 import { spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
-import { makeRepo, writeFile } from "./helpers.js";
+import { gate as gateWithOpts, gateShellCommand, makeRepo, writeFile } from "./helpers.js";
 
-const pkgRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
-const CLI = join(pkgRoot, "dist", "cli.js");
-
-function gate(cwd: string, args: string[], env?: NodeJS.ProcessEnv): { code: number; stdout: string; stderr: string; json: () => unknown } {
-  const res = spawnSync("node", [CLI, ...args], { cwd, encoding: "utf8", env: env ?? process.env });
-  return { code: res.status ?? 1, stdout: res.stdout, stderr: res.stderr, json: () => JSON.parse(res.stdout) };
+function gate(cwd: string, args: string[], env?: NodeJS.ProcessEnv) {
+  return gateWithOpts(cwd, args, { env });
 }
 
 function git(cwd: string, args: string[], env?: NodeJS.ProcessEnv): { code: number; stdout: string; stderr: string } {
@@ -19,11 +14,15 @@ function git(cwd: string, args: string[], env?: NodeJS.ProcessEnv): { code: numb
   return { code: res.status ?? 1, stdout: res.stdout, stderr: res.stderr };
 }
 
-/** A `gate` shim on PATH so the installed hook (which looks up `gate` via PATH) resolves in tests. */
+/**
+ * A `gate` shim on PATH so the installed hook (which looks up `gate` via
+ * PATH) resolves in tests - honors $GATE_BIN (conformance mode) the same way
+ * `gateShellCommand` does, so the hook itself invokes the binary under test.
+ */
 function gateShimPath(): string {
   const binDir = mkdtempSync(join(tmpdir(), "gate-bin-"));
   const shim = join(binDir, "gate");
-  writeFileSync(shim, `#!/bin/sh\nexec node "${CLI}" "$@"\n`);
+  writeFileSync(shim, `#!/bin/sh\nexec ${gateShellCommand()} "$@"\n`);
   chmodSync(shim, 0o755);
   return binDir;
 }

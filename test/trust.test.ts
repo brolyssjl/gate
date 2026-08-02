@@ -31,4 +31,12 @@ describe("command trust (TOFU)", () => {
     writeConfig(root, { commands: { test: "echo hi" } }, false);
     expect(currentCommandsHash(root)).toBe(currentCommandsHash(root));
   });
+
+  it("invalidates trust when scope_ignore changes, even with commands untouched (Milestone 5)", () => {
+    const root = makeRepo();
+    writeConfig(root, { commands: { test: "echo hi" }, scope_ignore: ["node_modules/**"] }); // trusts
+    expect(isCommandsTrusted(root)).toBe(true);
+    writeConfig(root, { commands: { test: "echo hi" }, scope_ignore: ["node_modules/**", "coverage/**"] }, false);
+    expect(isCommandsTrusted(root)).toBe(false);
+  });
 });

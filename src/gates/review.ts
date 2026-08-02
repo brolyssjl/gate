@@ -1,10 +1,11 @@
 import { existsSync } from "node:fs";
 import { runPaths } from "../core/paths.js";
-import { changedFiles, treeFingerprint } from "../core/git.js";
+import { changedFiles, isGateBookkeeping, treeFingerprint } from "../core/git.js";
 import { runCommand } from "../core/exec.js";
 import { isCommandsTrusted } from "../core/trust.js";
 import { checkName, resolvePhaseTargets } from "../core/targets.js";
 import { parseReviewFile, blockingFindings, unjustifiedWaivers, type Review } from "../artifacts/review.js";
+import { planDriftCheck } from "./planDrift.js";
 import { type Check, type GateContext, type GateResult, fail, pass, result } from "./types.js";
 
 /**
@@ -23,6 +24,8 @@ import { type Check, type GateContext, type GateResult, fail, pass, result } fro
  */
 export function reviewGate(ctx: GateContext): GateResult {
   const checks: Check[] = [];
+  const drift = planDriftCheck(ctx, "review.plan-drift");
+  if (drift) checks.push(drift);
   const { reviewPacket, review: reviewPath } = runPaths(ctx.root, ctx.run.id);
   const current = treeFingerprint(ctx.root);
 
@@ -36,7 +39,7 @@ export function reviewGate(ctx: GateContext): GateResult {
     checks.push(reviewerCheck(ctx, review));
   }
 
-  const touched = changedFiles(ctx.root, ctx.run.baseRef).filter((f) => !f.startsWith(".gate/"));
+  const touched = changedFiles(ctx.root, ctx.run.baseRef).filter((f) => !isGateBookkeeping(f));
   checks.push(...evidenceChecks(ctx, current, touched));
 
   return result("REVIEW", checks);

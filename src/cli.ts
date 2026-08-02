@@ -10,6 +10,7 @@ import { cmdNext } from "./commands/next.js";
 import { cmdPlaybook } from "./commands/playbook.js";
 import { cmdTrust } from "./commands/trust.js";
 import { cmdApprove } from "./commands/approve.js";
+import { cmdAmend } from "./commands/amend.js";
 import { cmdSkip } from "./commands/skip.js";
 import { cmdLog } from "./commands/log.js";
 import { cmdReview } from "./commands/review.js";
@@ -37,6 +38,13 @@ Commands:
     [--target <a,b>]      Override target resolution (comma-separated names);
                           wins over file-based resolution for this run
   approve [--by] [--reason] [--run <id>]  Record PLAN sign-off, bound to the plan's content
+    [--amend]              Re-approve a plan that drifted after approval,
+                          recording a new hash for the delta \`gate amend\`
+                          showed (requires \`gate amend\` to have run first)
+  amend [--by] [--run <id>]  Show the diff between plan.md and the approved
+                          snapshot and record intent to re-approve it; does
+                          not itself re-approve - run \`gate approve --amend\`
+                          after
   status                  Active run for the current branch, plus any other
                           branches with a run in flight
   check [--run <id>]      Run the current gate; exit code = verdict
@@ -85,6 +93,7 @@ const COMMANDS: Record<string, Handler> = {
   trust: cmdTrust,
   start: cmdStart,
   approve: cmdApprove,
+  amend: cmdAmend,
   status: cmdStatus,
   check: cmdCheck,
   next: cmdNext,

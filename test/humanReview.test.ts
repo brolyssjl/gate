@@ -1,20 +1,12 @@
-import { execFileSync, spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { execFileSync } from "node:child_process";
+import { join } from "node:path";
 import { readFileSync, writeFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { makeRepo, writeFile } from "./helpers.js";
+import { gate as gateWithOpts, makeRepo, writeFile } from "./helpers.js";
 
-const pkgRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
-const CLI = join(pkgRoot, "dist", "cli.js");
-
-function gate(
-  cwd: string,
-  args: string[],
-  input?: string,
-): { code: number; stdout: string; stderr: string; json: () => unknown } {
-  const res = spawnSync("node", [CLI, ...args], { cwd, encoding: "utf8", input });
-  return { code: res.status ?? 1, stdout: res.stdout, stderr: res.stderr, json: () => JSON.parse(res.stdout) };
+/** This suite always calls `gate` with a raw stdin string (or none) - adapt the shared helper's `{ input }` shape. */
+function gate(cwd: string, args: string[], input?: string) {
+  return gateWithOpts(cwd, args, { input });
 }
 
 /** Walk a fresh repo from init to an active REVIEW-phase run. */

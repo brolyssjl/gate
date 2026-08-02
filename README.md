@@ -86,21 +86,22 @@ gate evidence).
 
 `gate check` runs the current gate without advancing; **its exit code is the
 verdict** (0 pass, 1 fail), so scripts and agents can branch on it. Note for CI:
-`.gate/runs/` and `.gate/current.json` are gitignored by default, so a CI
-checkout has no run to check - commit your run folders (or re-create the run
-in CI) if you want `gate check` as a pipeline step. `config.yml` and
-`trust.json` are tracked, so CI always inherits the command pin.
+`.gate/runs/` and `.gate/current.json` are gitignored by default (`gate init`
+writes the entries into `.gitignore`), so a CI checkout has no run to check -
+commit your run folders (or re-create the run in CI) if you want `gate check`
+as a pipeline step. `config.yml` and `trust.json` are tracked, so CI always
+inherits the command pin.
 
 ## The gates
 
 | Phase | Deterministic checks |
 |---|---|
 | **PLAN** | `plan.md` schema valid; ≥1 acceptance criterion; each criterion declares a verify method; if an SDD dir is detected, `spec:` cites a path under it; if an Agnosgram advise report exists, every contradiction is acknowledged; approved via `gate approve` (bound to the plan's content hash) |
-| **DEBUG** | `debug-log.md` valid; reproduction attested (`reproduced: true` - an agent claim; the mechanical proof is the test); ≥1 complete protocol cycle; touched files in scope; triggering test named in the run's report and whole suite green (no regressions) |
-| **IMPLEMENT** | working diff is non-empty; every touched file is declared in `plan.md`; `build` exits 0; `lint` exits 0 |
-| **TEST** | `build` and `lint` exit 0 (load-bearing for `bugfix`, which skips IMPLEMENT); `test` command exits 0; every `test:`-verified criterion maps to a named passing test; no skipped tests; diff coverage ≥ threshold |
-| **REVIEW** | packet emitted **and matches the current code** (tree fingerprint); review.md signed by a reviewer (≠ implementer when both known); no blocker/major finding left open (or waived with a rationale); if the code changed since the last gate passed, `build`/`lint`/`test` are re-run here and must be green |
-| **RETRO** | `retro.md` valid; at least one of `broke`/`avoid`/`conventions` answered; if an `.agnosgram/` store is present, the entry was synced to its journal (`gate retro`) - otherwise this check passes with a note |
+| **DEBUG** | plan unchanged since approval (see "Approved-plan drift"); `debug-log.md` valid; reproduction attested (`reproduced: true` - an agent claim; the mechanical proof is the test); ≥1 complete protocol cycle; touched files in scope (declared in `plan.md`, or matching `scope_ignore`); triggering test named in the run's report and whole suite green (no regressions) |
+| **IMPLEMENT** | plan unchanged since approval; working diff is non-empty; every touched file is declared in `plan.md` or matches `scope_ignore`; `build` exits 0; `lint` exits 0 |
+| **TEST** | plan unchanged since approval; `build` and `lint` exit 0 (load-bearing for `bugfix`, which skips IMPLEMENT); `test` command exits 0; every `test:`-verified criterion maps to a named passing test; no skipped tests; diff coverage ≥ threshold |
+| **REVIEW** | plan unchanged since approval; packet emitted **and matches the current code** (tree fingerprint); review.md signed by a reviewer (≠ implementer when both known); no blocker/major finding left open (or waived with a rationale); if the code changed since the last gate passed, `build`/`lint`/`test` are re-run here and must be green |
+| **RETRO** | plan unchanged since approval; `retro.md` valid; at least one of `broke`/`avoid`/`conventions` answered; if an `.agnosgram/` store is present, the entry was synced to its journal (`gate retro`) - otherwise this check passes with a note |
 
 Plan *quality*, debugging *rigor*, and review *depth* are judgment, not code -
 they live in editable Markdown **playbooks** (`.gate/playbooks/*.md`) the CLI
@@ -233,6 +234,28 @@ or none affected by the change, behavior and check names are byte-identical
 to a single-stack repo - targets are purely additive. `gate start --target
 <a,b>` overrides resolution for the whole run.
 
+## Scope noise (`scope_ignore`)
+
+The IMPLEMENT/DEBUG scope check normally fails on any touched file not
+declared in `plan.md`. Environment cruft - a node compile cache, a go build
+dir, coverage output - gets rewritten by the very commands Gate runs, and
+would otherwise hard-block the gate with false violations having nothing to
+do with the plan. `scope_ignore` in `config.yml` is a glob list of paths the
+scope check treats as noise instead:
+
+```yaml
+scope_ignore:
+  - "node_modules/**"
+  - "coverage/**"
+```
+
+`gate init` seeds it per detected stack. It's part of the trust hash
+(`commandsBlockHashSource`) - the same class as a command - so widening it
+needs a `gate trust` re-approval, same as editing `commands:`; an untrusted
+edit is never silently applied. A match is never hidden: it surfaces as its
+own info-level check line (`implement.scope.ignored` / `debug.scope.ignored`)
+naming exactly which files were excluded and why.
+
 ## Agent adapters
 
 `gate adapt [adapter...]` writes (or refreshes) a pointer block into each
@@ -337,6 +360,7 @@ integrations:
   sdd: auto
 targets: {}                      # optional - see "Targets (multi-stack repos)"
 retention: {}                    # optional - gate prune defaults, e.g. { keep: 10, days: 30 }
+scope_ignore: []                 # optional - see "Scope noise (scope_ignore)"; seeded by gate init
 ```
 
 Diff coverage understands five report formats, auto-detected under `coverage/`
@@ -373,6 +397,26 @@ self-approve by flipping a flag, and editing the plan afterward voids it. A CLI
 can't prove a *human* ran `approve` - the mechanical guarantee is that approval
 is a distinct, hash-bound act.
 
+### Approved-plan drift + `gate amend`
+
+Void-on-edit holds for the *whole run*, not just PLAN: every later gate
+(DEBUG/IMPLEMENT/TEST/REVIEW/RETRO) re-checks plan.md's hash against the one
+`gate approve` recorded, and fails closed on a mismatch - including a
+post-approval scope widening that used to sail through with no re-approval.
+
+```bash
+gate amend             # print the diff vs the approved plan.md, record intent
+gate approve --amend   # re-approve the delta (requires `gate amend` first)
+```
+
+`gate amend` requires a prior approval and an actual drift to show; it never
+re-approves by itself - that split means a delta re-approval always happens
+after a human has actually seen the diff `gate amend` printed, the same
+discipline the initial `gate approve` already applies. `gate approve --amend`
+refuses if the plan changed again after `gate amend` ran (re-run `gate amend`
+on the current plan first) and works at any phase, unlike the initial
+approval.
+
 ## Output formats
 
 Human-readable by default. `--json` for CI and agents (stable schema). `--format
@@ -390,7 +434,12 @@ A Go port (startup-latency escape hatch). See `ROADMAP.md` for the full plan.
 npm test          # vitest: state machine, gates against fixtures, TOON, CLI e2e
 npm run build     # embeds playbooks (scripts/embedPlaybooks.mjs), then tsc → dist/
 npm run typecheck # tsc --noEmit - the project's lint
+npm run conformance   # the CLI-only black-box subset, runnable against any $GATE_BIN
 ```
+
+`npm run conformance` never imports Gate's internals - it only spawns the
+`gate` binary and asserts on argv-in/exit-code+stdout+`.gate/`-state-out, so
+the same suite can validate a future non-TS port (see CONTRIBUTING.md).
 
 ### Single-file binary
 

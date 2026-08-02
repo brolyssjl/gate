@@ -31,6 +31,32 @@ Releases are cut from `main` with a semver tag and a GitHub release.
 The package is `private` until an npm name is chosen (see the roadmap), so
 releases are tags + GitHub releases only — **no `npm publish` yet**.
 
+## Conformance testing
+
+1.0.0 is planned as a from-scratch port against a frozen CLI surface. To
+make that port checkable against this TS implementation without a
+parallel test suite, the CLI-driving test files (`test/cli.e2e.test.ts`,
+`test/concurrency.test.ts`, `test/humanReview.test.ts`, `test/prune.test.ts`,
+`test/guard.test.ts`, `test/amend.test.ts`) never import Gate's internals - they only spawn the
+`gate` binary and assert on its stdout/stderr/exit code and the state it
+writes under `.gate/`. That's the black-box contract: argv in, exit code +
+stdout/stderr + `.gate/` state out.
+
+They resolve which binary to spawn through a single helper
+(`test/helpers.ts`'s `gate()`): `$GATE_BIN` when set, otherwise `node
+dist/cli.js` (the local build). Point `GATE_BIN` at any binary that
+implements the same contract - including a future Rust build - and the same
+suite exercises it unchanged:
+
+```bash
+npm run build                    # only needed for the default (unset GATE_BIN) case
+GATE_BIN=/path/to/other/gate npm run conformance
+```
+
+`npm run conformance` runs exactly that binary-agnostic subset (not the full
+`npm test`, which also runs unit-level suites that import `src/` directly and
+therefore only make sense against this TS implementation).
+
 ## Conventions
 
 - Commit author must match the local git config; never add `Co-authored-by`

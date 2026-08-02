@@ -45,6 +45,8 @@ export function runPaths(root: string, runId: string) {
     dir,
     runJson: join(dir, "run.json"),
     plan: join(dir, "plan.md"),
+    /** Snapshot of plan.md as of the last approval/amendment - `gate amend` diffs the current plan against this. */
+    planApproved: join(dir, "plan.approved.md"),
     worklog: join(dir, "worklog.md"),
     testReport: join(dir, "test-report.json"),
     debugLog: join(dir, "debug-log.md"),

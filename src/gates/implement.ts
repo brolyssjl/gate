@@ -1,10 +1,11 @@
 import { runPaths } from "../core/paths.js";
-import { changedFiles, isGitRepo } from "../core/git.js";
+import { changedFiles, isGateBookkeeping, isGitRepo } from "../core/git.js";
 import { matchesAny } from "../core/glob.js";
 import { runCommand } from "../core/exec.js";
 import { isCommandsTrusted } from "../core/trust.js";
 import { parsePlanFile } from "../artifacts/plan.js";
 import { checkName, resolvePhaseTargets } from "../core/targets.js";
+import { planDriftCheck } from "./planDrift.js";
 import { type Check, type GateContext, type GateResult, fail, pass, result } from "./types.js";
 
 /**
@@ -25,15 +26,15 @@ import { type Check, type GateContext, type GateResult, fail, pass, result } fro
  */
 export function implementGate(ctx: GateContext): GateResult {
   const checks: Check[] = [];
+  const drift = planDriftCheck(ctx, "implement.plan-drift");
+  if (drift) checks.push(drift);
 
   if (!isGitRepo(ctx.root)) {
     checks.push(fail("implement.git", "not a git repository - cannot measure the diff"));
     return result("IMPLEMENT", checks);
   }
 
-  const touched = changedFiles(ctx.root, ctx.run.baseRef).filter(
-    (f) => !f.startsWith(".gate/"),
-  );
+  const touched = changedFiles(ctx.root, ctx.run.baseRef).filter((f) => !isGateBookkeeping(f));
 
   checks.push(
     touched.length > 0
@@ -41,7 +42,7 @@ export function implementGate(ctx: GateContext): GateResult {
       : fail("implement.diff", "no code changes detected since the run started"),
   );
 
-  checks.push(scopeCheck("implement.scope", ctx, touched));
+  checks.push(...scopeCheck("implement.scope", ctx, touched));
 
   const trusted = isCommandsTrusted(ctx.root);
   for (const t of resolvePhaseTargets(ctx.config, ctx.run, touched)) {
@@ -54,19 +55,46 @@ export function implementGate(ctx: GateContext): GateResult {
 
 /**
  * Scope discipline: every touched file (outside `.gate/`) must be covered by a
- * `plan.files` glob. Shared by the IMPLEMENT and DEBUG gates, both of which
- * produce a diff that must stay within the declared plan.
+ * `plan.files` glob, or by `config.scope_ignore` (Milestone 5) - environment
+ * cruft (a node compile cache, a go build dir, coverage output) that isn't
+ * part of the plan but shouldn't hard-block the gate either. Shared by the
+ * IMPLEMENT and DEBUG gates, both of which produce a diff that must stay
+ * within the declared plan.
+ *
+ * `scope_ignore` only takes effect when the commands block is trusted (it
+ * rides in the same TOFU hash) - an untrusted edit to it never silently
+ * widens what the scope check accepts. A match is always surfaced as its own
+ * info-level check line, never folded silently into a passing result.
  */
-export function scopeCheck(name: string, ctx: GateContext, touched: string[]): Check {
+export function scopeCheck(name: string, ctx: GateContext, touched: string[]): Check[] {
   const { plan } = parsePlanFile(runPaths(ctx.root, ctx.run.id).plan);
   const declared = plan?.files ?? [];
-  const undeclared = touched.filter((f) => !matchesAny(f, declared));
-  return undeclared.length === 0
-    ? pass(name, "all touched files are declared in plan.md")
-    : fail(
+  const ignoreGlobs = ctx.config.scope_ignore;
+  const trusted = isCommandsTrusted(ctx.root);
+
+  const outOfPlan = touched.filter((f) => !matchesAny(f, declared));
+  const ignored = trusted ? outOfPlan.filter((f) => matchesAny(f, ignoreGlobs)) : [];
+  const undeclared = outOfPlan.filter((f) => !ignored.includes(f));
+
+  const checks: Check[] = [];
+  if (undeclared.length === 0) {
+    checks.push(pass(name, "all touched files are declared in plan.md"));
+  } else {
+    const untrustedHint =
+      !trusted && ignoreGlobs.length > 0 && outOfPlan.some((f) => matchesAny(f, ignoreGlobs))
+        ? " (scope_ignore is configured but untrusted - run `gate trust` to apply it)"
+        : "";
+    checks.push(
+      fail(
         name,
-        `files touched but not declared in plan.md (add them or narrow scope): ${undeclared.join(", ")}`,
-      );
+        `files touched but not declared in plan.md (add them or narrow scope): ${undeclared.join(", ")}${untrustedHint}`,
+      ),
+    );
+  }
+  if (ignored.length > 0) {
+    checks.push(pass(`${name}.ignored`, `matched scope_ignore, excluded from the scope check: ${ignored.join(", ")}`));
+  }
+  return checks;
 }
 
 /**

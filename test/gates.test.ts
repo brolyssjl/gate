@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { GateConfig } from "../src/core/config.js";
+import { loadConfig, type GateConfig } from "../src/core/config.js";
 import { newRun, nowIso, type Run } from "../src/core/run.js";
 import { treeFingerprint } from "../src/core/git.js";
 import { hashPlanFile } from "../src/artifacts/plan.js";
@@ -23,6 +23,7 @@ const EMPTY_CONFIG: GateConfig = {
   integrations: {},
   coverage_format: "auto",
   retention: {},
+  scope_ignore: [],
 };
 
 function runOn(phase: Run["phase"], baseRef: string | null): Run {
@@ -281,6 +282,96 @@ describe("IMPLEMENT gate", () => {
     const res = implementGate({ root, run: runOn("IMPLEMENT", base), config });
     expect(check(res, "implement.build")).toBe(false);
     expect(existsSync(join(root, "ran.txt"))).toBe(false);
+  });
+});
+
+describe("scope_ignore", () => {
+  function setup() {
+    const root = makeRepo({ "greet.js": "" });
+    const base = headSha(root);
+    writePlan(root, GOOD_PLAN); // declares greet.js, test.js only
+    return { root, base };
+  }
+
+  it("false-noise scenario: a scope_ignore match goes green instead of hard-blocking the gate", () => {
+    const { root, base } = setup();
+    writeFile(root, "greet.js", "x\n"); // in-plan
+    writeFile(root, ".cache/build-info.json", "{}\n"); // noise, matches scope_ignore
+    const config = writeConfig(root, { scope_ignore: [".cache/**"] });
+    const res = implementGate({ root, run: runOn("IMPLEMENT", base), config });
+    expect(res.ok).toBe(true);
+    expect(check(res, "implement.scope")).toBe(true);
+    expect(check(res, "implement.scope.ignored")).toBe(true);
+    const ignoredCheck = res.checks.find((c) => c.name === "implement.scope.ignored");
+    expect(ignoredCheck?.detail).toContain(".cache/build-info.json");
+  });
+
+  it("a real undeclared source file still fails even with scope_ignore configured", () => {
+    const { root, base } = setup();
+    writeFile(root, "greet.js", "x\n");
+    writeFile(root, "secret.js", "y\n"); // real undeclared source file, not scope_ignore
+    const config = writeConfig(root, { scope_ignore: [".cache/**"] });
+    const res = implementGate({ root, run: runOn("IMPLEMENT", base), config });
+    expect(check(res, "implement.scope")).toBe(false);
+    const failing = res.checks.find((c) => c.name === "implement.scope");
+    expect(failing?.detail).toContain("secret.js");
+    expect(res.checks.some((c) => c.name === "implement.scope.ignored")).toBe(false);
+  });
+
+  it("an untrusted scope_ignore edit refuses to apply", () => {
+    const { root, base } = setup();
+    writeFile(root, "greet.js", "x\n");
+    writeFile(root, ".cache/build-info.json", "{}\n");
+    writeConfig(root, { scope_ignore: [] }); // trusted, without the ignore glob
+    // Edit the ignore glob in directly, without re-running `gate trust`.
+    writeFile(root, ".gate/config.yml", 'commands: {}\nscope_ignore:\n  - ".cache/**"\n');
+    const config = loadConfig(root);
+    const res = implementGate({ root, run: runOn("IMPLEMENT", base), config });
+    expect(check(res, "implement.scope")).toBe(false);
+    const failing = res.checks.find((c) => c.name === "implement.scope");
+    expect(failing?.detail).toContain(".cache/build-info.json");
+    expect(failing?.detail).toContain("untrusted");
+    expect(res.checks.some((c) => c.name === "implement.scope.ignored")).toBe(false);
+  });
+});
+
+describe("plan drift (Milestone 5)", () => {
+  it("is silent when the plan was never approved, or is unchanged since approval", () => {
+    const root = makeRepo();
+    writePlan(root, GOOD_PLAN);
+    const unapproved = runOn("IMPLEMENT", null);
+    expect(
+      implementGate({ root, run: unapproved, config: EMPTY_CONFIG }).checks.some((c) => c.name === "implement.plan-drift"),
+    ).toBe(false);
+
+    const approved = runOn("IMPLEMENT", null);
+    approve(root, approved);
+    expect(
+      implementGate({ root, run: approved, config: EMPTY_CONFIG }).checks.some((c) => c.name === "implement.plan-drift"),
+    ).toBe(false);
+  });
+
+  it("fails every later gate once plan.md drifts from its approved hash (restores void-on-edit for the whole run)", () => {
+    const root = makeRepo();
+    writePlan(root, GOOD_PLAN);
+    const run = runOn("IMPLEMENT", null);
+    approve(root, run);
+    writePlan(root, GOOD_PLAN + "\nscope widened after approval\n");
+
+    const implementRes = implementGate({ root, run: { ...run, phase: "IMPLEMENT" }, config: EMPTY_CONFIG });
+    expect(implementRes.checks.find((c) => c.name === "implement.plan-drift")?.ok).toBe(false);
+
+    const debugRes = debugGate({ root, run: { ...run, phase: "DEBUG" }, config: EMPTY_CONFIG });
+    expect(debugRes.checks.find((c) => c.name === "debug.plan-drift")?.ok).toBe(false);
+
+    const testRes = testGate({ root, run: { ...run, phase: "TEST" }, config: EMPTY_CONFIG });
+    expect(testRes.checks.find((c) => c.name === "test.plan-drift")?.ok).toBe(false);
+
+    const reviewRes = reviewGate({ root, run: { ...run, phase: "REVIEW" }, config: EMPTY_CONFIG });
+    expect(reviewRes.checks.find((c) => c.name === "review.plan-drift")?.ok).toBe(false);
+
+    const retroRes = retroGate({ root, run: { ...run, phase: "RETRO" }, config: EMPTY_CONFIG });
+    expect(retroRes.checks.find((c) => c.name === "retro.plan-drift")?.ok).toBe(false);
   });
 });
 

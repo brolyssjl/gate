@@ -129,9 +129,32 @@ command slot; `coverage_format` docs/example mismatch; `plan.spec` doc example
 vs change-directory paths; bugfix-vs-feature profile guidance for known-cause
 bugs._
 
+## Milestone 6 - Rust port & `1.0.0`
+
+_Owner decision (2026-08-02): `1.0.0` ships as a Rust implementation, ported
+against a frozen CLI surface with the existing test suite as a
+cross-implementation conformance suite (one crate per tool; shared-code
+duplication with agnosgram accepted). Distribution moves to prebuilt static
+binaries on GitHub Releases - npm leaves the user-facing install path. All
+run-state/schema contracts (run.json migrations, trust hashing, playbook
+formats) carry over unchanged._
+
+- [ ] Surface freeze after Milestone 5 lands: CLI commands/flags/outputs +
+      `--json` schema snapshots declared the port contract; conformance mode
+      (`$GATE_BIN` + `npm run conformance`) green against the TS binary
+- [ ] Rust crate in-repo: identical surface, conformance suite green on
+      linux-x64 + darwin-arm64; release pipeline builds Rust binaries on tag;
+      `1.0.0-rc` tags from here
+- [ ] `1.0.0` gate (all required): upgrade story (version-stamped playbook
+      copies + drift warning + `--refresh` with diff), real-project soak on
+      the Rust binaries through at least one rc cycle, docs site + case study
+      (with agnosgram, the 2026-07/08 constructflow soak); Rust binary becomes
+      canonical, TS retired or demoted to reference
+
 ## Deferred / v2
 
-- [ ] Go port (startup-latency escape hatch)
+- [ ] ~~Go port (startup-latency escape hatch)~~ superseded by Milestone 6
+      (Rust port)
 
 ## Open questions
 

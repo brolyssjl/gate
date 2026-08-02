@@ -27,9 +27,21 @@ export function cmdLog(args: ParsedArgs): void {
   run.artifacts[name] = { phase: run.phase, at: nowIso() };
   writeRun(root, run);
 
-  const note =
-    name === "test-report.json"
-      ? " (note: gates ignore hand-registered test reports; evidence comes from the run Gate executes)"
-      : "";
+  const note = looksLikeTestReport(name)
+    ? " (note: gates ignore hand-registered test reports - evidence comes only from the run Gate itself " +
+      "executes: the test command's stdout, or a file it writes to $GATE_TEST_REPORT during the run; " +
+      "see `gate playbook TEST`)"
+    : "";
   emit(`Registered artifact "${name}" against ${run.phase}${note}`, { artifact: name, phase: run.phase }, args.flags);
+}
+
+/**
+ * Heuristic for "this file is probably someone trying to hand-register test
+ * evidence" - broader than the literal `test-report.json` name Gate itself
+ * writes, so `gate log jest-results.json` (or `results.json`, `junit.xml`,
+ * ...) also gets pointed at the real mechanism instead of registering
+ * silently and leaving the author to discover the gate ignores it.
+ */
+function looksLikeTestReport(name: string): boolean {
+  return /\.(json|xml)$/i.test(name) && /(test|report|result|junit)/i.test(name);
 }

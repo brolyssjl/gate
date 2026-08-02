@@ -65,6 +65,16 @@ export interface GateConfig {
    * archived, never a command that executes.
    */
   retention: RetentionConfig;
+  /**
+   * Glob list of paths the scope check (IMPLEMENT/DEBUG) treats as noise
+   * rather than an undeclared file - environment cruft that gets rewritten by
+   * the commands Gate itself runs (a node compile cache, a go build dir,
+   * coverage output) and would otherwise hard-block the gate with false scope
+   * violations. Part of the trust hash (`commandsBlockHashSource`): it
+   * changes what the scope check accepts, so widening it needs the same
+   * re-trust as changing a command.
+   */
+  scope_ignore: string[];
 }
 
 const DEFAULT_CONFIG: GateConfig = {
@@ -75,6 +85,7 @@ const DEFAULT_CONFIG: GateConfig = {
   integrations: {},
   coverage_format: "auto",
   retention: {},
+  scope_ignore: [],
 };
 
 export function loadConfig(root: string): GateConfig {
@@ -87,6 +98,13 @@ export function loadConfig(root: string): GateConfig {
   if (raw.coverage_format !== undefined && !COVERAGE_FORMATS.includes(raw.coverage_format)) {
     throw new GateError(`.gate/config.yml: coverage_format must be one of ${COVERAGE_FORMATS.join(", ")}`);
   }
+  if (
+    raw.scope_ignore !== undefined &&
+    (!Array.isArray(raw.scope_ignore) ||
+      !raw.scope_ignore.every((g) => typeof g === "string" && g.trim().length > 0))
+  ) {
+    throw new GateError(".gate/config.yml: scope_ignore must be a list of glob strings");
+  }
   return {
     commands: raw.commands ?? {},
     thresholds: raw.thresholds ?? {},
@@ -95,6 +113,7 @@ export function loadConfig(root: string): GateConfig {
     integrations: raw.integrations ?? {},
     coverage_format: raw.coverage_format ?? "auto",
     retention: raw.retention ?? {},
+    scope_ignore: raw.scope_ignore ?? [],
   };
 }
 
@@ -144,10 +163,20 @@ function validateTargets(targets: Record<string, unknown>): void {
   }
 }
 
-/** Raw commands block text, used by trust hashing in a later milestone. */
+/**
+ * Raw commands-block text, used by TOFU trust hashing (`core/trust.ts`).
+ * `scope_ignore` rides in the same hash (Milestone 5): it changes what the
+ * scope check accepts as noise rather than an undeclared file, the same
+ * trust class as a command - widening it silently would be as dangerous as
+ * editing a command without re-trusting.
+ */
 export function commandsBlockHashSource(root: string): string {
   const { config } = gatePaths(root);
   if (!existsSync(config)) return "";
   const raw = parseYaml(readFileSync(config, "utf8")) as Partial<GateConfig> | null;
-  return JSON.stringify({ commands: raw?.commands ?? {}, targets: raw?.targets ?? {} });
+  return JSON.stringify({
+    commands: raw?.commands ?? {},
+    targets: raw?.targets ?? {},
+    scope_ignore: raw?.scope_ignore ?? [],
+  });
 }

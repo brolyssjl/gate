@@ -15,7 +15,7 @@ describe("run.json persistence", () => {
     expect((JSON.parse(readFileSync(path, "utf8")) as Run).id).toBe("r1");
   });
 
-  it("migrates a schema-1 (Milestone 1) run all the way to schema 3: profile defaults, reviewer becomes requestedBy, branch is null", () => {
+  it("migrates a schema-1 (Milestone 1) run all the way to schema 4: profile defaults, reviewer becomes requestedBy, branch is null", () => {
     const root = makeRepo();
     const legacy = {
       schema: 1,
@@ -34,7 +34,7 @@ describe("run.json persistence", () => {
     };
     writeFile(root, join(".gate", "runs", "legacy", "run.json"), JSON.stringify(legacy));
     const run = readRun(root, "legacy");
-    expect(run.schema).toBe(3);
+    expect(run.schema).toBe(4);
     expect(run.profile).toBe("feature");
     expect(run.branch).toBeNull();
     expect(run.review).toEqual({
@@ -44,7 +44,7 @@ describe("run.json persistence", () => {
     });
   });
 
-  it("migrates a schema-2 (Milestone 1-3) run to schema 3: gains branch: null, everything else untouched", () => {
+  it("migrates a schema-2 (Milestone 1-3) run to schema 4: gains branch: null, everything else untouched", () => {
     const root = makeRepo();
     const legacy = {
       schema: 2,
@@ -63,11 +63,38 @@ describe("run.json persistence", () => {
     };
     writeFile(root, join(".gate", "runs", "pre-m4", "run.json"), JSON.stringify(legacy));
     const run = readRun(root, "pre-m4");
-    expect(run.schema).toBe(3);
+    expect(run.schema).toBe(4);
     expect(run.branch).toBeNull();
     expect(run.profile).toBe("bugfix");
     expect(run.baseRef).toBe("abc123");
     expect(run.sessionId).toBe("sess-1");
+  });
+
+  it("migrates a schema-3 (Milestone 1-4) run to schema 4: no amendment, everything else untouched", () => {
+    const root = makeRepo();
+    const legacy = {
+      schema: 3,
+      id: "pre-m5",
+      title: "drift-less run",
+      profile: "feature",
+      phase: "IMPLEMENT",
+      status: "active",
+      createdAt: "2026-07-01T00:00:00.000Z",
+      updatedAt: "2026-07-01T00:00:00.000Z",
+      branch: "main",
+      baseRef: "def456",
+      sessionId: "sess-2",
+      history: [{ phase: "PLAN", event: "entered", at: "2026-07-01T00:00:00.000Z" }],
+      overrides: [],
+      artifacts: {},
+      approval: { by: "human", at: "2026-07-01T00:00:00.000Z", reason: null, planHash: "sha256:abc" },
+    };
+    writeFile(root, join(".gate", "runs", "pre-m5", "run.json"), JSON.stringify(legacy));
+    const run = readRun(root, "pre-m5");
+    expect(run.schema).toBe(4);
+    expect(run.amendment).toBeUndefined();
+    expect(run.branch).toBe("main");
+    expect(run.approval?.planHash).toBe("sha256:abc");
   });
 
   it("rejects unknown future schemas", () => {

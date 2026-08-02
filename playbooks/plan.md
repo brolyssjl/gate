@@ -25,7 +25,10 @@ is your job; Gate only checks structure.
    one and list its record id under `acknowledgments:` before approving.
 7. Get sign-off, then run `gate approve`. Approval is a separate, deliberate
    step recorded outside plan.md - you cannot self-approve by editing the plan,
-   and any later edit to plan.md voids the approval (re-run `gate approve`).
+   and any later edit to plan.md voids the approval. While still in PLAN,
+   re-run `gate approve`. Once you've moved past PLAN, every later gate fails
+   on the drift instead: run `gate amend` to see the diff against the approved
+   plan and record intent, then `gate approve --amend` to re-approve the delta.
 
 ## plan.md schema
 

@@ -1,17 +1,7 @@
-import { spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { makeRepo } from "./helpers.js";
-
-const pkgRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
-const CLI = join(pkgRoot, "dist", "cli.js");
-
-function gate(cwd: string, args: string[]): { code: number; stdout: string; json: () => unknown } {
-  const res = spawnSync("node", [CLI, ...args], { cwd, encoding: "utf8" });
-  return { code: res.status ?? 1, stdout: res.stdout, json: () => JSON.parse(res.stdout) };
-}
+import { gate, makeRepo } from "./helpers.js";
 
 /** Write a minimal, valid, non-active run.json directly (skip the full state-machine walk). */
 function seedRun(repo: string, id: string, updatedAt: string, status: "done" | "abandoned" = "done"): void {

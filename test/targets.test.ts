@@ -23,6 +23,7 @@ const EMPTY_CONFIG: GateConfig = {
   integrations: {},
   coverage_format: "auto",
   retention: {},
+  scope_ignore: [],
 };
 
 const TWO_TARGETS: GateConfig = {

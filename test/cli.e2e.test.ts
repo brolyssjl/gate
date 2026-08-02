@@ -1,27 +1,8 @@
 import { spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { beforeAll, describe, expect, it } from "vitest";
-import { makeRepo } from "./helpers.js";
-
-const pkgRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
-const CLI = join(pkgRoot, "dist", "cli.js");
-
-interface Run {
-  code: number;
-  stdout: string;
-  json: () => unknown;
-}
-
-function gate(cwd: string, args: string[]): Run {
-  const res = spawnSync("node", [CLI, ...args], { cwd, encoding: "utf8" });
-  return {
-    code: res.status ?? 1,
-    stdout: res.stdout,
-    json: () => JSON.parse(res.stdout),
-  };
-}
+import { gate, type GateInvocation as Run, makeRepo } from "./helpers.js";
 
 const PLAN = `---
 goal: Add greet
@@ -514,7 +495,13 @@ describe("gate --json schema", () => {
   const keys = (r: Run) => Object.keys(r.json() as Record<string, unknown>).sort();
 
   it("init/start/status expose stable top-level keys", () => {
-    expect(keys(gate(repo, ["init", "--json"]))).toEqual(["detected", "initialized", "refreshed", "root"]);
+    expect(keys(gate(repo, ["init", "--json"]))).toEqual([
+      "detected",
+      "gitignoreUpdated",
+      "initialized",
+      "refreshed",
+      "root",
+    ]);
     expect(keys(gate(repo, ["start", "schema demo", "--json"]))).toEqual([
       "branch",
       "hints",

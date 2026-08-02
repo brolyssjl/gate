@@ -9,14 +9,27 @@ function git(root: string, args: string[]): { ok: boolean; stdout: string } {
 }
 
 /**
- * Untracked (not-ignored) files, excluding `.gate/` bookkeeping. Repo-relative
+ * True for paths Gate's own bookkeeping owns, never counted as "touched"
+ * code by scope/coverage/evidence checks: `.gate/` run state, and the
+ * repo-root `.gitignore` entries `gate init` may append (Milestone 5). Like
+ * `.gate/config.yml` itself (exempt because it's under `.gate/`), a
+ * `.gitignore` edit `gate init` makes must not sit in the working tree as a
+ * permanent, unrelated scope violation on every run started afterward
+ * without an intervening commit.
+ */
+export function isGateBookkeeping(path: string): boolean {
+  return path.startsWith(".gate/") || path === ".gitignore";
+}
+
+/**
+ * Untracked (not-ignored) files, excluding Gate's own bookkeeping. Repo-relative
  * POSIX paths, as git reports them.
  */
 export function untrackedFiles(root: string): string[] {
   return git(root, ["ls-files", "--others", "--exclude-standard"])
     .stdout.split("\n")
     .map((l) => l.trim())
-    .filter((f) => f.length > 0 && !f.startsWith(".gate/"));
+    .filter((f) => f.length > 0 && !isGateBookkeeping(f));
 }
 
 export function isGitRepo(root: string): boolean {
@@ -80,18 +93,29 @@ export function gitHooksDir(root: string): string | null {
 }
 
 /**
- * Staged (index) files, excluding `.gate/` bookkeeping - what a pre-commit
+ * Staged (index) files, excluding Gate's own bookkeeping - what a pre-commit
  * hook cares about. `-z` (NUL-separated, unquoted paths) rather than the
  * default newline-separated output: with `core.quotepath` (git's default),
  * a non-ASCII filename otherwise arrives C-quoted with surrounding quotes
  * (e.g. `"caf\303\251.ts"`), which fails glob matching outright and even
- * defeats the `.gate/` exclusion below (a leading quote character beats
+ * defeats the bookkeeping exclusion below (a leading quote character beats
  * `startsWith(".gate/")`).
  */
 export function stagedFiles(root: string): string[] {
   return git(root, ["diff", "--cached", "--name-only", "-z", "--"])
     .stdout.split("\0")
-    .filter((f) => f.length > 0 && !f.startsWith(".gate/"));
+    .filter((f) => f.length > 0 && !isGateBookkeeping(f));
+}
+
+/**
+ * Unified diff between two files on disk, independent of any git repo or
+ * index - `--no-index` works even outside a repository, so `gate amend` can
+ * diff a plan snapshot against the current plan.md regardless of whether the
+ * project itself is under git. Exits non-zero when the files differ; the
+ * diff is still on stdout (same pattern as `diffText`'s untracked-file case).
+ */
+export function diffNoIndex(a: string, b: string): string {
+  return spawnSync("git", ["diff", "--no-color", "--no-index", "--", a, b], { encoding: "utf8" }).stdout ?? "";
 }
 
 /** Current HEAD sha, or null if there are no commits yet / not a repo. */

@@ -30,7 +30,7 @@ export function currentCommandsHash(root: string): string {
 /** True when the commands block is empty (nothing executes, e.g. `{}`). */
 export function hasNoCommands(root: string): boolean {
   const source = commandsBlockHashSource(root);
-  return source === JSON.stringify({ commands: {}, targets: {} });
+  return source === JSON.stringify({ commands: {}, targets: {}, scope_ignore: [] });
 }
 
 export function readTrust(root: string): TrustRecord | null {

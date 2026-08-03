@@ -169,14 +169,25 @@ function validateTargets(targets: Record<string, unknown>): void {
  * scope check accepts as noise rather than an undeclared file, the same
  * trust class as a command - widening it silently would be as dangerous as
  * editing a command without re-trusting.
+ *
+ * `scope_ignore` is included only when non-empty (review finding F4): a
+ * repo upgrading from 0.3.0 has no `scope_ignore:` key at all, and the empty
+ * default must hash identically to the pre-Milestone-5 shape
+ * (`{ commands, targets }`) or every existing `trust.json` on disk would
+ * silently go stale the moment `gate` is upgraded, forcing a surprise
+ * re-trust nobody asked for. The instant `scope_ignore` actually holds
+ * something, it's back in the hash and a real re-trust is required, same as
+ * always.
  */
 export function commandsBlockHashSource(root: string): string {
   const { config } = gatePaths(root);
   if (!existsSync(config)) return "";
   const raw = parseYaml(readFileSync(config, "utf8")) as Partial<GateConfig> | null;
-  return JSON.stringify({
+  const scopeIgnore = raw?.scope_ignore ?? [];
+  const source: { commands: Commands; targets: Record<string, TargetConfig>; scope_ignore?: string[] } = {
     commands: raw?.commands ?? {},
     targets: raw?.targets ?? {},
-    scope_ignore: raw?.scope_ignore ?? [],
-  });
+  };
+  if (scopeIgnore.length > 0) source.scope_ignore = scopeIgnore;
+  return JSON.stringify(source);
 }

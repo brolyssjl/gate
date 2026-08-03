@@ -256,6 +256,13 @@ edit is never silently applied. A match is never hidden: it surfaces as its
 own info-level check line (`implement.scope.ignored` / `debug.scope.ignored`)
 naming exactly which files were excluded and why.
 
+**Upgrading from before 0.4.0:** an empty (or absent) `scope_ignore:` hashes
+identically to the pre-0.4.0 commands block, so an existing `trust.json`
+stays valid after upgrading `gate` - you are not forced into a surprise
+re-trust just because a new version understands a key you never set. The
+first time you actually populate `scope_ignore:`, it joins the hash and a
+normal `gate trust` is required, exactly like changing a command.
+
 ## Agent adapters
 
 `gate adapt [adapter...]` writes (or refreshes) a pointer block into each

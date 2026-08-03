@@ -43,7 +43,7 @@ import { type Check, type GateContext, type GateResult, fail, pass, result } fro
  */
 export function testGate(ctx: GateContext): GateResult {
   const { testReport: reportPath } = runPaths(ctx.root, ctx.run.id);
-  const touched = changedFiles(ctx.root, ctx.run.baseRef).filter((f) => !isGateBookkeeping(f));
+  const touched = changedFiles(ctx.root, ctx.run.baseRef).filter((f) => !isGateBookkeeping(ctx.root, f));
 
   const drift = planDriftCheck(ctx, "test.plan-drift");
   const leading = drift ? [drift] : [];

@@ -53,7 +53,7 @@ export function debugGate(ctx: GateContext): GateResult {
         ),
   );
 
-  const touched = changedFiles(ctx.root, ctx.run.baseRef).filter((f) => !isGateBookkeeping(f));
+  const touched = changedFiles(ctx.root, ctx.run.baseRef).filter((f) => !isGateBookkeeping(ctx.root, f));
   checks.push(...scopeCheck("debug.scope", ctx, touched));
 
   const resolved = resolvePhaseTargets(ctx.config, ctx.run, touched);

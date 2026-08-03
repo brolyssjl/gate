@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { beforeAll, describe, expect, it } from "vitest";
 import { gate, type GateInvocation as Run, makeRepo } from "./helpers.js";
 
@@ -402,10 +402,13 @@ describe("gate CLI end-to-end", () => {
     expect((gate(repo, ["status", "--json"]).json() as { active: boolean }).active).toBe(false);
   }, 15000);
 
-  it("gate retro syncs the journal (fallback path - no agnosgram binary in this sandbox) and is idempotent", () => {
+  it("gate retro syncs the journal (fallback path, hermetic via GATE_AGNOSGRAM_BIN) and is idempotent", () => {
     const repo = makeRepo();
     mkdirSync(join(repo, ".agnosgram"), { recursive: true });
     writeFileSync(join(repo, ".agnosgram", "config.yml"), "version: 1\n");
+    // F3: point at a path that can't resolve to a real binary, so this
+    // exercises the ENOENT fallback regardless of what's actually on PATH.
+    const env = { ...process.env, GATE_AGNOSGRAM_BIN: "/nonexistent/gate-agnosgram-test-stub" };
     gate(repo, ["init"]);
     gate(repo, ["start", "retro sync demo"]);
     const runId = (gate(repo, ["status", "--json"]).json() as { id: string }).id;
@@ -417,13 +420,13 @@ describe("gate CLI end-to-end", () => {
     expect((gate(repo, ["status", "--json"]).json() as { phase: string }).phase).toBe("RETRO");
 
     // No substance yet: gate retro refuses.
-    expect(gate(repo, ["retro"]).code).toBe(1);
+    expect(gate(repo, ["retro"], { env }).code).toBe(1);
 
     writeFileSync(
       join(repo, `.gate/runs/${runId}/retro.md`),
       `---\nbroke: []\navoid:\n  - "Do not skip reproduce"\nconventions: []\n---\n# Retro\n`,
     );
-    const synced = gate(repo, ["retro", "--json"]);
+    const synced = gate(repo, ["retro", "--json"], { env });
     expect(synced.code).toBe(0);
     const syncedData = synced.json() as { synced: boolean; method: string; journalFile: string };
     expect(syncedData.synced).toBe(true);
@@ -433,7 +436,7 @@ describe("gate CLI end-to-end", () => {
     expect(journal).toContain("- **Avoid:** Do not skip reproduce");
 
     // Idempotent: re-running does not duplicate the entry - byte-identical file.
-    const again = gate(repo, ["retro", "--json"]).json() as { alreadySynced: boolean };
+    const again = gate(repo, ["retro", "--json"], { env }).json() as { alreadySynced: boolean };
     expect(again.alreadySynced).toBe(true);
     const journalAfter = readFileSync(join(repo, syncedData.journalFile), "utf8");
     expect(journalAfter).toBe(journal);
@@ -479,6 +482,60 @@ describe("gate CLI end-to-end", () => {
     expect(report.gateFailures).toBeGreaterThanOrEqual(1);
     expect(report.phases.some((p) => p.phase === "PLAN")).toBe(true);
     expect(report.findings).toBeNull(); // no review.md yet
+  });
+
+  it("F1 regression: widening .gitignore to hide an undeclared file cannot pass the scope check", () => {
+    // Attack this review finding described: since `.gitignore` was
+    // unconditionally exempt from "touched", an agent could append an
+    // ignore pattern to it, which makes git itself stop reporting whatever
+    // it now matches as untracked - hiding an undeclared file from every
+    // git-based diff Gate takes, including the scope check - while the
+    // .gitignore edit itself sailed through unflagged. The fix: only a
+    // .gitignore that's byte-for-byte what `gate init` wrote is exempt: any
+    // other edit (this one included) must itself show up as touched and
+    // undeclared, failing the gate closed exactly as it does on main.
+    const repo = makeRepo({ "package.json": JSON.stringify({ name: "fx" }) });
+    expect(gate(repo, ["init"]).code).toBe(0);
+    expect(gate(repo, ["trust"]).code).toBe(0);
+    const started = gate(repo, ["start", "attack demo", "--json"]).json() as { id: string; plan: string };
+    writeFileSync(
+      started.plan,
+      [
+        "---",
+        "goal: legit change",
+        "files:",
+        "  - legit.txt",
+        "criteria:",
+        "  - id: c1",
+        "    text: it works",
+        '    verify: "manual"',
+        "---",
+        "",
+      ].join("\n"),
+    );
+    expect(gate(repo, ["approve"]).code).toBe(0);
+    expect(gate(repo, ["next"]).code).toBe(0); // PLAN -> IMPLEMENT
+
+    writeFileSync(join(repo, "legit.txt"), "hi\n");
+    // The attack: widen .gitignore, then drop an undeclared file under the
+    // newly-ignored path.
+    const gitignorePath = join(repo, ".gitignore");
+    writeFileSync(gitignorePath, readFileSync(gitignorePath, "utf8") + "\npayload/\n");
+    mkdirSync(join(repo, "payload"), { recursive: true });
+    writeFileSync(join(repo, "payload", "evil.js"), "// undeclared\n");
+
+    const check = gate(repo, ["check", "--json"]);
+    expect(check.code).toBe(1);
+    const data = check.json() as { checks: Array<{ name: string; ok: boolean; detail: string }> };
+    const scopeCheck = data.checks.find((c) => c.name === "implement.scope");
+    expect(scopeCheck?.ok).toBe(false);
+    expect(scopeCheck?.detail).toContain(".gitignore");
+
+    // A genuinely untouched, gate-authored .gitignore is still exempt - the
+    // legit change alone (no tampering, payload/ cleaned up) still passes.
+    writeFileSync(gitignorePath, readFileSync(gitignorePath, "utf8").replace("\npayload/\n", ""));
+    rmSync(join(repo, "payload"), { recursive: true, force: true });
+    expect(gate(repo, ["check", "--json"]).code).toBe(0);
   });
 });
 

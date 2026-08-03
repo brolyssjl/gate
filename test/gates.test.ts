@@ -304,6 +304,11 @@ describe("scope_ignore", () => {
     expect(check(res, "implement.scope.ignored")).toBe(true);
     const ignoredCheck = res.checks.find((c) => c.name === "implement.scope.ignored");
     expect(ignoredCheck?.detail).toContain(".cache/build-info.json");
+    // F5: the passing implement.scope detail must be truthful about *why* -
+    // it must not claim "all ... declared in plan.md" when a file only
+    // passed because it matched scope_ignore, not because it was declared.
+    const scopeCheckDetail = res.checks.find((c) => c.name === "implement.scope")?.detail;
+    expect(scopeCheckDetail).toContain("scope_ignore");
   });
 
   it("a real undeclared source file still fails even with scope_ignore configured", () => {

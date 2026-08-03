@@ -78,7 +78,14 @@ export function scopeCheck(name: string, ctx: GateContext, touched: string[]): C
 
   const checks: Check[] = [];
   if (undeclared.length === 0) {
-    checks.push(pass(name, "all touched files are declared in plan.md"));
+    // Truthful even when some touched files weren't declared but matched
+    // scope_ignore instead (review finding F5) - "all ... declared in
+    // plan.md" was misleading when `ignored` was the reason some passed.
+    const detail =
+      ignored.length > 0
+        ? "all touched files are declared in plan.md or matched scope_ignore"
+        : "all touched files are declared in plan.md";
+    checks.push(pass(name, detail));
   } else {
     const untrustedHint =
       !trusted && ignoreGlobs.length > 0 && outOfPlan.some((f) => matchesAny(f, ignoreGlobs))

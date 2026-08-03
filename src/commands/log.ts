@@ -28,9 +28,9 @@ export function cmdLog(args: ParsedArgs): void {
   writeRun(root, run);
 
   const note = looksLikeTestReport(name)
-    ? " (note: gates ignore hand-registered test reports - evidence comes only from the run Gate itself " +
-      "executes: the test command's stdout, or a file it writes to $GATE_TEST_REPORT during the run; " +
-      "see `gate playbook TEST`)"
+    ? " (heads up: this alone won't count as TEST evidence - the gate only trusts the test command's " +
+      "own stdout, or a file it writes to $GATE_TEST_REPORT during the run; see `gate playbook TEST` " +
+      "for the real mechanism)"
     : "";
   emit(`Registered artifact "${name}" against ${run.phase}${note}`, { artifact: name, phase: run.phase }, args.flags);
 }

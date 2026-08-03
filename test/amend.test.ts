@@ -99,6 +99,39 @@ describe("approved-plan drift + gate amend", () => {
     expect(run.amendment).toBeUndefined();
   });
 
+  it("F2 regression: a doctored approved-plan snapshot is never trusted for the diff", () => {
+    // Attack this review finding described: `plan.approved.md` is a plain
+    // file on disk with no integrity check of its own - if something
+    // rewrites it to match the *current* (drifted) plan.md exactly, a naive
+    // diff against it shows "no changes", and a human re-approving on that
+    // diff approves a scope change they never actually saw.
+    const repo = makeRepo();
+    const { runId, planPath } = setupApprovedRun(repo, ["a.txt"]);
+    expect(gate(repo, ["next"]).code).toBe(0); // PLAN -> IMPLEMENT
+
+    const driftedPlan = planWithFiles(["a.txt", "b.txt", "smuggled-secret-scope.txt"]);
+    writeFileSync(planPath, driftedPlan);
+
+    // Doctor the snapshot to match the drifted plan byte-for-byte, so an
+    // untrusted diff would show nothing changed at all.
+    const approvedSnapshotPath = join(repo, ".gate", "runs", runId, "plan.approved.md");
+    writeFileSync(approvedSnapshotPath, driftedPlan);
+
+    const amend = gate(repo, ["amend", "--json"]);
+    expect(amend.code).toBe(0);
+    const amendData = amend.json() as { trustedSnapshot: boolean; diff: string; warning: string | null };
+    expect(amendData.trustedSnapshot).toBe(false);
+    // Never an empty/"no changes" diff against the doctored snapshot - the
+    // full current plan is shown instead, so the smuggled scope is visible.
+    expect(amendData.diff).toContain("smuggled-secret-scope.txt");
+    expect(amendData.warning).toContain("WARNING");
+    expect(amendData.warning?.toLowerCase()).toContain("does not match the recorded approval hash");
+
+    // The human-readable form surfaces the same warning, not just --json.
+    const humanForm = gate(repo, ["amend"]);
+    expect(humanForm.stdout).toContain("WARNING");
+  });
+
   it("editing the plan again after `gate amend` invalidates that amendment - approve --amend refuses", () => {
     const repo = makeRepo();
     const { planPath } = setupApprovedRun(repo, ["a.txt"]);

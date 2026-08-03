@@ -34,7 +34,7 @@ export function implementGate(ctx: GateContext): GateResult {
     return result("IMPLEMENT", checks);
   }
 
-  const touched = changedFiles(ctx.root, ctx.run.baseRef).filter((f) => !isGateBookkeeping(f));
+  const touched = changedFiles(ctx.root, ctx.run.baseRef).filter((f) => !isGateBookkeeping(ctx.root, f));
 
   checks.push(
     touched.length > 0

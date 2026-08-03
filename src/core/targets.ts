@@ -141,7 +141,7 @@ export function resolveDisplayTargets(root: string, run: Run, config: GateConfig
   if (run.targetOverride && run.targetOverride.length > 0) {
     return resolveRunTargets(config, run, []);
   }
-  const changed = changedFiles(root, run.baseRef).filter((f) => !isGateBookkeeping(f));
+  const changed = changedFiles(root, run.baseRef).filter((f) => !isGateBookkeeping(root, f));
   const fromDiff = resolveRunTargets(config, run, changed);
   if (fromDiff.length > 0) return fromDiff;
   const { plan } = parsePlanFile(runPaths(root, run.id).plan);

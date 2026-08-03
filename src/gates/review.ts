@@ -39,7 +39,7 @@ export function reviewGate(ctx: GateContext): GateResult {
     checks.push(reviewerCheck(ctx, review));
   }
 
-  const touched = changedFiles(ctx.root, ctx.run.baseRef).filter((f) => !isGateBookkeeping(f));
+  const touched = changedFiles(ctx.root, ctx.run.baseRef).filter((f) => !isGateBookkeeping(ctx.root, f));
   checks.push(...evidenceChecks(ctx, current, touched));
 
   return result("REVIEW", checks);

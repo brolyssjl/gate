@@ -1,6 +1,6 @@
 {
   "name": "gate-cli",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "description": "Agent-agnostic quality harness: turns the dev flow into an enforced state machine with deterministic gates.",
   "keywords": [
@@ -37,6 +37,7 @@
     "dev": "tsx src/cli.ts",
     "test": "vitest run",
     "test:watch": "vitest",
+    "conformance": "vitest run test/cli.e2e.test.ts test/concurrency.test.ts test/humanReview.test.ts test/prune.test.ts test/guard.test.ts test/amend.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "tsc -p tsconfig.json --noEmit",
     "prepublishOnly": "npm run build && npm test"

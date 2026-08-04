@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { runPaths } from "../core/paths.js";
-import { changedLines, changedFiles } from "../core/git.js";
+import { changedLines, changedFiles, isGateBookkeeping } from "../core/git.js";
 import { runCommand } from "../core/exec.js";
 import { writeFileAtomic } from "../core/fsx.js";
 import { isCommandsTrusted } from "../core/trust.js";
@@ -15,6 +15,7 @@ import {
 import { parseTestReport, type NormalizedReport } from "./testReport.js";
 import { coverageReportPaths, diffCoverage, loadCoverage } from "./coverage.js";
 import { commandCheck } from "./implement.js";
+import { planDriftCheck } from "./planDrift.js";
 import { type Check, type GateContext, type GateResult, fail, pass, result } from "./types.js";
 
 /**
@@ -42,21 +43,25 @@ import { type Check, type GateContext, type GateResult, fail, pass, result } fro
  */
 export function testGate(ctx: GateContext): GateResult {
   const { testReport: reportPath } = runPaths(ctx.root, ctx.run.id);
-  const touched = changedFiles(ctx.root, ctx.run.baseRef).filter((f) => !f.startsWith(".gate/"));
+  const touched = changedFiles(ctx.root, ctx.run.baseRef).filter((f) => !isGateBookkeeping(ctx.root, f));
+
+  const drift = planDriftCheck(ctx, "test.plan-drift");
+  const leading = drift ? [drift] : [];
 
   // Untrusted config never spawns a process, for any target (proposal §9) -
   // the trust hash already covers the targets block (commandsBlockHashSource).
   if (!isCommandsTrusted(ctx.root)) {
     return result("TEST", [
+      ...leading,
       fail("test.command", "test command not trusted - review .gate/config.yml and run `gate trust`"),
     ]);
   }
 
   const resolved = resolvePhaseTargets(ctx.config, ctx.run, touched);
   if (resolved.length === 1 && resolved[0]!.target === null) {
-    return result("TEST", runBareTargetGate(ctx, resolved[0]!, reportPath));
+    return result("TEST", [...leading, ...runBareTargetGate(ctx, resolved[0]!, reportPath)]);
   }
-  return result("TEST", runTargetedGate(ctx, resolved, reportPath, touched));
+  return result("TEST", [...leading, ...runTargetedGate(ctx, resolved, reportPath, touched)]);
 }
 
 /**

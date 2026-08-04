@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { runPaths } from "../core/paths.js";
 import { hasSubstance, parseRetroFile } from "../artifacts/retro.js";
 import { journalContainsRunId } from "../integrations/agnosgramWrite.js";
+import { planDriftCheck } from "./planDrift.js";
 import { type Check, type GateContext, type GateResult, fail, pass, result } from "./types.js";
 
 /**
@@ -19,6 +20,8 @@ import { type Check, type GateContext, type GateResult, fail, pass, result } fro
  */
 export function retroGate(ctx: GateContext): GateResult {
   const checks: Check[] = [];
+  const drift = planDriftCheck(ctx, "retro.plan-drift");
+  if (drift) checks.push(drift);
   const { retro: retroPath } = runPaths(ctx.root, ctx.run.id);
 
   const { retro, errors } = parseRetroFile(retroPath);

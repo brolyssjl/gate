@@ -51,3 +51,29 @@ describe("loadConfig target validation", () => {
     expect(() => matchesAny("x", undefined as unknown as string[])).toThrow(TypeError);
   });
 });
+
+describe("loadConfig scope_ignore", () => {
+  it("defaults to an empty list", () => {
+    const root = makeRepo();
+    writeFile(root, ".gate/config.yml", "commands: {}\n");
+    expect(loadConfig(root).scope_ignore).toEqual([]);
+  });
+
+  it("loads a well-formed glob list", () => {
+    const root = makeRepo();
+    writeFile(root, ".gate/config.yml", 'scope_ignore:\n  - "node_modules/**"\n  - "coverage/**"\n');
+    expect(loadConfig(root).scope_ignore).toEqual(["node_modules/**", "coverage/**"]);
+  });
+
+  it("throws when scope_ignore is not a list of strings", () => {
+    const root = makeRepo();
+    writeFile(root, ".gate/config.yml", "scope_ignore: not-a-list\n");
+    expect(() => loadConfig(root)).toThrow(GateError);
+  });
+
+  it("throws when scope_ignore contains a non-string entry", () => {
+    const root = makeRepo();
+    writeFile(root, ".gate/config.yml", "scope_ignore:\n  - 5\n");
+    expect(() => loadConfig(root)).toThrow(GateError);
+  });
+});

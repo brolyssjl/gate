@@ -24,10 +24,36 @@ Gate will not let you call this done over a red or hollow suite.
 
 ## Report
 
-The gate reads a test report from `test-report.json` in the run folder if you
-register one (`gate log test-report.json`), otherwise it parses the test
-command's JSON stdout. Jest/Vitest `--reporter=json` and the generic
-`{ "tests": [{ "name", "status" }] }` contract are both understood.
+Evidence must come from the run Gate itself executes - a report staged in
+advance (by hand, or via `gate log test-report.json`) is never accepted, even
+if it's named `test-report.json`. The real sources, in order:
+
+1. **The test command's own stdout**, captured by Gate as it runs. Point your
+   runner's JSON reporter at stdout and Gate parses it directly - no extra
+   step needed. Gate persists a normalized copy to `test-report.json` in the
+   run folder for the audit trail.
+2. **A file the command writes *during this run*** to the path Gate puts in
+   the `$GATE_TEST_REPORT` env var (set before the test command runs). A file
+   that already existed before the run started doesn't count, even if it has
+   the right name - only a file the run itself produced during the run.
+
+Jest/Vitest `--reporter=json` and the generic `{ "tests": [{ "name",
+"status" }] }` contract are both understood.
+
+### Runner wiring
+
+- **Vitest / Jest**: `commands.test` in `.gate/config.yml` should run with a
+  JSON reporter, e.g. `"vitest run --reporter=json"` or
+  `"jest --reporter=json"`. To use the file path instead of stdout:
+  `"vitest run --reporter=json --outputFile=$GATE_TEST_REPORT"`.
+- **Go**: `go test -json ./...` emits one JSON object per line (`{"Action":
+  "pass", "Test": "..."}`, ...), not the `{ "tests": [...] }` shape Gate
+  understands. Wrap it: run `go test -json ./...`, translate each test's
+  final `pass`/`fail`/`skip` action into `{ "name": "<Test>", "status":
+  "passed"|"failed"|"skipped" }`, and either print the translated JSON on
+  stdout or write it to `$GATE_TEST_REPORT`.
+- **Anything else**: emit the generic `{ "tests": [...] }` contract yourself,
+  on stdout or at `$GATE_TEST_REPORT`.
 
 ## Advance
 

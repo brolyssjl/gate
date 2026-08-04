@@ -43,6 +43,22 @@ export interface Approval {
 }
 
 /**
+ * Recorded by `gate amend` (Milestone 5): intent to re-approve a plan that
+ * drifted from its approved hash. A separate, deliberate step from `gate
+ * approve --amend` itself - the same discipline that keeps approval from
+ * being a one-step self-sign-off applies to re-approving a delta: a human
+ * must have seen the diff (`gate amend` prints it) before the drifted plan
+ * can be re-approved. Cleared once `gate approve --amend` re-approves.
+ */
+export interface Amendment {
+  /** Hash of plan.md when `gate amend` last recorded intent to amend. */
+  planHash: string;
+  at: string;
+  /** Who recorded the amendment (from --by or GATE_SESSION_ID); best-effort. */
+  by: string | null;
+}
+
+/**
  * Journal-sync receipt written by `gate retro` (Milestone 3, additive). Absent
  * until `gate retro` runs; the RETRO gate's `retro.journal` check reads it to
  * confirm the sync actually landed, rather than trusting a bare claim.
@@ -73,7 +89,7 @@ export interface ReviewRequest {
 
 export interface Run {
   /** Schema version of this run.json, for forward migration. */
-  schema: 3;
+  schema: 4;
   id: string;
   title: string;
   profile: string;
@@ -100,6 +116,8 @@ export interface Run {
   artifacts: Record<string, ArtifactEntry>;
   /** PLAN approval, recorded by `gate approve` (absent until approved). */
   approval?: Approval;
+  /** Pending re-approval intent, recorded by `gate amend` (absent unless the plan has drifted and `gate amend` ran). */
+  amendment?: Amendment;
   /** REVIEW packet request, recorded by `gate review` (absent until requested). */
   review?: ReviewRequest;
   /** RETRO journal-sync receipt, recorded by `gate retro` (absent until synced). */
@@ -133,7 +151,7 @@ export function newRun(params: {
 }): Run {
   const at = nowIso();
   return {
-    schema: 3,
+    schema: 4,
     id: params.id,
     title: params.title,
     profile: params.profile,
@@ -168,8 +186,11 @@ export function readRun(root: string, runId: string): Run {
  * (Milestone 1-3) predates branch-keyed concurrency: it gains `branch: null` -
  * honest, not a guess; Gate has no record of which branch a pre-Milestone-4
  * run started on (contrast `core/current.ts`'s legacy-pointer migration, which
- * *can* infer a key from the branch checked out at migration time). The
- * migrated run is persisted on the next writeRun.
+ * *can* infer a key from the branch checked out at migration time). Schema 3
+ * (Milestone 1-4) predates amend/drift tracking (Milestone 5): `amendment` is
+ * optional and simply absent on a migrated run, so no field needs
+ * backfilling - just the version bump. The migrated run is persisted on the
+ * next writeRun.
  */
 function migrateRun(raw: Run & { schema: number }, runId: string): Run {
   const parsed = raw as Omit<Run, "schema"> & { schema: number };
@@ -189,7 +210,10 @@ function migrateRun(raw: Run & { schema: number }, runId: string): Run {
     parsed.branch = parsed.branch ?? null;
     parsed.schema = 3;
   }
-  if (parsed.schema !== 3) {
+  if (parsed.schema === 3) {
+    parsed.schema = 4;
+  }
+  if (parsed.schema !== 4) {
     throw new Error(`Unsupported run.json schema ${String(parsed.schema)} in ${runId}.`);
   }
   return parsed as Run;

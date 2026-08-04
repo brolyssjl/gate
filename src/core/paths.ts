@@ -28,6 +28,7 @@ export function gatePaths(root: string) {
     current: join(gate, "current.json"), // per-branch map of branch key -> active run id
     legacyCurrent: join(gate, "current"), // Milestone 1-3 single-run pointer; migrated on first read
     archive: join(gate, "archive"), // gate prune: summaries of pruned runs
+    gitignoreState: join(gate, "gitignore.json"), // hash of the root .gitignore as `gate init` last left it
   };
 }
 
@@ -45,6 +46,8 @@ export function runPaths(root: string, runId: string) {
     dir,
     runJson: join(dir, "run.json"),
     plan: join(dir, "plan.md"),
+    /** Snapshot of plan.md as of the last approval/amendment - `gate amend` diffs the current plan against this. */
+    planApproved: join(dir, "plan.approved.md"),
     worklog: join(dir, "worklog.md"),
     testReport: join(dir, "test-report.json"),
     debugLog: join(dir, "debug-log.md"),

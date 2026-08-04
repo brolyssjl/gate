@@ -103,7 +103,8 @@ export function cmdStart(args: ParsedArgs): void {
         if (existing.approval && hashPlanFile(planPath) !== existing.approval.planHash) {
           throw new GateError(
             `run "${existingId}" on this branch is approved but plan.md has changed since - ` +
-              "re-run `gate approve` or resolve the run before starting fresh",
+              "re-run `gate approve` (while still in PLAN) or `gate amend` + `gate approve --amend` " +
+              "(once past PLAN), or resolve the run before starting fresh",
           );
         }
         // Resuming silently on a real profile/target conflict would let an

@@ -53,12 +53,19 @@ export function formatJournalEntry(params: JournalEntryParams): string {
 }
 
 /**
- * Fixed binary, fixed argv - spawns exactly `agnosgram log --stdin --agent
- * gate` with no arguments read from repo config, so this sits outside Gate's
- * command-trust regime (TOFU): there is nothing a hostile `.gate/config.yml`
- * could inject, because config never reaches this call.
+ * Fixed argv, binary resolved once per call from `$GATE_AGNOSGRAM_BIN` (or
+ * `agnosgram` on PATH by default) - no arguments read from repo config, so
+ * this sits outside Gate's command-trust regime (TOFU): there is nothing a
+ * hostile `.gate/config.yml` could inject, because config never reaches this
+ * call. The env override exists for test hermeticity (review finding F3):
+ * whether a real `agnosgram` happens to be installed on the machine running
+ * the suite must not change what these tests exercise - fallback tests point
+ * it at a path that can't possibly exist, CLI-path tests at a stub script,
+ * so the suite is green regardless of what's actually on PATH.
  */
-const AGNOSGRAM_BIN = "agnosgram";
+function agnosgramBin(): string {
+  return process.env.GATE_AGNOSGRAM_BIN || "agnosgram";
+}
 const AGNOSGRAM_ARGS = ["log", "--stdin", "--agent", "gate"];
 
 export type JournalWriteMethod = "agnosgram-cli" | "fallback";
@@ -118,7 +125,7 @@ function appendJournalDirect(root: string, entry: string, when: Date): string {
  * usually means something is actually wrong with the store.
  */
 export function writeJournalEntry(root: string, entry: string, when: Date = new Date()): JournalWriteResult {
-  const res = spawnSync(AGNOSGRAM_BIN, AGNOSGRAM_ARGS, { cwd: root, input: entry, encoding: "utf8" });
+  const res = spawnSync(agnosgramBin(), AGNOSGRAM_ARGS, { cwd: root, input: entry, encoding: "utf8" });
 
   if (res.error && (res.error as NodeJS.ErrnoException).code === "ENOENT") {
     const journalFile = appendJournalDirect(root, entry, when);

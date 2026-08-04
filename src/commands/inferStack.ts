@@ -37,3 +37,29 @@ function inferNode(pkgPath: string): Commands {
   if (has("coverage")) cmds.coverage = "npm run coverage";
   return cmds;
 }
+
+/**
+ * Best-effort `scope_ignore` seed per detected stack (Milestone 5): compile
+ * caches and other environment cruft rewritten by the very commands Gate
+ * runs, which would otherwise hard-block the scope check with false
+ * violations (the motivating soak incident - see ROADMAP.md). Seeded once by
+ * `gate init`, same as `inferCommands`; the human reviews and re-trusts
+ * before it takes effect either way.
+ */
+export function inferScopeIgnore(root: string): string[] {
+  const ignore: string[] = [];
+  if (existsSync(join(root, "package.json"))) {
+    ignore.push("node_modules/**", ".cache/**", ".turbo/**", ".next/cache/**", ".nuxt/**");
+  }
+  if (existsSync(join(root, "go.mod"))) {
+    ignore.push("bin/**", "vendor/**");
+  }
+  if (existsSync(join(root, "Cargo.toml"))) {
+    ignore.push("target/**");
+  }
+  if (existsSync(join(root, "pyproject.toml"))) {
+    ignore.push("__pycache__/**", ".pytest_cache/**", ".mypy_cache/**");
+  }
+  ignore.push("coverage/**");
+  return ignore;
+}

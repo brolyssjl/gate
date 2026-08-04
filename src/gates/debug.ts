@@ -1,10 +1,11 @@
 import { runPaths } from "../core/paths.js";
-import { changedFiles } from "../core/git.js";
+import { changedFiles, isGateBookkeeping } from "../core/git.js";
 import { runCommand } from "../core/exec.js";
 import { isCommandsTrusted } from "../core/trust.js";
 import { parseDebugLogFile, isCycleComplete } from "../artifacts/debugLog.js";
 import { checkName, resolvePhaseTargets, type ResolvedTarget } from "../core/targets.js";
 import { scopeCheck } from "./implement.js";
+import { planDriftCheck } from "./planDrift.js";
 import { loadReport, statReport, targetReportPath } from "./test.js";
 import type { NormalizedReport } from "./testReport.js";
 import { type Check, type GateContext, type GateResult, fail, pass, result } from "./types.js";
@@ -25,6 +26,8 @@ import { type Check, type GateContext, type GateResult, fail, pass, result } fro
  */
 export function debugGate(ctx: GateContext): GateResult {
   const checks: Check[] = [];
+  const drift = planDriftCheck(ctx, "debug.plan-drift");
+  if (drift) checks.push(drift);
   const { debugLog: logPath, testReport: reportPath } = runPaths(ctx.root, ctx.run.id);
 
   const { log, errors } = parseDebugLogFile(logPath);
@@ -50,8 +53,8 @@ export function debugGate(ctx: GateContext): GateResult {
         ),
   );
 
-  const touched = changedFiles(ctx.root, ctx.run.baseRef).filter((f) => !f.startsWith(".gate/"));
-  checks.push(scopeCheck("debug.scope", ctx, touched));
+  const touched = changedFiles(ctx.root, ctx.run.baseRef).filter((f) => !isGateBookkeeping(ctx.root, f));
+  checks.push(...scopeCheck("debug.scope", ctx, touched));
 
   const resolved = resolvePhaseTargets(ctx.config, ctx.run, touched);
   if (resolved.length === 1 && resolved[0]!.target === null) {

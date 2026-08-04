@@ -1,30 +1,9 @@
-import { execFileSync, spawn, spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { execFileSync } from "node:child_process";
+import { join } from "node:path";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
-import { makeRepo } from "./helpers.js";
-
-const pkgRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
-const CLI = join(pkgRoot, "dist", "cli.js");
-
-function gate(cwd: string, args: string[]): { code: number; stdout: string; stderr: string; json: () => unknown } {
-  const res = spawnSync("node", [CLI, ...args], { cwd, encoding: "utf8" });
-  return { code: res.status ?? 1, stdout: res.stdout, stderr: res.stderr, json: () => JSON.parse(res.stdout) };
-}
-
-/** Async spawn, for launching several `gate` invocations genuinely concurrently. */
-function gateAsync(cwd: string, args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
-  return new Promise((resolve) => {
-    const child = spawn("node", [CLI, ...args], { cwd });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", (d: Buffer) => (stdout += d));
-    child.stderr.on("data", (d: Buffer) => (stderr += d));
-    child.on("close", (code) => resolve({ code: code ?? 1, stdout, stderr }));
-  });
-}
+import { gate, gateAsync, makeRepo } from "./helpers.js";
 
 function git(cwd: string, args: string[]): string {
   return execFileSync("git", args, { cwd, encoding: "utf8" }).trim();

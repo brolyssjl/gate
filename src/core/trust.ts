@@ -27,7 +27,14 @@ export function currentCommandsHash(root: string): string {
   return "sha256:" + createHash("sha256").update(source).digest("hex");
 }
 
-/** True when the commands block is empty (nothing executes, e.g. `{}`). */
+/**
+ * True when the commands block is empty (nothing executes, e.g. `{}`) AND
+ * `scope_ignore` is empty. Compared against the 2-key shape - matching
+ * `commandsBlockHashSource`'s own omission of an empty `scope_ignore` (F4) -
+ * so a non-empty `scope_ignore` alone still forces a real `gate trust`
+ * instead of trivially passing as "nothing to trust" just because no
+ * command happens to be configured.
+ */
 export function hasNoCommands(root: string): boolean {
   const source = commandsBlockHashSource(root);
   return source === JSON.stringify({ commands: {}, targets: {} });

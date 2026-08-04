@@ -1,10 +1,11 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { gatePaths } from "../core/paths.js";
+import { recordGitignoreState } from "../core/gitignoreState.js";
 import { bundledPlaybooksDir } from "../core/playbooks.js";
 import { EMBEDDED_PLAYBOOKS } from "../core/embeddedPlaybooks.js";
 import { detect } from "../integrations/index.js";
-import { inferCommands } from "./inferStack.js";
+import { inferCommands, inferScopeIgnore } from "./inferStack.js";
 import { emit, type ParsedArgs } from "./shared.js";
 
 /**
@@ -21,6 +22,8 @@ export function cmdInit(args: ParsedArgs): void {
 
   mkdirSync(paths.playbooks, { recursive: true });
   mkdirSync(paths.runs, { recursive: true });
+
+  const gitignoreUpdated = ensureGitignore(root);
 
   // Copy default playbooks that the user hasn't already customized. Prefer
   // the real directory (dev-from-source, npm install); a single-file binary
@@ -50,12 +53,45 @@ export function cmdInit(args: ParsedArgs): void {
     `  playbooks: ${paths.playbooks}`,
     `  runs:      ${paths.runs}`,
     detected.length ? `  detected:  ${detected.join(", ")}` : "  detected:  none",
+    gitignoreUpdated ? "  gitignore: added .gate/ run-state entries (config.yml and trust.json stay tracked)" : null,
     "",
     "Review .gate/config.yml, then run `gate trust` to approve its commands.",
     "Next: gate start \"<title>\"",
-  ].join("\n");
+  ]
+    .filter((line): line is string => line !== null)
+    .join("\n");
 
-  emit(human, { root, initialized: true, refreshed: refresh, detected }, args.flags);
+  emit(human, { root, initialized: true, refreshed: refresh, detected, gitignoreUpdated }, args.flags);
+}
+
+/**
+ * `.gate/runs/`, the legacy single-run pointer, `current.json`, and
+ * `archive/` are ephemeral run state - never `config.yml` or `trust.json`,
+ * which stay tracked so CI inherits the command pin (see README). Idempotent
+ * and non-destructive: only appends entries genuinely missing from an
+ * existing `.gitignore`, on both a fresh `init` and every `--refresh`, so
+ * upgrading an older `.gate/` project actually gets the entries the docs
+ * have always claimed instead of leaving it prose-only.
+ */
+const GITIGNORE_MARKER = "# Gate's own ephemeral run folders (config + playbooks stay tracked)";
+const GITIGNORE_ENTRIES = [".gate/runs/", ".gate/current", ".gate/current.json", ".gate/archive/"];
+
+function ensureGitignore(root: string): boolean {
+  const path = join(root, ".gitignore");
+  const existing = existsSync(path) ? readFileSync(path, "utf8") : "";
+  const lines = new Set(existing.split("\n").map((l) => l.trim()));
+  const missing = GITIGNORE_ENTRIES.filter((e) => !lines.has(e));
+  if (missing.length === 0) return false;
+
+  const prefix = existing.length === 0 || existing.endsWith("\n") ? existing : existing + "\n";
+  const block = (prefix.length > 0 ? "\n" : "") + [GITIGNORE_MARKER, ...missing].join("\n") + "\n";
+  const content = prefix + block;
+  writeFileSync(path, content);
+  // Record exactly what was written so the scope check can tell this write
+  // apart from any later edit (review finding: a blanket .gitignore
+  // exemption is a scope-check bypass) - see core/gitignoreState.ts.
+  recordGitignoreState(root, content);
+  return true;
 }
 
 /**
@@ -105,7 +141,13 @@ function buildConfig(root: string, det: ReturnType<typeof detect>): string {
     "integrations:",
     `  agnosgram: ${det.agnosgram ? "auto" : "off"}`,
     `  sdd: ${det.sdd ? "auto" : "off"}`,
-    "",
   );
+
+  const scopeIgnore = inferScopeIgnore(root);
+  lines.push("# Noise the scope check ignores rather than flags as undeclared - part of the trust hash.", "scope_ignore:");
+  if (scopeIgnore.length === 0) lines.push("  # - <glob>");
+  else for (const g of scopeIgnore) lines.push(`  - ${JSON.stringify(g)}`);
+  lines.push("");
+
   return lines.join("\n");
 }

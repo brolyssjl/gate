@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
+import { isGitignoreUnchangedSinceInit } from "./gitignoreState.js";
 
 function git(root: string, args: string[]): { ok: boolean; stdout: string } {
   const res = spawnSync("git", args, { cwd: root, encoding: "utf8" });
@@ -9,14 +10,33 @@ function git(root: string, args: string[]): { ok: boolean; stdout: string } {
 }
 
 /**
- * Untracked (not-ignored) files, excluding `.gate/` bookkeeping. Repo-relative
+ * True for paths Gate's own bookkeeping owns, never counted as "touched"
+ * code by scope/coverage/evidence checks: `.gate/` run state always, and the
+ * repo-root `.gitignore` ONLY when it's still byte-for-byte what `gate init`
+ * last wrote (Milestone 5, tightened after review). `.gate/` is unconditional
+ * because nothing outside `.gate/` can be hidden by a change under it; a
+ * blanket `.gitignore` exemption cannot make the same claim - editing
+ * `.gitignore` hides whatever it newly matches from every git-based diff
+ * Gate takes (untracked files, coverage, the review packet, this very scope
+ * check), so any edit beyond gate's own recorded write must count as touched
+ * like any other file, or an agent could ignore-and-hide an undeclared file
+ * with a clean `gate check`. See `core/gitignoreState.ts`.
+ */
+export function isGateBookkeeping(root: string, path: string): boolean {
+  if (path.startsWith(".gate/")) return true;
+  if (path === ".gitignore") return isGitignoreUnchangedSinceInit(root);
+  return false;
+}
+
+/**
+ * Untracked (not-ignored) files, excluding Gate's own bookkeeping. Repo-relative
  * POSIX paths, as git reports them.
  */
 export function untrackedFiles(root: string): string[] {
   return git(root, ["ls-files", "--others", "--exclude-standard"])
     .stdout.split("\n")
     .map((l) => l.trim())
-    .filter((f) => f.length > 0 && !f.startsWith(".gate/"));
+    .filter((f) => f.length > 0 && !isGateBookkeeping(root, f));
 }
 
 export function isGitRepo(root: string): boolean {
@@ -80,18 +100,29 @@ export function gitHooksDir(root: string): string | null {
 }
 
 /**
- * Staged (index) files, excluding `.gate/` bookkeeping - what a pre-commit
+ * Staged (index) files, excluding Gate's own bookkeeping - what a pre-commit
  * hook cares about. `-z` (NUL-separated, unquoted paths) rather than the
  * default newline-separated output: with `core.quotepath` (git's default),
  * a non-ASCII filename otherwise arrives C-quoted with surrounding quotes
  * (e.g. `"caf\303\251.ts"`), which fails glob matching outright and even
- * defeats the `.gate/` exclusion below (a leading quote character beats
+ * defeats the bookkeeping exclusion below (a leading quote character beats
  * `startsWith(".gate/")`).
  */
 export function stagedFiles(root: string): string[] {
   return git(root, ["diff", "--cached", "--name-only", "-z", "--"])
     .stdout.split("\0")
-    .filter((f) => f.length > 0 && !f.startsWith(".gate/"));
+    .filter((f) => f.length > 0 && !isGateBookkeeping(root, f));
+}
+
+/**
+ * Unified diff between two files on disk, independent of any git repo or
+ * index - `--no-index` works even outside a repository, so `gate amend` can
+ * diff a plan snapshot against the current plan.md regardless of whether the
+ * project itself is under git. Exits non-zero when the files differ; the
+ * diff is still on stdout (same pattern as `diffText`'s untracked-file case).
+ */
+export function diffNoIndex(a: string, b: string): string {
+  return spawnSync("git", ["diff", "--no-color", "--no-index", "--", a, b], { encoding: "utf8" }).stdout ?? "";
 }
 
 /** Current HEAD sha, or null if there are no commits yet / not a repo. */

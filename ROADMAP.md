@@ -71,10 +71,11 @@ load-bearing; pointers, never copies.
       playbook overlays); profiles choose which phases, targets choose how
 - [x] Agent adapters - Claude Code skill, Cursor/Cline/Windsurf rules, `AGENTS.md`
 - [x] `gate prune` - archive finished runs past the retention window
-- [ ] Decide the npm name, then publish + distribution (global install,
-      `install.sh`, single-file binary for CI/Node-less machines) - mechanical
+- [ ] ~~Decide the npm name, then publish + distribution (global install,
+      `install.sh`, single-file binary for CI/Node-less machines)~~ superseded
+      by Milestone 6 (Rust port + GitHub Releases distribution) - mechanical
       prep landed (placeholder name, `install.sh`, `build:binary`, CI/release
-      workflows); the owner still decides the final name and publish timing
+      workflows) but is now moot; npm leaves the user-facing install path
 
 ## Milestone 4 - Concurrency & guardrails ✅ (v0.3.0)
 
@@ -139,9 +140,10 @@ binaries on GitHub Releases - npm leaves the user-facing install path. All
 run-state/schema contracts (run.json migrations, trust hashing, playbook
 formats) carry over unchanged._
 
-- [ ] Surface freeze after Milestone 5 lands: CLI commands/flags/outputs +
+- [x] Surface freeze after Milestone 5 lands: CLI commands/flags/outputs +
       `--json` schema snapshots declared the port contract; conformance mode
-      (`$GATE_BIN` + `npm run conformance`) green against the TS binary
+      (`$GATE_BIN` + `npm run conformance`) green against the TS binary.
+      Declared in `docs/decisions/0001-surface-freeze.md`
 - [ ] Rust crate in-repo: identical surface, conformance suite green on
       linux-x64 + darwin-arm64; release pipeline builds Rust binaries on tag;
       `1.0.0-rc` tags from here

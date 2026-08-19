@@ -16,26 +16,35 @@ phase or profile touches no transition logic.
 
 ## Install
 
-The npm name is not decided yet (`gate-cli` is a placeholder), so the package
-stays `private` and isn't published. For now:
-
-```bash
-git clone https://github.com/brolyssjl/gate.git
-cd gate
-npm install
-npm run build
-npm link          # puts `gate` on your PATH
-```
-
-Once published, global install will be `npm install -g gate-cli`.
-`install.sh` fetches a single-file binary for Node-less machines (falls back
-to npm when no matching release asset exists yet - no binaries are published
-either; `npm run build:binary` is mechanical prep, see "Single-file binary"
-below):
+Prebuilt binaries ship with every release from v0.3.0 onward (`linux-x64`,
+`darwin-arm64`). `install.sh` fetches the right one for your platform and
+puts it on your PATH - no Node required:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/brolyssjl/gate/main/install.sh | bash
 ```
+
+`install.sh` always installs the latest release. On an unsupported platform
+it prints build-from-source instructions instead of failing silently; to pin
+an older version (or one that predates the binary pipeline, v0.1.0/v0.2.0),
+build from source at that tag. gate isn't published to npm, and per the
+Milestone 6 owner decision (`docs/decisions/0001-surface-freeze.md`) never
+will be:
+
+```bash
+git clone https://github.com/brolyssjl/gate.git
+cd gate
+npm ci
+npm run build
+npm link          # puts `gate` on your PATH, or run dist/cli.js directly
+```
+
+**Read-only global npm prefix (Nix, managed machines):** if `npm link` or a
+global `npm install` fails with `EACCES`/`EROFS`, your global npm prefix is
+read-only - common on Nix and locked-down managed machines, and no npm flag
+fixes it cleanly. gate never needs a global npm install: use the binary path
+above, or point `PATH` (or a symlink in a writable directory) straight at
+`dist/cli.js` from the clone instead of `npm link`.
 
 ## The agent loop is two commands
 
@@ -456,5 +465,6 @@ playbooks all compiled in - no `node_modules` or `playbooks/` directory
 needed alongside it. Uses `bun build --compile` when `bun` is on PATH
 (zero extra dependencies), falling back to Node's Single Executable
 Applications support (`--experimental-sea-config` + `postject`) otherwise.
-Mechanical prep for CI/Node-less distribution - not part of `npm run build`
-or wired into a release yet.
+Not part of `npm run build` - it's the build-binaries job in
+`.github/workflows/release.yml`, which runs it per platform on every tagged
+release and uploads the result as a release asset (see "Install" above).

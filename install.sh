@@ -37,13 +37,29 @@ arch() {
   esac
 }
 
+download_asset() {
+  local asset="$1" dest="$2"
+  # /releases/latest/download/<asset> redirects straight to the current
+  # release's asset - no need to resolve the tag via the (rate-limited)
+  # api.github.com first. Works unauthenticated once the repo is public.
+  local url="https://github.com/${REPO}/releases/latest/download/${asset}"
+  if curl -fsSL "$url" -o "$dest"; then
+    return 0
+  fi
+  # While the repo is private, unauthenticated asset downloads 404 even when
+  # the asset exists. gh reuses your existing auth and sees the same assets.
+  if command -v gh >/dev/null 2>&1; then
+    echo "Direct download failed - retrying via gh (needed while the repo is private)..." >&2
+    if gh release download --repo "$REPO" --pattern "$asset" --output "$dest" --clobber; then
+      return 0
+    fi
+  fi
+  return 1
+}
+
 install_binary() {
   local platform="$1" cpu="$2"
   local asset="${BIN_NAME}-${platform}-${cpu}"
-  # /releases/latest/download/<asset> redirects straight to the current
-  # release's asset - no need to resolve the tag via the (rate-limited)
-  # api.github.com first.
-  local url="https://github.com/${REPO}/releases/latest/download/${asset}"
   local tmp
   tmp="$(mktemp "${TMPDIR:-/tmp}/${BIN_NAME}.XXXXXX")"
 
@@ -51,7 +67,7 @@ install_binary() {
   mkdir -p "$INSTALL_DIR"
   # Download to a temp file first: a mid-transfer failure must never leave a
   # truncated (but still +x, still shadowing-the-fallback) binary in place.
-  if ! curl -fsSL "$url" -o "$tmp"; then
+  if ! download_asset "$asset" "$tmp"; then
     rm -f "$tmp"
     return 1
   fi

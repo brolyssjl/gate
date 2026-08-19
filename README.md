@@ -24,6 +24,14 @@ puts it on your PATH - no Node required:
 curl -fsSL https://raw.githubusercontent.com/brolyssjl/gate/main/install.sh | bash
 ```
 
+While this repository is private, the unauthenticated one-liner 404s (both
+the raw script and the release assets). Run the script from a clone instead -
+it falls back to `gh release download`, which reuses your GitHub auth:
+
+```bash
+git clone https://github.com/brolyssjl/gate.git && ./gate/install.sh
+```
+
 `install.sh` always installs the latest release. On an unsupported platform
 it prints build-from-source instructions instead of failing silently; to pin
 an older version (or one that predates the binary pipeline, v0.1.0/v0.2.0),

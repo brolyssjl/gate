@@ -1,8 +1,9 @@
 name: Release
 
 # Fires when a version tag is pushed (e.g. `git tag v0.3.0 && git push --tags`).
-# Builds, tests, gates on conformance, and creates a GitHub release with
-# per-platform binaries produced by cargo build --release.
+# Builds, gates each platform's binary on the conformance suite running
+# against that exact binary, and creates a GitHub release from the verified
+# assets.
 on:
   push:
     tags: ["v*.*.*"]
@@ -11,52 +12,22 @@ permissions:
   contents: write
 
 jobs:
-  test:
+  version-guard:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20.x
-          cache: npm
-      - name: Verify tag / package.json / rust/Cargo.toml versions agree
+      - name: Verify tag / rust/Cargo.toml version agree
         run: |
           tag_version="${GITHUB_REF_NAME#v}"
-          pkg_version=$(node -p "require('./package.json').version")
           cargo_version=$(grep -m1 '^version' rust/Cargo.toml | sed -E 's/version = "(.*)"/\1/')
-          echo "tag=$tag_version package.json=$pkg_version rust/Cargo.toml=$cargo_version"
-          if [ "$tag_version" != "$pkg_version" ] || [ "$tag_version" != "$cargo_version" ]; then
-            echo "::error::Version mismatch: tag=v$tag_version package.json=$pkg_version rust/Cargo.toml=$cargo_version"
+          echo "tag=$tag_version rust/Cargo.toml=$cargo_version"
+          if [ "$tag_version" != "$cargo_version" ]; then
+            echo "::error::Version mismatch: tag=v$tag_version rust/Cargo.toml=$cargo_version"
             exit 1
           fi
-      - name: Reference implementation green (npm ci + build + test)
-        run: |
-          npm ci
-          npm run build
-          npm test
 
-  conformance:
-    needs: [test]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install Rust (stable)
-        uses: dtolnay/rust-toolchain@stable
-      - run: cargo build --release --manifest-path rust/Cargo.toml
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20.x
-          cache: npm
-      - name: Install and compile the conformance harness (npm)
-        run: |
-          npm ci
-          npm run build
-      - name: Conformance suite against the linux-x64 release binary
-        run: GATE_BIN="$PWD/rust/target/release/gate" npm run conformance
-
-  build-binaries:
-    # Best-effort: never blocks the release; test + conformance are the gates.
-    continue-on-error: true
+  build-and-verify:
+    needs: [version-guard]
     strategy:
       fail-fast: false
       matrix:
@@ -70,7 +41,12 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install Rust (stable)
         uses: dtolnay/rust-toolchain@stable
-      - run: cargo build --release --manifest-path rust/Cargo.toml
+      - name: cargo build --release
+        run: cargo build --release --manifest-path rust/Cargo.toml
+      - name: Conformance suite against the binary that will ship
+        run: cargo test --manifest-path rust/Cargo.toml
+        env:
+          GATE_BIN: ${{ github.workspace }}/rust/target/release/gate
       - run: mv rust/target/release/gate "${{ matrix.asset }}"
       - uses: actions/upload-artifact@v4
         with:
@@ -78,12 +54,11 @@ jobs:
           path: ${{ matrix.asset }}
 
   release:
-    needs: [test, conformance, build-binaries]
+    needs: [build-and-verify]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
-        continue-on-error: true
         with:
           path: release-assets
           merge-multiple: true
@@ -93,5 +68,8 @@ jobs:
         run: |
           shopt -s nullglob
           assets=(release-assets/*)
+          if [ ${#assets[@]} -eq 0 ]; then
+            echo "::error::No release assets produced"
+            exit 1
+          fi
           gh release create "${{ github.ref_name }}" "${assets[@]}" --generate-notes --verify-tag
-

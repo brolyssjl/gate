@@ -6,6 +6,13 @@ on:
   pull_request:
 
 jobs:
+  # TypeScript REFERENCE implementation. npm/Node here is not the product
+  # and not the install path (the shipped binary is Rust, built by cargo in
+  # release.yml): the TS implementation is the in-repo reference the frozen
+  # surface (docs/decisions/0001) is defined against, and its test suite -
+  # including the conformance files the rust job reuses - is written in
+  # TypeScript/vitest. This job keeps that reference healthy until the
+  # 1.0.0 cutover retires or demotes it (ROADMAP.md, Milestone 6).
   test:
     runs-on: ubuntu-latest
     strategy:
@@ -53,12 +60,17 @@ jobs:
         run: cargo test --manifest-path rust/Cargo.toml
       - name: cargo build --release
         run: cargo build --release --manifest-path rust/Cargo.toml
+      # Node/npm below is the TEST HARNESS, not the product: the conformance
+      # suite is written in TypeScript/vitest and is the normative definition
+      # of the frozen CLI surface (docs/decisions/0001). It spawns whatever
+      # binary $GATE_BIN points at - here, the cargo-built Rust binary.
       - uses: actions/setup-node@v4
         with:
           node-version: 20.x
           cache: npm
-      - run: npm ci
-      - name: Build (embeds playbooks, compiles dist/)
+      - name: Install the conformance harness (npm)
+        run: npm ci
+      - name: Compile the conformance suite
         run: npm run build
       - name: Conformance suite against the Rust binary
         run: GATE_BIN="$PWD/rust/target/release/gate" npm run conformance

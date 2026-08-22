@@ -11,6 +11,12 @@ permissions:
   contents: write
 
 jobs:
+  # npm/Node in this workflow is never the product or the install path - the
+  # shipped assets are cargo-built Rust binaries (build-binaries below). npm
+  # appears for two reasons only: this job keeps the TypeScript REFERENCE
+  # implementation green (it defines the frozen surface until the 1.0.0
+  # cutover), and the conformance job needs the TS/vitest conformance suite
+  # to prove the Rust binary honors that surface.
   test:
     runs-on: ubuntu-latest
     steps:
@@ -32,15 +38,18 @@ jobs:
             echo "::error::Version mismatch: tag=v$tag_version package.json=$pkg_version rust/Cargo.toml=$cargo_version"
             exit 1
           fi
-      - run: npm ci
-      - run: npm run build
-      - run: npm test
+      - name: Reference implementation green (npm ci + build + test)
+        run: |
+          npm ci
+          npm run build
+          npm test
 
   conformance:
     # Hard gate: the release must never ship a binary that fails its own
     # surface contract. Builds the same release binary that the linux leg of
     # build-binaries produces and runs the full conformance suite against it
-    # before anything is created.
+    # before anything is created. npm here runs the TS/vitest conformance
+    # harness - the executable spec of the surface - against the Rust binary.
     needs: [test]
     runs-on: ubuntu-latest
     steps:
@@ -52,16 +61,17 @@ jobs:
         with:
           node-version: 20.x
           cache: npm
-      - run: npm ci
-      - run: npm run build
+      - name: Install and compile the conformance harness (npm)
+        run: |
+          npm ci
+          npm run build
       - name: Conformance suite against the linux-x64 release binary
         run: GATE_BIN="$PWD/rust/target/release/gate" npm run conformance
 
   build-binaries:
     # Best-effort: a Rust toolchain setup outage on one platform runner must
-    # never block the GitHub release or npm publish - `test` and
-    # `conformance` are the hard gates that keep a broken binary out of the
-    # release entirely.
+    # never block the GitHub release - `test` and `conformance` are the hard
+    # gates that keep a broken binary out of the release entirely.
     continue-on-error: true
     strategy:
       fail-fast: false

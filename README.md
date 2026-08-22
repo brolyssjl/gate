@@ -32,12 +32,15 @@ it falls back to `gh release download`, which reuses your GitHub auth:
 git clone https://github.com/brolyssjl/gate.git && ./gate/install.sh
 ```
 
-`install.sh` always installs the latest release. On an unsupported platform
-it prints build-from-source instructions instead of failing silently; to pin
-an older version (or one that predates the binary pipeline, v0.1.0/v0.2.0),
-build from source at that tag. gate isn't published to npm, and per the
-Milestone 6 owner decision (`docs/decisions/0001-surface-freeze.md`) never
-will be:
+`install.sh` always installs the latest release; on a platform without a
+prebuilt binary it prints these same steps instead of failing silently. This
+is the contributor / build-from-source path: for a platform outside the
+binary matrix, to pin an older version (including one that predates the
+binary pipeline, v0.1.0/v0.2.0), or to work on gate itself. It needs Node
+today (a Rust port is underway on a separate branch, not yet merged into
+main). npm here is a build tool, not a distribution channel: gate is not
+published to npm, and per the Milestone 6 owner decision
+(`docs/decisions/0001-surface-freeze.md`) never will be:
 
 ```bash
 git clone https://github.com/brolyssjl/gate.git
@@ -47,12 +50,9 @@ npm run build
 npm link          # puts `gate` on your PATH, or run dist/cli.js directly
 ```
 
-**Read-only global npm prefix (Nix, managed machines):** if `npm link` or a
-global `npm install` fails with `EACCES`/`EROFS`, your global npm prefix is
-read-only - common on Nix and locked-down managed machines, and no npm flag
-fixes it cleanly. gate never needs a global npm install: use the binary path
-above, or point `PATH` (or a symlink in a writable directory) straight at
-`dist/cli.js` from the clone instead of `npm link`.
+If `npm link` fails with `EACCES`/`EROFS` (a read-only global npm prefix,
+common on Nix and locked-down managed machines), skip it: use the binary
+install above, or point `PATH` straight at `dist/cli.js` from the clone.
 
 ## The agent loop is two commands
 
@@ -450,7 +450,8 @@ TOON is worse on small objects.
 
 ## Deliberately not yet
 
-A Go port (startup-latency escape hatch). See `ROADMAP.md` for the full plan.
+A Go port was once the startup-latency escape hatch; superseded by the
+Milestone 6 Rust port (in progress). See `ROADMAP.md` for the full plan.
 
 ## Development
 

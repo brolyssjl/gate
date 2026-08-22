@@ -149,7 +149,7 @@ mod tests {
     }
 
     #[test]
-    fn user_error_exit_codes_match_reportError() {
+    fn user_error_exit_codes_match_report_error() {
         assert_eq!(UserError::usage("bad usage").exit_code(), 2);
         assert_eq!(UserError::new("plain failure").exit_code(), 1);
         assert_eq!(UserError::gate("coded failure", 1).exit_code(), 1);

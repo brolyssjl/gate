@@ -97,7 +97,7 @@ Same rules as agnosgram's port, all verified there the hard way:
    doubt with `node -e`).
 3. **Output**: every stdout/stderr literal byte-for-byte; `--json` via
    core/json.rs; `--format toon` via a faithful serialize/toon.rs port.
-4. **Filesystem effects**: run.json (schema 2 + migration), current.json,
+4. **Filesystem effects**: run.json (schema 4 + the 1->2->3->4 migration chain), current.json,
    trust.json, playbook copies (core/embeddedPlaybooks.ts - port the
    embedded literals byte-for-byte; note `npm run build` embeds playbooks/
    into TS, check scripts/embedPlaybooks.mjs for how), artifact scaffolds

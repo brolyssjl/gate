@@ -1,19 +1,14 @@
-//! Port of `src/core/playbooks.ts`: resolve the active playbook for a
-//! phase and layer target overlays onto it.
+//! Resolve the active playbook for a phase and layer target overlays onto
+//! it.
 //!
-//! `find_bundled_playbooks_dir`'s marker: TS walks up from the *running*
-//! JS file's own location looking for a directory that has both a
-//! `package.json` and a sibling `playbooks/` (the npm-install and
-//! dev-from-source layouts - a single-file Node SEA binary has neither, so
-//! it falls through to the embedded copy). The Rust binary has no
-//! `package.json` of its own, but `cargo run`/`cargo test` from within a
-//! checkout of this repo still has one at the repo root, right alongside
-//! `playbooks/` - reusing the identical marker lets the disk-walk fallback
-//! work for dev-from-source in this repo exactly as it does for the TS
-//! binary, and correctly find nothing (falling back to
-//! `embedded_playbooks`) for an installed single-file release binary with
-//! no repo checkout around it. Starting point: `std::env::current_exe()`
-//! in place of `fileURLToPath(import.meta.url)`.
+//! `find_bundled_playbooks_dir`'s marker: walk up from the *running*
+//! binary's own location looking for a directory that has both
+//! `rust/Cargo.toml` and a sibling `playbooks/` - i.e. this repo's root.
+//! `cargo run`/`cargo test` from within a checkout finds it (dev-from-source:
+//! a playbook edit is live immediately, no rebuild needed); an installed
+//! single-file release binary, copied out of any repo checkout, finds
+//! neither and falls through to `embedded_playbooks`. Starting point:
+//! `std::env::current_exe()`.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -28,7 +23,7 @@ fn find_bundled_playbooks_dir() -> Option<PathBuf> {
     let mut dir = exe.parent()?.to_path_buf();
     loop {
         let candidate = dir.join("playbooks");
-        if dir.join("package.json").exists() && candidate.is_dir() {
+        if dir.join("rust").join("Cargo.toml").exists() && candidate.is_dir() {
             return Some(candidate);
         }
         dir = dir.parent()?.to_path_buf();
@@ -150,9 +145,8 @@ mod tests {
 
     #[test]
     fn finds_the_real_on_disk_playbooks_dir_when_running_from_a_checkout_of_this_repo() {
-        // cargo test runs from within this repo checkout, which has a
-        // package.json + playbooks/ sibling at the repo root - the same
-        // marker TS's own dev-from-source fallback uses.
+        // cargo test runs from within this repo checkout, which has
+        // rust/Cargo.toml + a playbooks/ sibling at the repo root.
         let dir =
             find_bundled_playbooks_dir().expect("expected to find playbooks/ during cargo test");
         assert!(dir.join("plan.md").exists());

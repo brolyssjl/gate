@@ -659,7 +659,8 @@ pub fn write_run(root: &Path, run: &mut Run) -> io::Result<()> {
 
 /// Days-since-epoch -> (year, month, day), proleptic Gregorian calendar.
 /// Howard Hinnant's `civil_from_days` (public domain); see module docs.
-fn civil_from_days(z: i64) -> (i64, u32, u32) {
+/// The crate's single copy - report/prune/agnosgram_write import it from here.
+pub(crate) fn civil_from_days(z: i64) -> (i64, u32, u32) {
     let z = z + 719468;
     let era = if z >= 0 { z } else { z - 146096 } / 146097;
     let doe = (z - era * 146097) as u64; // [0, 146096]

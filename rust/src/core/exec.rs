@@ -61,7 +61,9 @@ mod tests {
 
     #[test]
     fn captures_stdout_and_a_zero_exit_code_on_success() {
-        let res = run_command("echo hello", ".", None);
+        let dir = std::env::temp_dir().join(format!("gate-exec-rs-ok-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let res = run_command("echo hello", dir.to_str().unwrap(), None);
         assert_eq!(res.code, 0);
         assert_eq!(res.stdout, "hello\n");
         assert_eq!(res.stderr, "");
@@ -69,7 +71,11 @@ mod tests {
 
     #[test]
     fn captures_stderr_and_a_nonzero_exit_code_on_failure() {
-        let res = run_command("echo oops 1>&2; exit 3", ".", None);
+        // An explicit absolute cwd, not "." - a relative cwd made this test
+        // sensitive to unrelated tests' tempdir churn under parallel runs.
+        let dir = std::env::temp_dir().join(format!("gate-exec-rs-fail-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let res = run_command("echo oops 1>&2; exit 3", dir.to_str().unwrap(), None);
         assert_eq!(res.code, 3);
         assert_eq!(res.stderr, "oops\n");
     }
@@ -95,7 +101,9 @@ mod tests {
             "GATE_TEST_REPORT".to_string(),
             "/tmp/report.json".to_string(),
         );
-        let res = run_command("echo $GATE_TEST_REPORT", ".", Some(&env));
+        let dir = std::env::temp_dir().join(format!("gate-exec-rs-env-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let res = run_command("echo $GATE_TEST_REPORT", dir.to_str().unwrap(), Some(&env));
         assert_eq!(res.stdout, "/tmp/report.json\n");
     }
 }

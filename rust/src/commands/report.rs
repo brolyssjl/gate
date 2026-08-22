@@ -16,7 +16,7 @@ use crate::cli::context::require_root;
 use crate::cli::output::{emit, UserError};
 use crate::core::current::{read_current_run_id, resolve_branch_key, BranchKeyResolution};
 use crate::core::json::{self, Value};
-use crate::core::paths::{archive_path, gate_paths, run_paths};
+use crate::core::paths::{archive_path, gate_paths, run_paths, validate_run_id};
 use crate::core::run::{read_run, HistoryEntry, HistoryEvent, Run, RunStatus};
 use crate::core::state_machine::Phase;
 
@@ -593,6 +593,9 @@ pub fn run(argv: Vec<String>) -> Result<(), UserError> {
     let args = parse_args(&full);
     let root = require_root()?;
     let explicit_id = args.positionals.first().cloned();
+    if let Some(id) = &explicit_id {
+        validate_run_id(id)?;
+    }
     let resolved = resolve_branch_key(&root);
 
     // A detached HEAD has no branch to resolve a default run from - same

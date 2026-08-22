@@ -7,8 +7,10 @@ pull requests** — no direct pushes to `main`.
 
 1. Branch from `main`: `git switch -c <type>/<short-topic>` (e.g.
    `feat/debug-phase`, `fix/coverage-parser`, `chore/ci`).
-2. Keep commits focused; the working tree must pass `npm run build`,
-   `npm run lint`, and `npm test` before you open the PR.
+2. Keep commits focused; the working tree must pass `cargo build --release
+   --manifest-path rust/Cargo.toml`, `cargo clippy --all-targets
+   --manifest-path rust/Cargo.toml -- -D warnings`, and `cargo test
+   --manifest-path rust/Cargo.toml` before you open the PR.
 3. Open the PR against `main` (`gh pr create`). The description states what
    changed and how it was verified. Do not append AI/co-author signatures.
 4. Merge only after review and green checks.
@@ -21,11 +23,12 @@ described.
 
 Releases are cut from `main` with a semver tag and a GitHub release.
 
-1. Bump the version in `package.json` and `rust/Cargo.toml` (the release.yml
-   workflow enforces they stay in lockstep; it hard-fails if the tag, package.json,
-   and Cargo.toml versions disagree).
-2. Ensure `main` is green: `npm run build && npm run lint && npm test`, and the
-   Rust CI job passes (see "Rust implementation" below).
+1. Bump the version in `rust/Cargo.toml` (the release.yml workflow enforces
+   it hard-fails if the tag and Cargo.toml version disagree).
+2. Ensure `main` is green: `cargo build --release --manifest-path
+   rust/Cargo.toml && cargo clippy --all-targets --manifest-path
+   rust/Cargo.toml -- -D warnings && cargo test --manifest-path
+   rust/Cargo.toml`, and the CI job passes (see "The gate crate" below).
 3. Tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`.
 4. `gh release create vX.Y.Z --title "vX.Y.Z - <name>" --notes "…"`.
 
@@ -33,59 +36,86 @@ npm distribution is permanently out per the Milestone 6 owner decision
 (see ROADMAP.md). Releases are tags + GitHub releases with cargo-built
 binaries; no npm publishing.
 
-## Conformance testing
+### Release checksums (SEC-02/03)
 
-1.0.0 is planned as a from-scratch port against a frozen CLI surface. To
-make that port checkable against this TS implementation without a
-parallel test suite, the CLI-driving test files (`test/cli.e2e.test.ts`,
-`test/concurrency.test.ts`, `test/humanReview.test.ts`, `test/prune.test.ts`,
-`test/guard.test.ts`, `test/amend.test.ts`) never import Gate's internals - they only spawn the
-`gate` binary and assert on its stdout/stderr/exit code and the state it
-writes under `.gate/`. That's the black-box contract: argv in, exit code +
-stdout/stderr + `.gate/` state out.
+`release.yml`'s `release` job hashes every built asset (`sha256sum`) into a
+`SHA256SUMS` file and publishes it alongside the binaries. `install.sh`
+downloads it the same way it downloads the binary (direct, with the `gh`
+fallback for the private-repo case) and verifies the binary against it
+*before* `chmod +x`/`mv` - a checksum mismatch, or a missing `SHA256SUMS`
+entry, aborts with nothing installed. `GATE_VERSION=X.Y.Z` pins an exact
+release instead of the latest one; either way, the script prints the version
+actually installed (`gate --version`, read back from the binary it just
+placed, not just echoed from an env var).
 
-They resolve which binary to spawn through a single helper
-(`test/helpers.ts`'s `gate()`): `$GATE_BIN` when set, otherwise `node
-dist/cli.js` (the local build). Point `GATE_BIN` at any binary that
-implements the same contract - including the Rust build (rust/, the canonical
-binary) - and the same suite exercises it unchanged:
+`install.sh` guards its `main "$@"` call behind a
+`[ "${BASH_SOURCE[0]}" = "${0}" ]` check, so it can be `source`d for testing
+without triggering a real install - useful for exercising `verify_checksum`
+in isolation against a local fixture pair (a dummy file + a `SHA256SUMS`
+generated for it) instead of a real download:
 
 ```bash
-npm run build                    # only needed for the default (unset GATE_BIN) case
-GATE_BIN=/path/to/other/gate npm run conformance
+source install.sh
+verify_checksum /path/to/downloaded-file gate-linux-x64 /path/to/SHA256SUMS
 ```
 
-`npm run conformance` runs exactly that binary-agnostic subset (not the full
-`npm test`, which also runs unit-level suites that import `src/` directly and
-therefore only make sense against this TS implementation).
+`bash -n install.sh` is the syntax-only check; the CI/release paths
+themselves (actually hitting GitHub's release API) can't be run locally.
+
+## Conformance testing
+
+Rust is the only implementation, but the CLI surface is still frozen
+(`docs/decisions/0001-surface-freeze.md`), and `rust/tests/` - a black-box
+conformance suite - is the normative definition of correct behavior for that
+frozen surface. The suite (`rust/tests/cli_e2e.rs`, `concurrency.rs`,
+`human_review.rs`, `prune.rs`, `guard.rs`, `amend.rs`, plus the shared
+harness in `rust/tests/common/`) never imports Gate's internals - it only
+spawns the `gate` binary and asserts on its stdout/stderr/exit code and the
+state it writes under `.gate/`. That's the black-box contract: argv in, exit
+code + stdout/stderr + `.gate/` state out. `rust/tests/CONFORMANCE_MAP.md`
+records where each case came from (it was ported wholesale from a
+since-retired TypeScript reference implementation's equivalent test suite;
+see ROADMAP.md for that history).
+
+The harness (`rust/tests/common/mod.rs`) resolves which binary to spawn via
+`$GATE_BIN` when set, otherwise the binary `cargo test` just built for this
+crate (`env!("CARGO_BIN_EXE_gate")`). Point `GATE_BIN` at any binary that
+implements the same contract - a downloaded release asset, for instance - and
+the same suite exercises it unchanged:
+
+```bash
+cargo build --release --manifest-path rust/Cargo.toml
+GATE_BIN="$PWD/rust/target/release/gate" cargo test --manifest-path rust/Cargo.toml
+```
+
+`cargo test` with no `$GATE_BIN` set runs both the crate's ~439 unit tests
+and this conformance suite against a freshly built debug binary in one pass.
 
 ### Test hermeticity
 
 The suite must be green regardless of what happens to be installed on the
 machine running it - a real `agnosgram` binary on PATH must not change what
-the RETRO tests exercise. `writeJournalEntry` (`src/integrations/agnosgramWrite.ts`)
-resolves the binary from `$GATE_AGNOSGRAM_BIN`, defaulting to `agnosgram` on
-PATH; the fallback (ENOENT) tests point it at a path that can't possibly
-resolve, and the CLI-success-path test points it at a throwaway stub script,
-so both exercise their intended path deterministically either way. This is a
-test-only override, not a user-facing config knob.
+the RETRO tests exercise. `write_journal_entry`
+(`rust/src/integrations/agnosgram_write.rs`) resolves the binary from
+`$GATE_AGNOSGRAM_BIN`, defaulting to `agnosgram` on PATH; the fallback
+(ENOENT) tests point it at a path that can't possibly resolve, and the
+CLI-success-path test points it at a throwaway stub script, so both exercise
+their intended path deterministically either way. This is a test-only
+override, not a user-facing config knob.
 
-## Rust implementation
+## The gate crate
 
-Milestone 6 is a from-scratch Rust port living in `rust/` (crate `gate`,
-`rust/Cargo.toml`, edition 2021, bin target `gate`). See `docs/rust-port.md`
-for the full plan and module layout; the short version:
+`rust/` (crate `gate`, `rust/Cargo.toml`, edition 2021, bin target `gate`) is
+the whole implementation. See `docs/rust-port.md` for module layout; the
+short version:
 
-- **Zero dependencies, std only.** No external crates, mirroring the
-  TypeScript implementation's zero-runtime-dependency policy. JSON, YAML, and
-  SHA-256 are all hand-rolled ports of the `core/*.ts` equivalents. Do not add
-  a `[dependencies]` entry without discussing it first - it breaks a
-  deliberate reviewability property.
+- **Zero dependencies, std only.** No external crates. JSON, YAML, and
+  SHA-256 are all hand-rolled. Do not add a `[dependencies]` entry without
+  discussing it first - it breaks a deliberate reviewability property.
 - **The CLI surface is frozen** (`docs/decisions/0001-surface-freeze.md`):
-  the TypeScript implementation is the reference and the conformance suite
-  (see "Conformance testing" above) is the normative definition of correct
-  behavior. The Rust port must match it byte-for-byte - stdout/stderr, exit
-  codes, on-disk effects - not just "behave similarly."
+  the conformance suite (see "Conformance testing" above) is the normative
+  definition of correct behavior - stdout/stderr, exit codes, on-disk
+  effects, not just "behaves similarly."
 
 Dev loop, from repo root:
 
@@ -96,19 +126,17 @@ cargo fmt --check --manifest-path rust/Cargo.toml
 cargo clippy --all-targets --manifest-path rust/Cargo.toml -- -D warnings
 cargo test --manifest-path rust/Cargo.toml
 cargo build --release --manifest-path rust/Cargo.toml
-GATE_BIN="$PWD/rust/target/release/gate" npm run conformance
 ```
 
-All five must pass before opening a PR that touches `rust/`. Any change to
-the CLI surface (a new command, flag, output string, or on-disk effect) must
-land with a corresponding update to the conformance suite in the **same**
-change, whichever implementation you touched first - the suite is what keeps
-the two implementations from silently drifting apart.
+All four must pass before opening a PR. Any change to the CLI surface (a new
+command, flag, output string, or on-disk effect) must land with a
+corresponding update to `rust/tests/` in the **same** change - the suite is
+what keeps the frozen surface from silently drifting.
 
 ## Conventions
 
 - Commit author must match the local git config; never add `Co-authored-by`
   trailers or AI signatures.
-- Deterministic checks live in code (`src/gates/`), judgment lives in playbooks
-  (`playbooks/`). Never blur that line.
+- Deterministic checks live in code (`rust/src/gates/`), judgment lives in
+  playbooks (`playbooks/`). Never blur that line.
 - Every new gate check needs a passing- and a failing-fixture test.

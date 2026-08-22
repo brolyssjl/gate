@@ -25,3 +25,40 @@ jobs:
         run: npm run build
       - name: Test
         run: npm test
+
+  rust:
+    # Proves the "conformance green on linux-x64 + darwin-arm64" line of the
+    # Rust port roadmap (docs/rust-port.md, Wave 5): the ubuntu leg is the
+    # first place the Rust binary ever runs on Linux, so nothing here is
+    # allowed to be softer than the darwin leg.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      # dtolnay/rust-toolchain: a thin, widely-used wrapper around rustup with
+      # no extra runtime dependencies - matches this repo's zero-dependency
+      # taste better than hand-rolling `rustup default stable` per OS.
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: cargo fmt --check
+        run: cargo fmt --check --manifest-path rust/Cargo.toml
+      - name: cargo clippy
+        run: cargo clippy --all-targets --manifest-path rust/Cargo.toml -- -D warnings
+      - name: cargo test
+        run: cargo test --manifest-path rust/Cargo.toml
+      - name: cargo build --release
+        run: cargo build --release --manifest-path rust/Cargo.toml
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: npm
+      - run: npm ci
+      - name: Build (embeds playbooks, compiles dist/)
+        run: npm run build
+      - name: Conformance suite against the Rust binary
+        run: GATE_BIN="$PWD/rust/target/release/gate" npm run conformance

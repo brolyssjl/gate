@@ -13,7 +13,58 @@ permissions:
   contents: write
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: npm
+      - name: Verify tag / package.json / rust/Cargo.toml versions agree
+        # A Rust binary that prints a version different from the tag it
+        # shipped under would be an install-story bug, so this fails the
+        # release before anything is built.
+        run: |
+          tag_version="${GITHUB_REF_NAME#v}"
+          pkg_version=$(node -p "require('./package.json').version")
+          cargo_version=$(grep -m1 '^version' rust/Cargo.toml | sed -E 's/version = "(.*)"/\1/')
+          echo "tag=$tag_version package.json=$pkg_version rust/Cargo.toml=$cargo_version"
+          if [ "$tag_version" != "$pkg_version" ] || [ "$tag_version" != "$cargo_version" ]; then
+            echo "::error::Version mismatch: tag=v$tag_version package.json=$pkg_version rust/Cargo.toml=$cargo_version"
+            exit 1
+          fi
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+
+  conformance:
+    # Hard gate: the release must never ship a binary that fails its own
+    # surface contract. Builds the same release binary that the linux leg of
+    # build-binaries produces and runs the full conformance suite against it
+    # before anything is created.
+    needs: [test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+      - run: cargo build --release --manifest-path rust/Cargo.toml
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Conformance suite against the linux-x64 release binary
+        run: GATE_BIN="$PWD/rust/target/release/gate" npm run conformance
+
   build-binaries:
+    # Best-effort: a Rust toolchain setup outage on one platform runner must
+    # never block the GitHub release or npm publish - `test` and
+    # `conformance` are the hard gates that keep a broken binary out of the
+    # release entirely.
+    continue-on-error: true
     strategy:
       fail-fast: false
       matrix:
@@ -25,40 +76,34 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20.x
-          cache: npm
-      - run: npm ci
-      - run: npm run build
-      - uses: oven-sh/setup-bun@v2
-      - run: npm run build:binary
-      - run: mv dist-bin/gate "${{ matrix.asset }}"
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+      - run: cargo build --release --manifest-path rust/Cargo.toml
+      - run: mv rust/target/release/gate "${{ matrix.asset }}"
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.asset }}
           path: ${{ matrix.asset }}
 
   release:
-    needs: build-binaries
+    needs: [test, conformance, build-binaries]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20.x
-          cache: npm
-      - run: npm ci
-      - run: npm run build
-      - run: npm test
+      # Binaries are best-effort (see build-binaries' continue-on-error): if every
+      # leg failed there's nothing to download, so this must not fail the release.
       - uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           path: release-assets
           merge-multiple: true
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${{ github.ref_name }}" release-assets/* --generate-notes --verify-tag
+        run: |
+          shopt -s nullglob
+          assets=(release-assets/*)
+          gh release create "${{ github.ref_name }}" "${assets[@]}" --generate-notes --verify-tag
 
   publish-npm:
     needs: release

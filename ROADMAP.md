@@ -63,7 +63,7 @@ load-bearing; pointers, never copies.
 - [x] Honest docs - threat model section (defends against sloppiness, not
       malice), CI caveat for gitignored run state, report durations fixed
 
-## Milestone 3 - Ecosystem & publish ⏳
+## Milestone 3 - Ecosystem & publish ✅
 
 - [x] RETRO phase + Agnosgram write integration (retro → journal, `source:` ids)
 - [x] SDD detection wired into PLAN (`plan.md` cites the spec path)
@@ -155,7 +155,20 @@ remaining items below stay wanted, as post-`1.0.0` hardening rather than
 release gates._
 
 - [x] `1.0.0`: Rust binary is the canonical distribution; TS implementation
-      demoted to reference (retirement decided post-hardening)
+      demoted to reference, then fully retired (see below)
+
+_Owner decision (2026-08-22): the TypeScript implementation is fully retired.
+Rust is the only implementation - zero npm anywhere (no package.json, no
+vitest, no npm in CI or in docs' development/contribution instructions). The
+e2e conformance layer was ported to `rust/tests/` (std-only integration
+tests, see `rust/tests/CONFORMANCE_MAP.md` for the case-by-case mapping)
+before `src/` and `test/` were deleted, so the black-box behavioral contract
+carries over unchanged._
+
+- [x] TypeScript retirement: `src/`, `test/`, and the npm toolchain
+      (`package.json`, `tsconfig.json`, `vitest.config.ts`) removed;
+      conformance suite ported 1:1 to `rust/tests/`; CI and release workflows
+      are cargo-only
 - [ ] Upgrade story: version-stamped playbook copies + drift warning +
       `--refresh` with diff
 - [ ] Real-project soak on the Rust binaries

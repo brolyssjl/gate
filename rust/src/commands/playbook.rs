@@ -9,6 +9,7 @@ use crate::cli::output::{emit, UserError};
 use crate::core::config::{load_config, GateConfig};
 use crate::core::current::current_run_id_or_null;
 use crate::core::json::Value;
+use crate::core::paths::validate_run_id;
 use crate::core::playbooks::resolve_playbook_with_overlays;
 use crate::core::run::{read_run, Run};
 use crate::core::state_machine::Phase;
@@ -56,6 +57,9 @@ fn execute_explicit_phase(root: &Path, arg: &str, args: &ParsedArgs) -> Result<(
     // otherwise whatever run is current for this branch, if any. An
     // unreadable/missing run degrades to no targets rather than failing.
     let explicit_run_id = args.flags.str("run").map(str::to_string);
+    if let Some(id) = &explicit_run_id {
+        validate_run_id(id)?;
+    }
     let run_id = match explicit_run_id {
         Some(id) => Some(id),
         None => current_run_id_or_null(root)?,

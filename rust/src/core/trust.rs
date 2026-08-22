@@ -1,9 +1,14 @@
-//! Port of `src/core/trust.ts`: trust-on-first-use for the `commands:`
-//! block (proposal §9). Gate executes shell commands from config.yml - the
-//! same trust class as npm scripts - so the IMPLEMENT/TEST gates refuse to
-//! run them until a human has run `gate trust`. The approved hash lives in
-//! `.gate/trust.json`, which is tracked: changing a command and re-trusting
-//! land in the same diff, giving PR review the checkpoint.
+//! Port of `src/core/trust.ts`: trust-on-first-use for what gate *executes*
+//! from config.yml. Gate itself runs the `commands:` block - the same trust
+//! class as npm scripts - so the IMPLEMENT/TEST gates refuse to run them
+//! until a human has run `gate trust`. `scope_ignore` and playbook
+//! overrides/overlays (SEC-01) ride in the same hash even though gate
+//! doesn't execute them directly: they're what gate *tells the agent* to
+//! execute, or what the agent's own diff is allowed to touch without
+//! challenge - an attacker who can edit either gets the same effective
+//! control as one who can edit `commands:`. The approved hash lives in
+//! `.gate/trust.json`, which is tracked: changing any of these and
+//! re-trusting land in the same diff, giving PR review the checkpoint.
 
 use std::fs;
 use std::io;

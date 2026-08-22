@@ -32,11 +32,14 @@ it falls back to `gh release download`, which reuses your GitHub auth:
 git clone https://github.com/brolyssjl/gate.git && ./gate/install.sh
 ```
 
-`install.sh` always installs the latest release; on a platform without a
-prebuilt binary it prints build-from-source steps instead of failing
-silently. Building from source needs only a stable Rust toolchain - the
-crate has zero external dependencies, and the same conformance suite that
-gates every release defines its behavior:
+`install.sh` verifies the downloaded binary against the release's
+`SHA256SUMS` before installing it - a checksum mismatch aborts with nothing
+installed. It installs the latest release by default; `GATE_VERSION=X.Y.Z
+./install.sh` pins an exact one instead. On a platform without a prebuilt
+binary it prints build-from-source steps rather than failing silently.
+Building from source needs only a stable Rust toolchain - the crate has zero
+external dependencies, and the same conformance suite that gates every
+release defines its behavior:
 
 ```bash
 git clone https://github.com/brolyssjl/gate.git
@@ -46,9 +49,8 @@ cargo build --release --manifest-path rust/Cargo.toml
 ```
 
 gate is not published to npm, and per the Milestone 6 owner decision
-recorded in ROADMAP.md, never will be. Contributors
-working on the TypeScript reference implementation still use Node >= 20
-(`npm ci && npm run build`, then `node dist/cli.js`); see CONTRIBUTING.md.
+recorded in ROADMAP.md, never will be. Rust is the only implementation;
+see CONTRIBUTING.md for the dev loop.
 
 ## The agent loop is two commands
 
@@ -118,7 +120,10 @@ inherits the command pin.
 
 Plan *quality*, debugging *rigor*, and review *depth* are judgment, not code -
 they live in editable Markdown **playbooks** (`.gate/playbooks/*.md`) the CLI
-serves to the agent, never in the gates.
+serves to the agent, never in the gates. A playbook is an instruction to the
+agent the same way a `commands:` entry is an instruction to the shell, so an
+override or overlay only takes effect once it's covered by `gate trust` -
+see "Command trust (TOFU)".
 
 ## Profiles
 
@@ -242,10 +247,12 @@ phase runs.** IMPLEMENT/TEST/DEBUG resolve affected targets from the real
 changed files and run each target's own commands, producing bracketed check
 names (`implement.build[api]`, `test.command[web]`) so a change touching both
 stacks must pass both. `gate playbook` appends a `## Target overlay: <name>`
-section per affected target that declares one. With no `targets:` configured,
-or none affected by the change, behavior and check names are byte-identical
-to a single-stack repo - targets are purely additive. `gate start --target
-<a,b>` overrides resolution for the whole run.
+section per affected target that declares one - once `gate trust` covers it
+(see "Command trust (TOFU)"); an untrusted overlay is refused, not appended.
+With no `targets:` configured, or none affected by the change, behavior and
+check names are byte-identical to a single-stack repo - targets are purely
+additive. `gate start --target <a,b>` overrides resolution for the whole
+run.
 
 ## Scope noise (`scope_ignore`)
 
@@ -411,6 +418,19 @@ matches; changing a command invalidates trust until you re-run `gate trust`.
 re-trust land in the same diff for review. `gate trust --check` reports status
 (exit 0/1) without writing.
 
+The same hash also covers **playbooks** - `.gate/playbooks/<phase>.md`
+overrides and each target's `playbooks:` overlay file (path *and* content,
+so repointing an already-trusted path at different content still voids
+trust). Gate never executes a playbook itself, but it's what gate *tells the
+agent* to do, and an attacker who can silently rewrite that instruction has
+the same effective control as one who can rewrite a command. While the hash
+is stale or absent, an override/overlay is refused - not applied - and
+resolution falls back to the bundled or embedded default with a banner
+naming what was refused and pointing at `gate trust`; nothing is a hard
+error. `gate trust` (and `--check`) list which playbook paths are covered
+alongside the commands hash, the same way it's always reported what it's
+approving.
+
 Approval is deliberately separate from writing the plan: `gate approve` records
 who signed off and the plan's content hash in `run.json`, so the author can't
 self-approve by flipping a flag, and editing the plan afterward voids it. A CLI
@@ -452,24 +472,22 @@ upgrade story, docs site). See `ROADMAP.md` for the full plan.
 
 ## Development
 
-The following commands are the TypeScript reference implementation's dev loop;
-for the canonical (Rust) dev loop, see CONTRIBUTING.md's "Rust implementation" section.
-
 ```bash
-npm test          # vitest: state machine, gates against fixtures, TOON, CLI e2e
-npm run build     # embeds playbooks (scripts/embedPlaybooks.mjs), then tsc → dist/
-npm run typecheck # tsc --noEmit - the project's lint
-npm run conformance   # the CLI-only black-box subset, runnable against any $GATE_BIN
+cargo build --release --manifest-path rust/Cargo.toml   # -> rust/target/release/gate
+cargo test --manifest-path rust/Cargo.toml               # unit tests + conformance suite
+cargo clippy --all-targets --manifest-path rust/Cargo.toml -- -D warnings
 ```
 
-`npm run conformance` never imports Gate's internals - it only spawns the
-`gate` binary and asserts on argv-in/exit-code+stdout+`.gate/`-state-out, so
-the suite validates the Rust port in `rust/` (it is CI's rust job) - see CONTRIBUTING.md.
+`cargo test` runs both the crate's unit tests and the black-box conformance
+suite in `rust/tests/` - integration tests that never import Gate's
+internals, only spawn the `gate` binary and assert on
+argv-in/exit-code+stdout+`.gate/`-state-out (point them at any binary via
+`$GATE_BIN`, e.g. a downloaded release asset). See CONTRIBUTING.md.
 
 ### Single-file binary
 
 Release binaries are produced by `cargo build --release` in
-`.github/workflows/release.yml`'s build-binaries job. Playbooks are embedded
+`.github/workflows/release.yml`'s build-and-verify job. Playbooks are embedded
 in the Rust binary at compile time via `include_str!()`. To build one
 locally, use the same cargo command from the repo root:
 

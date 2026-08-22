@@ -1,8 +1,5 @@
-node_modules/
-dist/
 *.log
 .DS_Store
-coverage/
 rust/target/
 
 # Gate's own ephemeral run folders (config + playbooks stay tracked)

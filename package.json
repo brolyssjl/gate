@@ -1,6 +1,6 @@
 {
   "name": "gate-cli",
-  "version": "0.4.0",
+  "version": "1.0.0",
   "private": true,
   "description": "Agent-agnostic quality harness: turns the dev flow into an enforced state machine with deterministic gates.",
   "keywords": [

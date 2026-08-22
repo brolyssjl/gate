@@ -251,6 +251,8 @@ fn targets_target_override_wins_and_playbook_overlays_surface_for_affected_targe
         ".gate/config.yml",
         "commands: {}\nthresholds: {}\ntargets:\n  web:\n    match: [\"apps/web/**\"]\n    playbooks: { test: \".gate/playbooks/test.web.md\" }\n  api:\n    match: [\"apps/api/**\"]\nphases: {}\nintegrations: { agnosgram: off, sdd: off }\n",
     );
+    // SEC-01: the target playbook overlay must be trusted before it takes effect.
+    assert_eq!(gate(&repo, &["trust"]).code, 0);
 
     assert_eq!(
         gate(&repo, &["start", "target override demo", "--target", "web"]).code,
@@ -281,6 +283,8 @@ fn playbook_run_honors_the_named_runs_targets_not_the_current_branchs_own_run() 
         ".gate/config.yml",
         "commands: {}\nthresholds: {}\ntargets:\n  web:\n    match: [\"apps/web/**\"]\n    playbooks: { test: \".gate/playbooks/test.web.md\" }\n  api:\n    match: [\"apps/api/**\"]\n    playbooks: { test: \".gate/playbooks/test.api.md\" }\nphases: {}\nintegrations: { agnosgram: off, sdd: off }\n",
     );
+    // SEC-01: both target playbook overlays must be trusted before they take effect.
+    assert_eq!(gate(&repo, &["trust"]).code, 0);
     let main_branch = git_out(&repo, &["branch", "--show-current"]);
 
     assert_eq!(
@@ -352,6 +356,8 @@ fn target_playbook_overlays_surface_inline_at_gate_start_not_just_the_standalone
         ".gate/config.yml",
         "commands: {}\nthresholds: {}\ntargets:\n  api:\n    match: [\"apps/api/**\"]\n    playbooks: { plan: .gate/playbooks/plan.api.md }\nphases: {}\nintegrations: { agnosgram: off, sdd: off }\n",
     );
+    // SEC-01: the target playbook overlay must be trusted before it takes effect.
+    assert_eq!(gate(&repo, &["trust"]).code, 0);
 
     let started = gate(&repo, &["start", "api overlay demo", "--target", "api"]);
     assert_eq!(started.code, 0);
@@ -373,6 +379,8 @@ fn target_playbook_overlays_surface_inline_at_gate_nexts_phase_entry_print() {
         ".gate/config.yml",
         "commands: {}\nthresholds: {}\ntargets:\n  api:\n    match: [\"apps/api/**\"]\n    playbooks: { test: .gate/playbooks/test.api.md }\nphases: {}\nintegrations: { agnosgram: off, sdd: off }\n",
     );
+    // SEC-01: the target playbook overlay must be trusted before it takes effect.
+    assert_eq!(gate(&repo, &["trust"]).code, 0);
     gate(&repo, &["start", "api overlay demo", "--target", "api"]);
     let run_id = gate(&repo, &["status", "--json"])
         .json()
@@ -407,6 +415,8 @@ fn target_playbook_overlays_surface_inline_in_gate_reviews_emitted_rubric() {
         ".gate/config.yml",
         "commands: {}\nthresholds: {}\ntargets:\n  api:\n    match: [\"apps/api/**\"]\n    playbooks: { review: .gate/playbooks/review.api.md }\nphases: {}\nintegrations: { agnosgram: off, sdd: off }\n",
     );
+    // SEC-01: the target playbook overlay must be trusted before it takes effect.
+    assert_eq!(gate(&repo, &["trust"]).code, 0);
     gate(&repo, &["start", "api overlay demo", "--target", "api"]);
     assert_eq!(gate(&repo, &["skip", "PLAN", "--reason", "test"]).code, 0);
     assert_eq!(
@@ -418,6 +428,74 @@ fn target_playbook_overlays_surface_inline_in_gate_reviews_emitted_rubric() {
     let rubric = review.str("rubric").unwrap();
     assert!(rubric.contains("## Target overlay: api"));
     assert!(rubric.contains("Check the api error envelope."));
+}
+
+/// SEC-01: a target playbook overlay declared in config.yml is refused
+/// (never appended) until a human runs `gate trust` - the untrusted config
+/// change must not silently start steering the agent.
+#[test]
+fn sec01_untrusted_target_playbook_overlay_is_refused_until_gate_trust_runs() {
+    let repo = make_repo(&[]);
+    gate(&repo, &["init"]);
+    write_file(
+        &repo,
+        ".gate/playbooks/plan.api.md",
+        "# PLAN overlay\n\nAPI_OVERLAY_MARKER\n",
+    );
+    write_file(
+        &repo,
+        ".gate/config.yml",
+        "commands: {}\nthresholds: {}\ntargets:\n  api:\n    match: [\"apps/api/**\"]\n    playbooks: { plan: .gate/playbooks/plan.api.md }\nphases: {}\nintegrations: { agnosgram: off, sdd: off }\n",
+    );
+    // No `gate trust` yet: the overlay must be refused, not appended, in the
+    // playbook `gate start` prints inline.
+    let started = gate(&repo, &["start", "sec01 overlay demo", "--target", "api"]);
+    assert_eq!(started.code, 0);
+    assert!(!started.stdout.contains("## Target overlay: api"));
+    assert!(!started.stdout.contains("API_OVERLAY_MARKER"));
+    assert!(started.stdout.contains("UNTRUSTED PLAYBOOK IGNORED"));
+    assert!(started.stdout.contains("gate trust"));
+    let run_id = gate(&repo, &["status", "--json"])
+        .json()
+        .str("id")
+        .unwrap()
+        .to_string();
+
+    // Trusting it makes the overlay take effect for the same run.
+    assert_eq!(gate(&repo, &["trust"]).code, 0);
+    let trusted = gate(&repo, &["playbook", "PLAN", "--run", &run_id, "--json"]).json();
+    let trusted_text = trusted.str("playbook").unwrap();
+    assert!(trusted_text.contains("## Target overlay: api"));
+    assert!(trusted_text.contains("API_OVERLAY_MARKER"));
+}
+
+/// SEC-01: a `.gate/playbooks/<phase>.md` override is refused (falls back
+/// to the bundled/embedded default) until a human runs `gate trust`, and
+/// editing an already-trusted override again without re-trusting refuses it
+/// again.
+#[test]
+fn sec01_untrusted_dot_gate_playbooks_override_is_refused_until_gate_trust_runs() {
+    let repo = make_repo(&[]);
+    gate(&repo, &["init"]);
+    write_file(&repo, ".gate/playbooks/plan.md", "# CUSTOM_PLAN_MARKER\n");
+
+    let refused = gate(&repo, &["playbook", "PLAN", "--json"]).json();
+    let refused_text = refused.str("playbook").unwrap();
+    assert!(!refused_text.contains("CUSTOM_PLAN_MARKER"));
+    assert!(refused_text.contains("UNTRUSTED PLAYBOOK IGNORED"));
+    assert!(refused_text.contains(".gate/playbooks/plan.md"));
+    assert!(refused_text.contains("gate trust"));
+
+    assert_eq!(gate(&repo, &["trust"]).code, 0);
+    let trusted = gate(&repo, &["playbook", "PLAN", "--json"]).json();
+    assert_eq!(trusted.str("playbook").unwrap(), "# CUSTOM_PLAN_MARKER\n");
+
+    // Editing it again without re-trusting is refused again.
+    write_file(&repo, ".gate/playbooks/plan.md", "# TAMPERED_MARKER\n");
+    let tampered = gate(&repo, &["playbook", "PLAN", "--json"]).json();
+    let tampered_text = tampered.str("playbook").unwrap();
+    assert!(!tampered_text.contains("TAMPERED_MARKER"));
+    assert!(tampered_text.contains("UNTRUSTED PLAYBOOK IGNORED"));
 }
 
 #[test]

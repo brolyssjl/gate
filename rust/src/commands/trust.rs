@@ -8,6 +8,7 @@ use std::path::Path;
 use crate::cli::args::{parse_args, ParsedArgs};
 use crate::cli::context::require_root;
 use crate::cli::output::{emit, UserError};
+use crate::core::config::trusted_playbook_paths;
 use crate::core::json::Value;
 use crate::core::trust::{
     current_commands_hash, has_no_commands, is_commands_trusted, read_trust, write_trust,
@@ -33,23 +34,26 @@ fn execute(root: &Path, args: &ParsedArgs) -> Result<(), UserError> {
         let trusted = is_commands_trusted(root);
         let record = read_trust(root);
         let current_hash = current_commands_hash(root);
+        let playbook_paths = trusted_playbook_paths(root);
         let human = if trusted {
             format!(
-                "trusted ({})",
+                "trusted ({}){}",
                 if has_no_commands(root) {
                     "no commands to run".to_string()
                 } else {
                     current_hash.clone()
-                }
+                },
+                playbook_summary_suffix(&playbook_paths),
             )
         } else {
             format!(
-                "NOT trusted - run `gate trust` (current {}, stored {})",
+                "NOT trusted - run `gate trust` (current {}, stored {}){}",
                 current_hash,
                 record
                     .as_ref()
                     .map(|r| r.commands_hash.clone())
-                    .unwrap_or_else(|| "none".to_string())
+                    .unwrap_or_else(|| "none".to_string()),
+                playbook_summary_suffix(&playbook_paths),
             )
         };
 
@@ -57,6 +61,7 @@ fn execute(root: &Path, args: &ParsedArgs) -> Result<(), UserError> {
         data.insert("trusted", trusted);
         data.insert("currentHash", current_hash);
         data.insert("storedHash", record.map(|r| r.commands_hash));
+        data.insert("playbookPaths", playbook_paths);
         emit(&human, &data, &args.flags)?;
         // Mirrors TS's `process.exitCode = trusted ? 0 : 1; return;` - the
         // human/JSON output is already on stdout, so the process just needs
@@ -71,20 +76,39 @@ fn execute(root: &Path, args: &ParsedArgs) -> Result<(), UserError> {
         .map(str::to_string)
         .or_else(|| std::env::var("GATE_SESSION_ID").ok());
     let record = write_trust(root, by.as_deref()).map_err(|e| UserError::new(e.to_string()))?;
+    let playbook_paths = trusted_playbook_paths(root);
 
     let human = match &by {
         Some(b) => format!(
-            "Trusted the commands block: {} (by {b})",
-            record.commands_hash
+            "Trusted the commands block: {} (by {b}){}",
+            record.commands_hash,
+            playbook_summary_suffix(&playbook_paths),
         ),
-        None => format!("Trusted the commands block: {}", record.commands_hash),
+        None => format!(
+            "Trusted the commands block: {}{}",
+            record.commands_hash,
+            playbook_summary_suffix(&playbook_paths),
+        ),
     };
     let mut data = Value::object();
     data.insert("trusted", true);
     data.insert("commandsHash", record.commands_hash.clone());
     data.insert("trustedAt", record.trusted_at.clone());
     data.insert("trustedBy", record.trusted_by.clone());
+    data.insert("playbookPaths", playbook_paths);
     emit(&human, &data, &args.flags)
+}
+
+/// " - playbooks: a, b" when non-empty, else "" - SEC-01: `gate trust` must
+/// show/record what it is trusting, and this crate's convention for
+/// `commands:` itself is to show a hash rather than raw content, so
+/// playbooks get the same treatment: name what's covered, not its content.
+fn playbook_summary_suffix(paths: &[String]) -> String {
+    if paths.is_empty() {
+        String::new()
+    } else {
+        format!(" - playbooks: {}", paths.join(", "))
+    }
 }
 
 #[cfg(test)]
@@ -121,6 +145,33 @@ mod tests {
         assert!(root.join(".gate/trust.json").exists());
         assert!(crate::core::trust::is_commands_trusted(&root));
         fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn reports_playbook_override_paths_it_is_trusting() {
+        let root = tmp_dir("playbook-paths");
+        fs::create_dir_all(root.join(".gate/playbooks")).unwrap();
+        fs::write(
+            root.join(".gate/config.yml"),
+            "commands:\n  test: echo hi\n",
+        )
+        .unwrap();
+        fs::write(root.join(".gate/playbooks/plan.md"), "# custom plan\n").unwrap();
+
+        execute(&root, &args(&[])).unwrap();
+
+        let paths = trusted_playbook_paths(&root);
+        assert_eq!(paths, vec![".gate/playbooks/plan.md".to_string()]);
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn playbook_summary_suffix_is_empty_when_nothing_to_report() {
+        assert_eq!(playbook_summary_suffix(&[]), "");
+        assert_eq!(
+            playbook_summary_suffix(&["a.md".to_string(), "b.md".to_string()]),
+            " - playbooks: a.md, b.md"
+        );
     }
 
     #[test]

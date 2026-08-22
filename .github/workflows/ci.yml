@@ -25,3 +25,34 @@ jobs:
         run: npm run build
       - name: Test
         run: npm test
+
+  rust:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: cargo fmt --check
+        run: cargo fmt --check --manifest-path rust/Cargo.toml
+      - name: cargo clippy
+        run: cargo clippy --all-targets --manifest-path rust/Cargo.toml -- -D warnings
+      - name: cargo test
+        run: cargo test --manifest-path rust/Cargo.toml
+      - name: cargo build --release
+        run: cargo build --release --manifest-path rust/Cargo.toml
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: npm
+      - name: Install the conformance harness (npm)
+        run: npm ci
+      - name: Compile the conformance suite
+        run: npm run build
+      - name: Conformance suite against the Rust binary
+        run: GATE_BIN="$PWD/rust/target/release/gate" npm run conformance

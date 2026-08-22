@@ -10,7 +10,7 @@ use crate::core::config::{load_config, GateConfig};
 use crate::core::current::{
     read_current_run_id, resolve_branch_key, BranchKeyResolution, NO_GIT_BRANCH_KEY,
 };
-use crate::core::paths::find_gate_root;
+use crate::core::paths::{find_gate_root, validate_run_id};
 use crate::core::run::{read_run, Run, RunStatus};
 
 /// Port of `requireRoot`.
@@ -39,6 +39,7 @@ pub fn require_active_run(args: Option<&ParsedArgs>) -> Result<ActiveContext, Us
 
     let explicit = args.and_then(|a| a.flags.str("run")).map(str::to_string);
     if let Some(explicit) = explicit {
+        validate_run_id(&explicit)?;
         let run = read_run(&root, &explicit)?;
         if run.status != RunStatus::Active {
             return Err(UserError::new(format!(

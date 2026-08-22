@@ -852,3 +852,62 @@ fn json_schema_check_report_playbook_expose_stable_top_level_keys() {
         vec!["hints", "phase", "playbook"]
     );
 }
+
+/// SEC-04: `gate report <id>` must reject a path-traversal / absolute run
+/// id before it ever reaches `run_paths`/`archive_path` - `gate report
+/// ../../x` must not be able to escape `.gate/runs/`.
+#[test]
+fn sec04_gate_report_rejects_a_path_traversal_run_id() {
+    let repo = make_repo(&[]);
+    gate(&repo, &["init"]);
+
+    for bad in ["../../etc/passwd", "..", "a/../../b", "a/b", "/etc/passwd"] {
+        let res = gate(&repo, &["report", bad]);
+        assert_eq!(res.code, 2, "expected usage error for {bad:?}");
+        assert!(res.stderr.contains("invalid run id") || res.stderr.contains("empty"));
+    }
+
+    // A normal, gate-generated run id is unaffected.
+    gate(&repo, &["start", "sec04 demo", "--profile", "docs"]);
+    let run_id = gate(&repo, &["status", "--json"])
+        .json()
+        .str("id")
+        .unwrap()
+        .to_string();
+    let ok = gate(&repo, &["report", &run_id, "--json"]);
+    assert_eq!(ok.code, 0);
+    assert_eq!(ok.json().str("id"), Some(run_id.as_str()));
+}
+
+/// SEC-04: the shared `--run <id>` flag (every phase command, resolved via
+/// `cli/context.rs`'s `require_active_run`) must reject the same
+/// traversal/absolute shapes, not just `gate report`'s positional.
+#[test]
+fn sec04_gate_run_flag_rejects_a_path_traversal_run_id() {
+    let repo = make_repo(&[]);
+    gate(&repo, &["init"]);
+    gate(
+        &repo,
+        &["start", "sec04 run flag demo", "--profile", "docs"],
+    );
+
+    for bad in ["../../etc/passwd", "..", "a/b"] {
+        let res = gate(&repo, &["check", "--run", bad]);
+        assert_eq!(res.code, 2, "expected usage error for {bad:?}");
+        assert!(res.stderr.contains("invalid run id"));
+    }
+}
+
+/// SEC-04: `gate playbook <phase> --run <id>` goes through a second,
+/// independent `--run` resolution path (`commands/playbook.rs`'s
+/// `execute_explicit_phase`, not `require_active_run`) - must reject the
+/// same shapes.
+#[test]
+fn sec04_gate_playbook_run_flag_rejects_a_path_traversal_run_id() {
+    let repo = make_repo(&[]);
+    gate(&repo, &["init"]);
+
+    let res = gate(&repo, &["playbook", "PLAN", "--run", "../../etc/passwd"]);
+    assert_eq!(res.code, 2);
+    assert!(res.stderr.contains("invalid run id"));
+}

@@ -3,6 +3,36 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::cli::output::UserError;
+
+/// Reject a run id that could escape `.gate/runs/`/`.gate/archive/` via a
+/// path-traversal or absolute-path component (SEC-04: `gate report
+/// ../../x` otherwise reaches `run_paths`'s plain `Path::join` unchecked,
+/// and `Path::join` with an absolute second argument discards the base
+/// entirely). Every entry point that takes a run id from free text - the
+/// `gate report <id>` positional, `gate playbook <phase> --run <id>`, and
+/// the shared `--run <id>` flag every other phase command accepts
+/// (`cli/context.rs`'s `require_active_run`) - calls this before the id
+/// ever reaches `run_paths`/`archive_path`. A gate-generated id (a
+/// date-prefixed slug) always passes; this only ever rejects something a
+/// human typed by hand or an attacker crafted.
+pub fn validate_run_id(id: &str) -> Result<(), UserError> {
+    if id.is_empty() {
+        return Err(UserError::usage("run id must not be empty"));
+    }
+    if id.contains('/') || id.contains('\\') || id.contains("..") {
+        return Err(UserError::usage(format!(
+            "invalid run id \"{id}\" - run ids may not contain '/', '\\', or '..'"
+        )));
+    }
+    if Path::new(id).is_absolute() {
+        return Err(UserError::usage(format!(
+            "invalid run id \"{id}\" - run ids may not be an absolute path"
+        )));
+    }
+    Ok(())
+}
+
 /// Resolve the root of a Gate project by walking up from `start` until a
 /// `.gate/` directory is found. Returns `None` if none exists (not yet
 /// init'd). TS defaults `start` to `process.cwd()`; callers here pass
@@ -174,5 +204,42 @@ mod tests {
     fn archive_path_joins_the_run_id_json_file() {
         let root = Path::new("/tmp/proj");
         assert_eq!(archive_path(root, "r1"), root.join(".gate/archive/r1.json"));
+    }
+
+    #[test]
+    fn validate_run_id_accepts_ordinary_gate_generated_slugs() {
+        assert!(validate_run_id("2026-08-22-add-password-reset").is_ok());
+        assert!(validate_run_id("r1").is_ok());
+        assert!(validate_run_id("finished-run").is_ok());
+    }
+
+    #[test]
+    fn validate_run_id_rejects_empty() {
+        assert!(validate_run_id("").is_err());
+    }
+
+    #[test]
+    fn validate_run_id_rejects_path_traversal() {
+        assert!(validate_run_id("../../etc/passwd").is_err());
+        assert!(validate_run_id("..").is_err());
+        assert!(validate_run_id("a/../../b").is_err());
+    }
+
+    #[test]
+    fn validate_run_id_rejects_path_separators() {
+        assert!(validate_run_id("a/b").is_err());
+        assert!(validate_run_id("a\\b").is_err());
+    }
+
+    #[test]
+    fn validate_run_id_rejects_absolute_paths() {
+        assert!(validate_run_id("/etc/passwd").is_err());
+    }
+
+    #[test]
+    fn validate_run_id_error_is_a_usage_error_naming_the_bad_id() {
+        let err = validate_run_id("../escape").unwrap_err();
+        assert_eq!(err.exit_code(), 2);
+        assert!(err.message().contains("../escape"));
     }
 }

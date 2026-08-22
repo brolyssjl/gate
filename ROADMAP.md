@@ -186,7 +186,7 @@ carries over unchanged._
 _Open items from the 2026-08-22 audit + remediation (PRs gate#11/#12,
 agnosgram#14, all merged) that don't fit the milestones above._
 
-- [ ] Cut `1.0.1` so checksum-verified installs become real: the `1.0.0`
+- [x] Cut `1.0.1` so checksum-verified installs become real: the `1.0.0`
       release predates `SHA256SUMS`; the first post-#11 tag publishes it.
       Small, do soon. (audit SEC-02 tail)
 - [ ] Failure-streak cap - owner decision, then likely a feature: `gate

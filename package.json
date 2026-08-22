@@ -33,14 +33,12 @@
   },
   "scripts": {
     "build": "node scripts/embedPlaybooks.mjs && tsc -p tsconfig.json",
-    "build:binary": "node scripts/buildBinary.mjs",
     "dev": "tsx src/cli.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "conformance": "vitest run test/cli.e2e.test.ts test/concurrency.test.ts test/humanReview.test.ts test/prune.test.ts test/guard.test.ts test/amend.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "tsc -p tsconfig.json --noEmit",
-    "prepublishOnly": "npm run build && npm test"
+    "lint": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "yaml": "^2.5.1"

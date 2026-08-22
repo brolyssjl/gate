@@ -144,7 +144,7 @@ formats) carry over unchanged._
       `--json` schema snapshots declared the port contract; conformance mode
       (`$GATE_BIN` + `npm run conformance`) green against the TS binary.
       Declared in `docs/decisions/0001-surface-freeze.md`
-- [ ] Rust crate in-repo: identical surface, conformance suite green on
+- [x] Rust crate in-repo: identical surface, conformance suite green on
       linux-x64 + darwin-arm64; release pipeline builds Rust binaries on tag;
       `1.0.0-rc` tags from here
 - [ ] `1.0.0` gate (all required): upgrade story (version-stamped playbook

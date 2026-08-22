@@ -1,0 +1,579 @@
+//! Port of `src/core/config.ts`: `.gate/config.yml` loading and validation.
+
+use std::fs;
+use std::path::Path;
+
+use crate::cli::output::UserError;
+use crate::core::json::{self, Value as JsonValue};
+use crate::core::paths::gate_paths;
+use crate::core::yaml::{self, YamlValue};
+
+/// Machine actions per phase. Missing commands mean "no such action here".
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Commands {
+    pub build: Option<String>,
+    pub test: Option<String>,
+    pub lint: Option<String>,
+    pub coverage: Option<String>,
+}
+
+impl Commands {
+    /// `{ ...base, ...override }`: `other`'s fields win where present.
+    pub fn layered_over(&self, other: &Commands) -> Commands {
+        Commands {
+            build: other.build.clone().or_else(|| self.build.clone()),
+            test: other.test.clone().or_else(|| self.test.clone()),
+            lint: other.lint.clone().or_else(|| self.lint.clone()),
+            coverage: other.coverage.clone().or_else(|| self.coverage.clone()),
+        }
+    }
+}
+
+/// Minimum percentage of changed lines that must be covered.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct Thresholds {
+    pub diff_coverage: Option<f64>,
+}
+
+impl Thresholds {
+    pub fn layered_over(&self, other: &Thresholds) -> Thresholds {
+        Thresholds {
+            diff_coverage: other.diff_coverage.or(self.diff_coverage),
+        }
+    }
+}
+
+/// Diff-coverage report formats Gate can parse.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CoverageFormat {
+    Istanbul,
+    Generic,
+    CoveragePy,
+    GoCover,
+    Lcov,
+    Auto,
+}
+
+const COVERAGE_FORMATS: &[&str] = &[
+    "istanbul",
+    "generic",
+    "coverage-py",
+    "go-cover",
+    "lcov",
+    "auto",
+];
+
+impl CoverageFormat {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            CoverageFormat::Istanbul => "istanbul",
+            CoverageFormat::Generic => "generic",
+            CoverageFormat::CoveragePy => "coverage-py",
+            CoverageFormat::GoCover => "go-cover",
+            CoverageFormat::Lcov => "lcov",
+            CoverageFormat::Auto => "auto",
+        }
+    }
+
+    pub fn from_str_opt(value: &str) -> Option<CoverageFormat> {
+        match value {
+            "istanbul" => Some(CoverageFormat::Istanbul),
+            "generic" => Some(CoverageFormat::Generic),
+            "coverage-py" => Some(CoverageFormat::CoveragePy),
+            "go-cover" => Some(CoverageFormat::GoCover),
+            "lcov" => Some(CoverageFormat::Lcov),
+            "auto" => Some(CoverageFormat::Auto),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct TargetConfig {
+    pub match_globs: Vec<String>,
+    pub commands: Commands,
+    pub thresholds: Thresholds,
+    pub playbooks: Vec<(String, String)>,
+    /// Overrides the top-level `coverage_format` for this target only.
+    pub coverage_format: Option<CoverageFormat>,
+}
+
+/// `gate prune` retention defaults (Milestone 3, additive). CLI flags win
+/// when given.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct RetentionConfig {
+    /// Keep the N most recently updated non-active runs (default 10).
+    pub keep: Option<i64>,
+    /// Additionally require a candidate to be older than N days to be pruned.
+    pub days: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct GateConfig {
+    pub commands: Commands,
+    pub thresholds: Thresholds,
+    pub targets: Vec<(String, TargetConfig)>,
+    pub phases: Vec<(String, String)>,
+    pub integrations: Vec<(String, String)>,
+    /// Coverage report format hint. Defaults to auto-detect.
+    pub coverage_format: CoverageFormat,
+    /// `gate prune` retention defaults. Deliberately NOT part of the trust
+    /// hash (`commands_block_hash_source`) - it configures which run
+    /// folders get archived, never a command that executes.
+    pub retention: RetentionConfig,
+    /// Glob list of paths the scope check (IMPLEMENT/DEBUG) treats as noise
+    /// rather than an undeclared file. Part of the trust hash: it changes
+    /// what the scope check accepts, so widening it needs the same
+    /// re-trust as changing a command.
+    pub scope_ignore: Vec<String>,
+}
+
+impl GateConfig {
+    pub fn get_target(&self, name: &str) -> Option<&TargetConfig> {
+        self.targets.iter().find(|(n, _)| n == name).map(|(_, t)| t)
+    }
+}
+
+impl Default for GateConfig {
+    fn default() -> Self {
+        GateConfig {
+            commands: Commands::default(),
+            thresholds: Thresholds::default(),
+            targets: Vec::new(),
+            phases: Vec::new(),
+            integrations: Vec::new(),
+            coverage_format: CoverageFormat::Auto,
+            retention: RetentionConfig::default(),
+            scope_ignore: Vec::new(),
+        }
+    }
+}
+
+fn as_string_map(value: Option<&YamlValue>) -> Vec<(String, String)> {
+    let Some(YamlValue::Map(entries)) = value else {
+        return Vec::new();
+    };
+    entries
+        .iter()
+        .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+        .collect()
+}
+
+fn extract_commands(value: Option<&YamlValue>) -> Commands {
+    let Some(YamlValue::Map(entries)) = value else {
+        return Commands::default();
+    };
+    let get = |key: &str| {
+        entries
+            .iter()
+            .find(|(k, _)| k == key)
+            .and_then(|(_, v)| v.as_str())
+            .map(String::from)
+    };
+    Commands {
+        build: get("build"),
+        test: get("test"),
+        lint: get("lint"),
+        coverage: get("coverage"),
+    }
+}
+
+fn extract_thresholds(value: Option<&YamlValue>) -> Thresholds {
+    let Some(YamlValue::Map(entries)) = value else {
+        return Thresholds::default();
+    };
+    let diff_coverage = entries
+        .iter()
+        .find(|(k, _)| k == "diff_coverage")
+        .and_then(|(_, v)| v.as_f64());
+    Thresholds { diff_coverage }
+}
+
+fn extract_retention(value: Option<&YamlValue>) -> RetentionConfig {
+    let Some(YamlValue::Map(entries)) = value else {
+        return RetentionConfig::default();
+    };
+    let get = |key: &str| {
+        entries
+            .iter()
+            .find(|(k, _)| k == key)
+            .and_then(|(_, v)| v.as_i64())
+    };
+    RetentionConfig {
+        keep: get("keep"),
+        days: get("days"),
+    }
+}
+
+fn extract_string_array(value: Option<&YamlValue>) -> Option<Vec<String>> {
+    match value {
+        Some(YamlValue::Array(items)) => Some(
+            items
+                .iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect(),
+        ),
+        _ => None,
+    }
+}
+
+/// A malformed target block (most dangerously a missing/empty `match`) used
+/// to reach the gates and blow up deep inside glob matching. Fail fast and
+/// friendly here instead, naming the offending target so the fix is
+/// obvious.
+fn validate_and_extract_targets(
+    raw_targets: Option<&YamlValue>,
+) -> Result<Vec<(String, TargetConfig)>, UserError> {
+    let Some(YamlValue::Map(entries)) = raw_targets else {
+        return Ok(Vec::new());
+    };
+    let mut out = Vec::with_capacity(entries.len());
+    for (name, raw) in entries {
+        let YamlValue::Map(fields) = raw else {
+            return Err(UserError::new(format!(
+                ".gate/config.yml: target \"{name}\" must be a mapping"
+            )));
+        };
+        let field = |key: &str| fields.iter().find(|(k, _)| k == key).map(|(_, v)| v);
+
+        let match_globs = match field("match") {
+            Some(YamlValue::Array(items))
+                if !items.is_empty()
+                    && items
+                        .iter()
+                        .all(|v| matches!(v.as_str(), Some(s) if !s.trim().is_empty())) =>
+            {
+                items
+                    .iter()
+                    .map(|v| v.as_str().unwrap().to_string())
+                    .collect::<Vec<_>>()
+            }
+            _ => {
+                return Err(UserError::new(format!(
+                    ".gate/config.yml: target \"{name}\" must declare a non-empty `match` list of glob strings"
+                )));
+            }
+        };
+
+        if let Some(v) = field("commands") {
+            if !matches!(v, YamlValue::Map(_)) {
+                return Err(UserError::new(format!(
+                    ".gate/config.yml: target \"{name}\".commands must be a mapping"
+                )));
+            }
+        }
+        if let Some(v) = field("thresholds") {
+            if !matches!(v, YamlValue::Map(_)) {
+                return Err(UserError::new(format!(
+                    ".gate/config.yml: target \"{name}\".thresholds must be a mapping"
+                )));
+            }
+        }
+        if let Some(v) = field("playbooks") {
+            if !matches!(v, YamlValue::Map(_)) {
+                return Err(UserError::new(format!(
+                    ".gate/config.yml: target \"{name}\".playbooks must be a mapping of phase -> path"
+                )));
+            }
+        }
+        let coverage_format = match field("coverage_format") {
+            None => None,
+            Some(v) => {
+                let s = v.as_str().unwrap_or("");
+                match CoverageFormat::from_str_opt(s) {
+                    Some(cf) => Some(cf),
+                    None => {
+                        return Err(UserError::new(format!(
+                            ".gate/config.yml: target \"{name}\".coverage_format must be one of {}",
+                            COVERAGE_FORMATS.join(", ")
+                        )));
+                    }
+                }
+            }
+        };
+
+        out.push((
+            name.clone(),
+            TargetConfig {
+                match_globs,
+                commands: extract_commands(field("commands")),
+                thresholds: extract_thresholds(field("thresholds")),
+                playbooks: as_string_map(field("playbooks")),
+                coverage_format,
+            },
+        ));
+    }
+    Ok(out)
+}
+
+fn read_raw_config(root: &Path) -> Result<Option<YamlValue>, UserError> {
+    let config_path = gate_paths(root).config;
+    if !config_path.exists() {
+        return Ok(None);
+    }
+    let text = fs::read_to_string(&config_path).map_err(|e| UserError::new(e.to_string()))?;
+    let parsed = yaml::parse_yaml(&text).map_err(|e| UserError::new(e.to_string()))?;
+    Ok(Some(parsed))
+}
+
+pub fn load_config(root: &Path) -> Result<GateConfig, UserError> {
+    let Some(raw) = read_raw_config(root)? else {
+        return Ok(GateConfig::default());
+    };
+    let YamlValue::Map(_) = &raw else {
+        return Ok(GateConfig::default());
+    };
+
+    let targets = validate_and_extract_targets(raw.get("targets"))?;
+
+    let coverage_format = match raw.get("coverage_format") {
+        None => CoverageFormat::Auto,
+        Some(v) => {
+            let s = v.as_str().unwrap_or("");
+            CoverageFormat::from_str_opt(s).ok_or_else(|| {
+                UserError::new(format!(
+                    ".gate/config.yml: coverage_format must be one of {}",
+                    COVERAGE_FORMATS.join(", ")
+                ))
+            })?
+        }
+    };
+
+    let scope_ignore = match raw.get("scope_ignore") {
+        None => Vec::new(),
+        Some(v) => {
+            let ok = matches!(v, YamlValue::Array(items) if items.iter().all(|item| matches!(item.as_str(), Some(s) if !s.trim().is_empty())));
+            if !ok {
+                return Err(UserError::new(
+                    ".gate/config.yml: scope_ignore must be a list of glob strings",
+                ));
+            }
+            extract_string_array(Some(v)).unwrap_or_default()
+        }
+    };
+
+    Ok(GateConfig {
+        commands: extract_commands(raw.get("commands")),
+        thresholds: extract_thresholds(raw.get("thresholds")),
+        targets,
+        phases: as_string_map(raw.get("phases")),
+        integrations: as_string_map(raw.get("integrations")),
+        coverage_format,
+        retention: extract_retention(raw.get("retention")),
+        scope_ignore,
+    })
+}
+
+fn commands_to_json(commands: &Commands) -> JsonValue {
+    let mut obj = JsonValue::object();
+    if let Some(v) = &commands.build {
+        obj.insert("build", v.as_str());
+    }
+    if let Some(v) = &commands.test {
+        obj.insert("test", v.as_str());
+    }
+    if let Some(v) = &commands.lint {
+        obj.insert("lint", v.as_str());
+    }
+    if let Some(v) = &commands.coverage {
+        obj.insert("coverage", v.as_str());
+    }
+    obj
+}
+
+fn targets_to_json(targets: &[(String, TargetConfig)]) -> JsonValue {
+    let mut obj = JsonValue::object();
+    for (name, t) in targets {
+        let mut entry = JsonValue::object();
+        entry.insert("match", t.match_globs.clone());
+        entry.insert("commands", commands_to_json(&t.commands));
+        obj.insert(name.as_str(), entry);
+    }
+    obj
+}
+
+/// Raw commands-block text, used by TOFU trust hashing (`core/trust.rs`,
+/// wave 2). `scope_ignore` rides in the same hash: it changes what the
+/// scope check accepts as noise rather than an undeclared file, the same
+/// trust class as a command.
+///
+/// `scope_ignore` is included only when non-empty (review finding F4): a
+/// repo upgrading from a pre-Milestone-5 config has no `scope_ignore:` key
+/// at all, and the empty default must hash identically to the pre-existing
+/// shape (`{ commands, targets }`) or every existing `trust.json` on disk
+/// would silently go stale the moment `gate` is upgraded.
+pub fn commands_block_hash_source(root: &Path) -> String {
+    let config_path = gate_paths(root).config;
+    if !config_path.exists() {
+        return String::new();
+    }
+    let raw = fs::read_to_string(&config_path)
+        .ok()
+        .and_then(|text| yaml::parse_yaml(&text).ok())
+        .unwrap_or(YamlValue::Null);
+
+    let commands = extract_commands(raw.get("commands"));
+    let targets = validate_and_extract_targets(raw.get("targets")).unwrap_or_default();
+    let scope_ignore = extract_string_array(raw.get("scope_ignore")).unwrap_or_default();
+
+    let mut source = JsonValue::object();
+    source.insert("commands", commands_to_json(&commands));
+    source.insert("targets", targets_to_json(&targets));
+    if !scope_ignore.is_empty() {
+        source.insert("scope_ignore", scope_ignore);
+    }
+    json::stringify_compact(&source)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    fn tmp_dir(name: &str) -> std::path::PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("gate-config-rs-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn write_config(root: &Path, content: &str) {
+        fs::create_dir_all(root.join(".gate")).unwrap();
+        fs::write(root.join(".gate/config.yml"), content).unwrap();
+    }
+
+    #[test]
+    fn loads_a_well_formed_targets_block_unchanged() {
+        let root = tmp_dir("targets-ok");
+        write_config(&root, "targets:\n  api:\n    match:\n      - apps/api/**\n    commands:\n      test: pytest\n");
+        let config = load_config(&root).unwrap();
+        assert_eq!(
+            config.get_target("api").unwrap().match_globs,
+            vec!["apps/api/**".to_string()]
+        );
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn throws_a_friendly_error_naming_the_target_when_match_is_missing() {
+        let root = tmp_dir("targets-missing-match");
+        write_config(
+            &root,
+            "targets:\n  api:\n    commands:\n      test: pytest\n",
+        );
+        let err = load_config(&root).unwrap_err();
+        assert!(err.message().contains("\"api\""));
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn throws_when_match_is_present_but_empty() {
+        let root = tmp_dir("targets-empty-match");
+        write_config(&root, "targets:\n  api:\n    match: []\n");
+        assert!(load_config(&root).is_err());
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn throws_when_match_contains_a_non_string_entry() {
+        let root = tmp_dir("targets-non-string-match");
+        write_config(&root, "targets:\n  api:\n    match:\n      - 5\n");
+        assert!(load_config(&root).is_err());
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn throws_when_a_targets_commands_block_is_not_a_mapping() {
+        let root = tmp_dir("targets-bad-commands");
+        write_config(
+            &root,
+            "targets:\n  api:\n    match: [apps/api/**]\n    commands: nope\n",
+        );
+        assert!(load_config(&root).is_err());
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn scope_ignore_defaults_to_an_empty_list() {
+        let root = tmp_dir("scope-ignore-default");
+        write_config(&root, "commands: {}\n");
+        assert_eq!(
+            load_config(&root).unwrap().scope_ignore,
+            Vec::<String>::new()
+        );
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn loads_a_well_formed_scope_ignore_glob_list() {
+        let root = tmp_dir("scope-ignore-ok");
+        write_config(
+            &root,
+            "scope_ignore:\n  - \"node_modules/**\"\n  - \"coverage/**\"\n",
+        );
+        assert_eq!(
+            load_config(&root).unwrap().scope_ignore,
+            vec!["node_modules/**".to_string(), "coverage/**".to_string()]
+        );
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn throws_when_scope_ignore_is_not_a_list_of_strings() {
+        let root = tmp_dir("scope-ignore-not-list");
+        write_config(&root, "scope_ignore: not-a-list\n");
+        assert!(load_config(&root).is_err());
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn throws_when_scope_ignore_contains_a_non_string_entry() {
+        let root = tmp_dir("scope-ignore-non-string");
+        write_config(&root, "scope_ignore:\n  - 5\n");
+        assert!(load_config(&root).is_err());
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn missing_config_file_returns_defaults() {
+        let root = tmp_dir("no-config");
+        fs::create_dir_all(root.join(".gate")).unwrap();
+        let config = load_config(&root).unwrap();
+        assert_eq!(config, GateConfig::default());
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn commands_block_hash_source_is_stable_and_excludes_retention() {
+        let root = tmp_dir("hash-source");
+        write_config(&root, "commands:\n  test: echo hi\nretention:\n  keep: 3\n");
+        let source = commands_block_hash_source(&root);
+        assert!(source.contains("echo hi"));
+        assert!(!source.contains("retention"));
+        assert!(!source.contains("keep"));
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn commands_block_hash_source_omits_scope_ignore_when_empty_for_backward_compatible_hashing() {
+        let root = tmp_dir("hash-source-empty-scope");
+        write_config(&root, "commands:\n  test: echo hi\n");
+        let source = commands_block_hash_source(&root);
+        assert!(!source.contains("scope_ignore"));
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn commands_block_hash_source_includes_scope_ignore_once_populated() {
+        let root = tmp_dir("hash-source-with-scope");
+        write_config(
+            &root,
+            "commands:\n  test: echo hi\nscope_ignore:\n  - dist/**\n",
+        );
+        let source = commands_block_hash_source(&root);
+        assert!(source.contains("scope_ignore"));
+        assert!(source.contains("dist/**"));
+        fs::remove_dir_all(&root).unwrap();
+    }
+}

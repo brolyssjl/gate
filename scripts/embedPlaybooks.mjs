@@ -2,13 +2,12 @@
 /**
  * Generates src/core/embeddedPlaybooks.ts from the bundled playbooks/*.md
  * files plus the current package.json version. Run as part of `npm run
- * build` so a single-file binary (Node SEA / `bun build --compile`) has the
- * playbooks compiled in, with no dependency on a `playbooks/` directory
- * sitting next to the executable. `core/playbooks.ts` still tries the real
- * on-disk directory first (the disk-walk fallback stays authoritative for
- * normal npm-install and dev-from-source use - a playbook edit is live
- * immediately, no rebuild needed) and only falls back to this embedded copy
- * when the directory can't be found.
+ * build` so playbooks ship inside dist/ and the TypeScript reference
+ * implementation runs without a `playbooks/` directory. `core/playbooks.ts`
+ * still tries the real on-disk directory first (the disk-walk fallback
+ * stays authoritative for dev-from-source use - a playbook edit is live
+ * immediately, no rebuild needed) and only falls back to this embedded
+ * copy when the directory can't be found.
  *
  * The generated file is committed (like other generated-but-source-tracked
  * files in this repo) so a clean checkout typechecks without running this

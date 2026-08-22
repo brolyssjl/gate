@@ -33,26 +33,22 @@ git clone https://github.com/brolyssjl/gate.git && ./gate/install.sh
 ```
 
 `install.sh` always installs the latest release; on a platform without a
-prebuilt binary it prints these same steps instead of failing silently. This
-is the contributor / build-from-source path: for a platform outside the
-binary matrix, to pin an older version (including one that predates the
-binary pipeline, v0.1.0/v0.2.0), or to work on gate itself. It needs Node
-today (a Rust port is underway on a separate branch, not yet merged into
-main). npm here is a build tool, not a distribution channel: gate is not
-published to npm, and per the Milestone 6 owner decision
-(`docs/decisions/0001-surface-freeze.md`) never will be:
+prebuilt binary it prints build-from-source steps instead of failing
+silently. Building from source needs only a stable Rust toolchain - the
+crate has zero external dependencies, and the same conformance suite that
+gates every release defines its behavior:
 
 ```bash
 git clone https://github.com/brolyssjl/gate.git
 cd gate
-npm ci
-npm run build
-npm link          # puts `gate` on your PATH, or run dist/cli.js directly
+cargo build --release --manifest-path rust/Cargo.toml
+# -> rust/target/release/gate; put it on your PATH
 ```
 
-If `npm link` fails with `EACCES`/`EROFS` (a read-only global npm prefix,
-common on Nix and locked-down managed machines), skip it: use the binary
-install above, or point `PATH` straight at `dist/cli.js` from the clone.
+gate is not published to npm, and per the Milestone 6 owner decision
+recorded in ROADMAP.md, never will be. Contributors
+working on the TypeScript reference implementation still use Node >= 20
+(`npm ci && npm run build`, then `node dist/cli.js`); see CONTRIBUTING.md.
 
 ## The agent loop is two commands
 
@@ -177,7 +173,7 @@ packet off. It emits the packet, prints the rubric, then asks for each
 finding (id, severity, note, status, waiver if waived) and a reviewer name,
 and writes `review.md` in the exact shape the REVIEW gate parses - no
 special-casing, so a human-recorded review satisfies the same gate as an
-agent-recorded one. No new dependencies (`node:readline` is a Node builtin).
+agent-recorded one.
 
 `gate report [<run-id>]` prints a per-run summary - phase durations, failed gate
 attempts, findings, and any skips (with who and why) - defaulting to the active
@@ -451,9 +447,13 @@ TOON is worse on small objects.
 ## Deliberately not yet
 
 A Go port was once the startup-latency escape hatch; superseded by the
-Milestone 6 Rust port (in progress). See `ROADMAP.md` for the full plan.
+Milestone 6 Rust port (landed). What remains: 1.0.0 rollout gate (soak period,
+upgrade story, docs site). See `ROADMAP.md` for the full plan.
 
 ## Development
+
+The following commands are the TypeScript reference implementation's dev loop;
+for the canonical (Rust) dev loop, see CONTRIBUTING.md's "Rust implementation" section.
 
 ```bash
 npm test          # vitest: state machine, gates against fixtures, TOON, CLI e2e
@@ -464,16 +464,16 @@ npm run conformance   # the CLI-only black-box subset, runnable against any $GAT
 
 `npm run conformance` never imports Gate's internals - it only spawns the
 `gate` binary and asserts on argv-in/exit-code+stdout+`.gate/`-state-out, so
-the same suite can validate a future non-TS port (see CONTRIBUTING.md).
+the suite validates the Rust port in `rust/` (it is CI's rust job) - see CONTRIBUTING.md.
 
 ### Single-file binary
 
-`npm run build:binary` (after `npm run build`) produces `dist-bin/gate`: a
-single executable with the CLI, its one runtime dependency, and the
-playbooks all compiled in - no `node_modules` or `playbooks/` directory
-needed alongside it. Uses `bun build --compile` when `bun` is on PATH
-(zero extra dependencies), falling back to Node's Single Executable
-Applications support (`--experimental-sea-config` + `postject`) otherwise.
-Not part of `npm run build` - it's the build-binaries job in
-`.github/workflows/release.yml`, which runs it per platform on every tagged
-release and uploads the result as a release asset (see "Install" above).
+Release binaries are produced by `cargo build --release` in
+`.github/workflows/release.yml`'s build-binaries job. Playbooks are embedded
+in the Rust binary at compile time via `include_str!()`. To build one
+locally, use the same cargo command from the repo root:
+
+```bash
+cargo build --release --manifest-path rust/Cargo.toml
+# -> rust/target/release/gate
+```

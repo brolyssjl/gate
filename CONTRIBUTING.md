@@ -21,15 +21,17 @@ described.
 
 Releases are cut from `main` with a semver tag and a GitHub release.
 
-1. Bump the version in `package.json` (the CLI reports it via
-   `src/core/version.ts`, which reads `package.json` — keep them from drifting by
-   never hard-coding the version elsewhere).
-2. Ensure `main` is green (`npm run build && npm run lint && npm test`).
+1. Bump the version in `package.json` and `rust/Cargo.toml` (the release.yml
+   workflow enforces they stay in lockstep; it hard-fails if the tag, package.json,
+   and Cargo.toml versions disagree).
+2. Ensure `main` is green: `npm run build && npm run lint && npm test`, and the
+   Rust CI job passes (see "Rust implementation" below).
 3. Tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`.
-4. `gh release create vX.Y.Z --title "vX.Y.Z — <name>" --notes "…"`.
+4. `gh release create vX.Y.Z --title "vX.Y.Z - <name>" --notes "…"`.
 
-The package is `private` until an npm name is chosen (see the roadmap), so
-releases are tags + GitHub releases only — **no `npm publish` yet**.
+npm distribution is permanently out per the Milestone 6 owner decision
+(see ROADMAP.md). Releases are tags + GitHub releases with cargo-built
+binaries; no npm publishing.
 
 ## Conformance testing
 
@@ -45,8 +47,8 @@ stdout/stderr + `.gate/` state out.
 They resolve which binary to spawn through a single helper
 (`test/helpers.ts`'s `gate()`): `$GATE_BIN` when set, otherwise `node
 dist/cli.js` (the local build). Point `GATE_BIN` at any binary that
-implements the same contract - including a future Rust build - and the same
-suite exercises it unchanged:
+implements the same contract - including the Rust build (rust/, the canonical
+binary) - and the same suite exercises it unchanged:
 
 ```bash
 npm run build                    # only needed for the default (unset GATE_BIN) case

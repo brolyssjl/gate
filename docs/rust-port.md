@@ -6,6 +6,10 @@ which validated the approach end to end: 1:1 file mapping, std-only crate,
 conformance suite as the acceptance gate, waves with disjoint file ownership.
 Contributor document; delete or archive once `1.0.0` ships.
 
+Status: all five waves landed 2026-08-22 (conformance 68/68 against the Rust
+binary, CI green on ubuntu + macos). This doc remains the port's design
+record until 1.0.0 archives it.
+
 ## Goal and definition of done
 
 One Rust crate at `rust/`, producing a single static `gate` binary whose CLI

@@ -6,7 +6,7 @@
 # v0.3.0. Falls back to build-from-source instructions when no matching
 # binary asset exists for this platform (an older release, or a platform
 # outside the build matrix) - gate is not published to npm and, per the
-# Milestone 6 owner decision (docs/decisions/0001-surface-freeze.md), npm
+# Milestone 6 owner decision recorded in ROADMAP.md, npm
 # will never be the user-facing install path.
 #
 # Built platforms (keep in sync with .github/workflows/release.yml's
@@ -86,11 +86,10 @@ install_from_source() {
   echo "gate is not published to npm - build from source instead:" >&2
   echo "  git clone https://github.com/${REPO}.git" >&2
   echo "  cd gate" >&2
-  echo "  npm ci" >&2
-  echo "  npm run build" >&2
-  echo "Then either put dist/cli.js on your PATH, or run 'npm link' from the clone." >&2
-  if ! command -v npm >/dev/null 2>&1; then
-    echo "(npm not found - install Node >= 20 first: https://nodejs.org)" >&2
+  echo "  cargo build --release --manifest-path rust/Cargo.toml" >&2
+  echo "Then put rust/target/release/gate on your PATH." >&2
+  if ! command -v cargo >/dev/null 2>&1; then
+    echo "(cargo not found - install Rust from https://rustup.rs)" >&2
   fi
   exit 1
 }

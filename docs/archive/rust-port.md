@@ -7,8 +7,11 @@ conformance suite as the acceptance gate, waves with disjoint file ownership.
 Contributor document; delete or archive once `1.0.0` ships.
 
 Status: all five waves landed 2026-08-22 (conformance 68/68 against the Rust
-binary, CI green on ubuntu + macos). This doc remains the port's design
-record until 1.0.0 archives it.
+binary, CI green on ubuntu + macos), `1.0.0` shipped, and the TypeScript
+implementation was then fully retired 2026-08-22 (`src/`, `test/`, and the
+npm toolchain removed; conformance suite carried forward to `rust/tests/`).
+Archived here as a design record - superseded by `rust/tests/CONFORMANCE_MAP.md`
+for the current conformance mapping and CONTRIBUTING.md for the dev loop.
 
 ## Goal and definition of done
 

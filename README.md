@@ -117,7 +117,10 @@ inherits the command pin.
 
 Plan *quality*, debugging *rigor*, and review *depth* are judgment, not code -
 they live in editable Markdown **playbooks** (`.gate/playbooks/*.md`) the CLI
-serves to the agent, never in the gates.
+serves to the agent, never in the gates. A playbook is an instruction to the
+agent the same way a `commands:` entry is an instruction to the shell, so an
+override or overlay only takes effect once it's covered by `gate trust` -
+see "Command trust (TOFU)".
 
 ## Profiles
 
@@ -241,10 +244,12 @@ phase runs.** IMPLEMENT/TEST/DEBUG resolve affected targets from the real
 changed files and run each target's own commands, producing bracketed check
 names (`implement.build[api]`, `test.command[web]`) so a change touching both
 stacks must pass both. `gate playbook` appends a `## Target overlay: <name>`
-section per affected target that declares one. With no `targets:` configured,
-or none affected by the change, behavior and check names are byte-identical
-to a single-stack repo - targets are purely additive. `gate start --target
-<a,b>` overrides resolution for the whole run.
+section per affected target that declares one - once `gate trust` covers it
+(see "Command trust (TOFU)"); an untrusted overlay is refused, not appended.
+With no `targets:` configured, or none affected by the change, behavior and
+check names are byte-identical to a single-stack repo - targets are purely
+additive. `gate start --target <a,b>` overrides resolution for the whole
+run.
 
 ## Scope noise (`scope_ignore`)
 
@@ -409,6 +414,19 @@ matches; changing a command invalidates trust until you re-run `gate trust`.
 `.gate/trust.json` is committed, so CI inherits the pin and a command change +
 re-trust land in the same diff for review. `gate trust --check` reports status
 (exit 0/1) without writing.
+
+The same hash also covers **playbooks** - `.gate/playbooks/<phase>.md`
+overrides and each target's `playbooks:` overlay file (path *and* content,
+so repointing an already-trusted path at different content still voids
+trust). Gate never executes a playbook itself, but it's what gate *tells the
+agent* to do, and an attacker who can silently rewrite that instruction has
+the same effective control as one who can rewrite a command. While the hash
+is stale or absent, an override/overlay is refused - not applied - and
+resolution falls back to the bundled or embedded default with a banner
+naming what was refused and pointing at `gate trust`; nothing is a hard
+error. `gate trust` (and `--check`) list which playbook paths are covered
+alongside the commands hash, the same way it's always reported what it's
+approving.
 
 Approval is deliberately separate from writing the plan: `gate approve` records
 who signed off and the plan's content hash in `run.json`, so the author can't

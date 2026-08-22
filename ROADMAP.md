@@ -171,9 +171,36 @@ carries over unchanged._
       are cargo-only
 - [ ] Upgrade story: version-stamped playbook copies + drift warning +
       `--refresh` with diff
-- [ ] Real-project soak on the Rust binaries
+- [ ] Real-project soak on the Rust binaries, extended to include one
+      gate→agnosgram RETRO-sync exercise run with both Rust binaries
+      together - the one integration point neither repo's own conformance
+      suite can catch (audit RM-06)
+- [ ] Decide going public / recruit at least one outside pilot user - owner
+      decision: the docs site below can't be useful while its audience
+      can't reach a private repo (audit RM-03)
 - [ ] Docs site + case study (with agnosgram, the 2026-07/08 constructflow
       soak)
+
+## Fixes & improvements
+
+_Open items from the 2026-08-22 audit + remediation (PRs gate#11/#12,
+agnosgram#14, all merged) that don't fit the milestones above._
+
+- [ ] Cut `1.0.1` so checksum-verified installs become real: the `1.0.0`
+      release predates `SHA256SUMS`; the first post-#11 tag publishes it.
+      Small, do soon. (audit SEC-02 tail)
+- [ ] Failure-streak cap - owner decision, then likely a feature: `gate
+      check`/`gate next` record consecutive failures per phase in run.json
+      and refuse past N without an explicit `gate skip` - makes the "loop
+      enforcement" reading of gate's purpose true in code. Pairs with the
+      wording decision below. (audit PUR-01)
+- [ ] Pitch wording - owner decision, docs-only: "loop enforcement" and
+      "security" in the external one-liner - either implement the
+      failure-streak cap above and keep "loop enforcement", and/or narrow
+      "security" to "tamper-evident evidence"/"audit trail" as the README
+      threat model already does. (audit PUR-01, PUR-03)
+- [ ] Pin GitHub Actions to commit SHAs - owner decision: accept
+      tag-pinning risk, or pin + add update automation. (audit SEC-08)
 
 ## Deferred / v2
 

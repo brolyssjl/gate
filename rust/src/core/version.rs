@@ -19,10 +19,15 @@ mod tests {
 
     #[test]
     fn matches_cargo_toml_and_stays_in_lockstep_with_package_json() {
-        // Pinned to the frozen surface (docs/decisions/0001): package.json's
-        // "version" was 0.4.0 at freeze time, and Cargo.toml is kept equal
-        // to it by the release workflow's version guard (wave 5).
-        assert_eq!(read_version(), "0.4.0");
+        let package_json =
+            std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../package.json"))
+                .unwrap();
+        let pkg_version = package_json
+            .lines()
+            .find_map(|l| l.trim().strip_prefix("\"version\": \""))
+            .and_then(|rest| rest.split('"').next())
+            .unwrap();
+        assert_eq!(read_version(), pkg_version);
     }
 
     #[test]

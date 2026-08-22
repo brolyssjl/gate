@@ -147,11 +147,20 @@ formats) carry over unchanged._
 - [x] Rust crate in-repo: identical surface, conformance suite green on
       linux-x64 + darwin-arm64; release pipeline builds Rust binaries on tag;
       `1.0.0-rc` tags from here
-- [ ] `1.0.0` gate (all required): upgrade story (version-stamped playbook
-      copies + drift warning + `--refresh` with diff), real-project soak on
-      the Rust binaries through at least one rc cycle, docs site + case study
-      (with agnosgram, the 2026-07/08 constructflow soak); Rust binary becomes
-      canonical, TS retired or demoted to reference
+_Owner decision (2026-08-22): `1.0.0` ships directly from the merged port -
+no rc cycle, matching agnosgram's precedent. The conformance suite (68/68 on
+linux-x64 + darwin-arm64) and the release pipeline's hard conformance gate
+stand in for the rc soak; the Rust binary is canonical from `1.0.0`. The
+remaining items below stay wanted, as post-`1.0.0` hardening rather than
+release gates._
+
+- [x] `1.0.0`: Rust binary is the canonical distribution; TS implementation
+      demoted to reference (retirement decided post-hardening)
+- [ ] Upgrade story: version-stamped playbook copies + drift warning +
+      `--refresh` with diff
+- [ ] Real-project soak on the Rust binaries
+- [ ] Docs site + case study (with agnosgram, the 2026-07/08 constructflow
+      soak)
 
 ## Deferred / v2
 

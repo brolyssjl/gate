@@ -13,4 +13,4 @@ export const EMBEDDED_PLAYBOOKS: Record<string, string> = {
 };
 
 /** The package version this embed was generated from (for `gate --version` in a binary build). */
-export const EMBEDDED_VERSION = "0.4.0";
+export const EMBEDDED_VERSION = "1.0.0";

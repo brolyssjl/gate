@@ -15,8 +15,13 @@
 //! `artifacts::plan::parse_plan_file`, both wave 2/3) is deferred to the
 //! wave that ports those - see the module-level TODO at the bottom.
 
+use std::path::Path;
+
+use crate::artifacts::plan::parse_plan_file;
 use crate::core::config::{Commands, CoverageFormat, GateConfig, Thresholds};
+use crate::core::git::{changed_files, is_gate_bookkeeping};
 use crate::core::glob::matches_any;
+use crate::core::paths::run_paths;
 
 /// Names of every target whose `match` globs cover at least one of `files`.
 pub fn resolve_affected_targets(config: &GateConfig, files: &[String]) -> Vec<String> {
@@ -177,13 +182,46 @@ pub fn resolve_targets_from_plan_files(config: &GateConfig, plan_files: &[String
         .collect()
 }
 
-// `resolve_display_targets` (TS: best-effort target set for *display*
-// purposes when no real diff exists yet, e.g. still in PLAN) is deferred:
-// it calls `core::git::changed_files`/`is_gate_bookkeeping` and
-// `artifacts::plan::parse_plan_file`, both ported in later waves. Add it
-// here once those land, following TS's `resolveDisplayTargets` exactly:
-//
-//   pub fn resolve_display_targets(root: &Path, run: &Run, config: &GateConfig) -> Vec<String>
+/// Best-effort target set for *display* purposes when no real diff exists
+/// yet (e.g. still in PLAN): an explicit override always wins (delegates to
+/// `resolve_run_targets` - files are irrelevant once an override is set, so
+/// it doesn't matter that none are passed); otherwise the working diff's
+/// affected targets, falling back to the plan's declared `files` when the
+/// diff itself resolves to nothing (a fresh run with no diff yet, but a
+/// plan already naming which stacks it will touch).
+///
+/// Adaptation note (see module doc): takes `run_id`/`base_ref`/
+/// `target_override` in place of TS's `run: Run` duck-type slice, since
+/// `core::run::Run` lives in a module this one doesn't otherwise depend on.
+pub fn resolve_display_targets(
+    root: &Path,
+    run_id: &str,
+    base_ref: Option<&str>,
+    target_override: Option<&[String]>,
+    config: &GateConfig,
+) -> Vec<String> {
+    if config.targets.is_empty() {
+        return Vec::new();
+    }
+    if let Some(names) = target_override {
+        if !names.is_empty() {
+            return resolve_run_targets(config, target_override, &[]);
+        }
+    }
+    let changed: Vec<String> = changed_files(root, base_ref)
+        .into_iter()
+        .filter(|f| !is_gate_bookkeeping(root, f))
+        .collect();
+    let from_diff = resolve_run_targets(config, target_override, &changed);
+    if !from_diff.is_empty() {
+        return from_diff;
+    }
+    let plan_path = run_paths(root, run_id).plan;
+    match parse_plan_file(&plan_path).plan {
+        Some(plan) => resolve_targets_from_plan_files(config, &plan.files),
+        None => Vec::new(),
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -448,5 +486,83 @@ mod tests {
             resolve_targets_from_plan_files(&cfg, &files(&["docs/readme.md"])),
             Vec::<String>::new()
         );
+    }
+
+    fn tmp_repo(name: &str) -> std::path::PathBuf {
+        use std::process::Command;
+        let dir =
+            std::env::temp_dir().join(format!("gate-targets-rs-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let git = |args: &[&str]| {
+            assert!(Command::new("git")
+                .args(args)
+                .current_dir(&dir)
+                .status()
+                .unwrap()
+                .success());
+        };
+        git(&["init", "-q"]);
+        git(&["config", "user.email", "t@t.co"]);
+        git(&["config", "user.name", "t"]);
+        git(&["config", "commit.gpgsign", "false"]);
+        std::fs::write(dir.join("README.md"), "seed\n").unwrap();
+        git(&["add", "-A"]);
+        git(&["commit", "-qm", "init"]);
+        dir
+    }
+
+    #[test]
+    fn resolve_display_targets_is_empty_with_no_targets_configured() {
+        let root = tmp_repo("no-targets");
+        let cfg = empty_config();
+        assert_eq!(
+            resolve_display_targets(&root, "r1", None, None, &cfg),
+            Vec::<String>::new()
+        );
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn resolve_display_targets_prefers_an_explicit_override() {
+        let root = tmp_repo("override");
+        let cfg = two_targets();
+        let over = vec!["web".to_string()];
+        assert_eq!(
+            resolve_display_targets(&root, "r1", None, Some(&over), &cfg),
+            vec!["web".to_string()]
+        );
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn resolve_display_targets_falls_back_to_plan_files_when_the_diff_is_empty() {
+        let root = tmp_repo("plan-fallback");
+        let cfg = two_targets();
+        let run_dir = root.join(".gate/runs/r1");
+        std::fs::create_dir_all(&run_dir).unwrap();
+        std::fs::write(
+            run_dir.join("plan.md"),
+            "---\ngoal: g\nfiles:\n  - apps/api/**\ncriteria:\n  - id: c1\n    text: t\n    verify: manual\n---\n# Plan\n",
+        )
+        .unwrap();
+        assert_eq!(
+            resolve_display_targets(&root, "r1", None, None, &cfg),
+            vec!["api".to_string()]
+        );
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn resolve_display_targets_uses_the_working_diff_when_present() {
+        let root = tmp_repo("diff-based");
+        let cfg = two_targets();
+        std::fs::create_dir_all(root.join("apps/web")).unwrap();
+        std::fs::write(root.join("apps/web/x.ts"), "x\n").unwrap();
+        assert_eq!(
+            resolve_display_targets(&root, "r1", None, None, &cfg),
+            vec!["web".to_string()]
+        );
+        std::fs::remove_dir_all(&root).unwrap();
     }
 }

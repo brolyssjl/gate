@@ -41,8 +41,9 @@ fn execute(root: &Path, args: &ParsedArgs) -> Result<(), UserError> {
     let gitignore_updated = ensure_gitignore(root)?;
 
     // Copy default playbooks that the user hasn't already customized. Prefer
-    // the real directory (dev-from-source, npm install); a single-file
-    // binary has none, so fall back to the copy compiled in at build time.
+    // the real directory (running from a checkout of this repo); an
+    // installed single-file binary has none, so fall back to the copy
+    // compiled in at build time.
     for (file, content) in read_bundled_playbook_files() {
         let dest = paths.playbooks.join(&file);
         if !dest.exists() {

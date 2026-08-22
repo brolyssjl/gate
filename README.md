@@ -46,9 +46,8 @@ cargo build --release --manifest-path rust/Cargo.toml
 ```
 
 gate is not published to npm, and per the Milestone 6 owner decision
-recorded in ROADMAP.md, never will be. Contributors
-working on the TypeScript reference implementation still use Node >= 20
-(`npm ci && npm run build`, then `node dist/cli.js`); see CONTRIBUTING.md.
+recorded in ROADMAP.md, never will be. Rust is the only implementation;
+see CONTRIBUTING.md for the dev loop.
 
 ## The agent loop is two commands
 
@@ -452,24 +451,22 @@ upgrade story, docs site). See `ROADMAP.md` for the full plan.
 
 ## Development
 
-The following commands are the TypeScript reference implementation's dev loop;
-for the canonical (Rust) dev loop, see CONTRIBUTING.md's "Rust implementation" section.
-
 ```bash
-npm test          # vitest: state machine, gates against fixtures, TOON, CLI e2e
-npm run build     # embeds playbooks (scripts/embedPlaybooks.mjs), then tsc → dist/
-npm run typecheck # tsc --noEmit - the project's lint
-npm run conformance   # the CLI-only black-box subset, runnable against any $GATE_BIN
+cargo build --release --manifest-path rust/Cargo.toml   # -> rust/target/release/gate
+cargo test --manifest-path rust/Cargo.toml               # unit tests + conformance suite
+cargo clippy --all-targets --manifest-path rust/Cargo.toml -- -D warnings
 ```
 
-`npm run conformance` never imports Gate's internals - it only spawns the
-`gate` binary and asserts on argv-in/exit-code+stdout+`.gate/`-state-out, so
-the suite validates the Rust port in `rust/` (it is CI's rust job) - see CONTRIBUTING.md.
+`cargo test` runs both the crate's unit tests and the black-box conformance
+suite in `rust/tests/` - integration tests that never import Gate's
+internals, only spawn the `gate` binary and assert on
+argv-in/exit-code+stdout+`.gate/`-state-out (point them at any binary via
+`$GATE_BIN`, e.g. a downloaded release asset). See CONTRIBUTING.md.
 
 ### Single-file binary
 
 Release binaries are produced by `cargo build --release` in
-`.github/workflows/release.yml`'s build-binaries job. Playbooks are embedded
+`.github/workflows/release.yml`'s build-and-verify job. Playbooks are embedded
 in the Rust binary at compile time via `include_str!()`. To build one
 locally, use the same cargo command from the repo root:
 

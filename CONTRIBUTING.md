@@ -36,6 +36,32 @@ npm distribution is permanently out per the Milestone 6 owner decision
 (see ROADMAP.md). Releases are tags + GitHub releases with cargo-built
 binaries; no npm publishing.
 
+### Release checksums (SEC-02/03)
+
+`release.yml`'s `release` job hashes every built asset (`sha256sum`) into a
+`SHA256SUMS` file and publishes it alongside the binaries. `install.sh`
+downloads it the same way it downloads the binary (direct, with the `gh`
+fallback for the private-repo case) and verifies the binary against it
+*before* `chmod +x`/`mv` - a checksum mismatch, or a missing `SHA256SUMS`
+entry, aborts with nothing installed. `GATE_VERSION=X.Y.Z` pins an exact
+release instead of the latest one; either way, the script prints the version
+actually installed (`gate --version`, read back from the binary it just
+placed, not just echoed from an env var).
+
+`install.sh` guards its `main "$@"` call behind a
+`[ "${BASH_SOURCE[0]}" = "${0}" ]` check, so it can be `source`d for testing
+without triggering a real install - useful for exercising `verify_checksum`
+in isolation against a local fixture pair (a dummy file + a `SHA256SUMS`
+generated for it) instead of a real download:
+
+```bash
+source install.sh
+verify_checksum /path/to/downloaded-file gate-linux-x64 /path/to/SHA256SUMS
+```
+
+`bash -n install.sh` is the syntax-only check; the CI/release paths
+themselves (actually hitting GitHub's release API) can't be run locally.
+
 ## Conformance testing
 
 Rust is the only implementation, but the CLI surface is still frozen

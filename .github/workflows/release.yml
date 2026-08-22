@@ -62,14 +62,21 @@ jobs:
         with:
           path: release-assets
           merge-multiple: true
+      - name: Generate SHA256SUMS (SEC-02/03 - install.sh verifies against this)
+        run: |
+          cd release-assets
+          shopt -s nullglob
+          assets=(*)
+          if [ ${#assets[@]} -eq 0 ]; then
+            echo "::error::No release assets produced"
+            exit 1
+          fi
+          sha256sum "${assets[@]}" > SHA256SUMS
+          cat SHA256SUMS
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           shopt -s nullglob
           assets=(release-assets/*)
-          if [ ${#assets[@]} -eq 0 ]; then
-            echo "::error::No release assets produced"
-            exit 1
-          fi
           gh release create "${{ github.ref_name }}" "${assets[@]}" --generate-notes --verify-tag

@@ -32,11 +32,14 @@ it falls back to `gh release download`, which reuses your GitHub auth:
 git clone https://github.com/brolyssjl/gate.git && ./gate/install.sh
 ```
 
-`install.sh` always installs the latest release; on a platform without a
-prebuilt binary it prints build-from-source steps instead of failing
-silently. Building from source needs only a stable Rust toolchain - the
-crate has zero external dependencies, and the same conformance suite that
-gates every release defines its behavior:
+`install.sh` verifies the downloaded binary against the release's
+`SHA256SUMS` before installing it - a checksum mismatch aborts with nothing
+installed. It installs the latest release by default; `GATE_VERSION=X.Y.Z
+./install.sh` pins an exact one instead. On a platform without a prebuilt
+binary it prints build-from-source steps rather than failing silently.
+Building from source needs only a stable Rust toolchain - the crate has zero
+external dependencies, and the same conformance suite that gates every
+release defines its behavior:
 
 ```bash
 git clone https://github.com/brolyssjl/gate.git

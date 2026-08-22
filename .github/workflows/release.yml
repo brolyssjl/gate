@@ -11,12 +11,6 @@ permissions:
   contents: write
 
 jobs:
-  # npm/Node in this workflow is never the product or the install path - the
-  # shipped assets are cargo-built Rust binaries (build-binaries below). npm
-  # appears for two reasons only: this job keeps the TypeScript REFERENCE
-  # implementation green (it defines the frozen surface until the 1.0.0
-  # cutover), and the conformance job needs the TS/vitest conformance suite
-  # to prove the Rust binary honors that surface.
   test:
     runs-on: ubuntu-latest
     steps:
@@ -26,9 +20,6 @@ jobs:
           node-version: 20.x
           cache: npm
       - name: Verify tag / package.json / rust/Cargo.toml versions agree
-        # A Rust binary that prints a version different from the tag it
-        # shipped under would be an install-story bug, so this fails the
-        # release before anything is built.
         run: |
           tag_version="${GITHUB_REF_NAME#v}"
           pkg_version=$(node -p "require('./package.json').version")
@@ -45,11 +36,6 @@ jobs:
           npm test
 
   conformance:
-    # Hard gate: the release must never ship a binary that fails its own
-    # surface contract. Builds the same release binary that the linux leg of
-    # build-binaries produces and runs the full conformance suite against it
-    # before anything is created. npm here runs the TS/vitest conformance
-    # harness - the executable spec of the surface - against the Rust binary.
     needs: [test]
     runs-on: ubuntu-latest
     steps:
@@ -69,9 +55,7 @@ jobs:
         run: GATE_BIN="$PWD/rust/target/release/gate" npm run conformance
 
   build-binaries:
-    # Best-effort: a Rust toolchain setup outage on one platform runner must
-    # never block the GitHub release - `test` and `conformance` are the hard
-    # gates that keep a broken binary out of the release entirely.
+    # Best-effort: never blocks the release; test + conformance are the gates.
     continue-on-error: true
     strategy:
       fail-fast: false
@@ -98,8 +82,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # Binaries are best-effort (see build-binaries' continue-on-error): if every
-      # leg failed there's nothing to download, so this must not fail the release.
       - uses: actions/download-artifact@v4
         continue-on-error: true
         with:

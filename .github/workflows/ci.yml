@@ -6,13 +6,6 @@ on:
   pull_request:
 
 jobs:
-  # TypeScript REFERENCE implementation. npm/Node here is not the product
-  # and not the install path (the shipped binary is Rust, built by cargo in
-  # release.yml): the TS implementation is the in-repo reference the frozen
-  # surface (docs/decisions/0001) is defined against, and its test suite -
-  # including the conformance files the rust job reuses - is written in
-  # TypeScript/vitest. This job keeps that reference healthy until the
-  # 1.0.0 cutover retires or demotes it (ROADMAP.md, Milestone 6).
   test:
     runs-on: ubuntu-latest
     strategy:
@@ -34,10 +27,6 @@ jobs:
         run: npm test
 
   rust:
-    # Proves the "conformance green on linux-x64 + darwin-arm64" line of the
-    # Rust port roadmap (docs/rust-port.md, Wave 5): the ubuntu leg is the
-    # first place the Rust binary ever runs on Linux, so nothing here is
-    # allowed to be softer than the darwin leg.
     strategy:
       fail-fast: false
       matrix:
@@ -45,9 +34,6 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      # dtolnay/rust-toolchain: a thin, widely-used wrapper around rustup with
-      # no extra runtime dependencies - matches this repo's zero-dependency
-      # taste better than hand-rolling `rustup default stable` per OS.
       - name: Install Rust (stable)
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -60,10 +46,6 @@ jobs:
         run: cargo test --manifest-path rust/Cargo.toml
       - name: cargo build --release
         run: cargo build --release --manifest-path rust/Cargo.toml
-      # Node/npm below is the TEST HARNESS, not the product: the conformance
-      # suite is written in TypeScript/vitest and is the normative definition
-      # of the frozen CLI surface (docs/decisions/0001). It spawns whatever
-      # binary $GATE_BIN points at - here, the cargo-built Rust binary.
       - uses: actions/setup-node@v4
         with:
           node-version: 20.x

@@ -126,23 +126,29 @@ install_binary() {
   # truncated or tampered (but still +x, still shadowing-the-fallback)
   # binary in place - everything below downloads to temp files first and
   # only chmod+x/mv's the real destination once verification passed.
-  trap 'rm -f "$tmp" "$tmp_sums"' RETURN
+  # Cleanup is explicit per path: a RETURN trap set here stays armed for
+  # every later function return, where these locals no longer exist and
+  # `set -u` turns the dangling expansion into an error.
 
   echo "Downloading ${asset}$( [ -n "$VERSION" ] && echo " (v${VERSION})" )..."
   mkdir -p "$INSTALL_DIR"
   if ! download_asset "$asset" "$tmp"; then
+    rm -f "$tmp" "$tmp_sums"
     return 1
   fi
   if ! download_asset "$SUMS_NAME" "$tmp_sums"; then
     echo "Could not download ${SUMS_NAME} - refusing to install an unverified binary." >&2
+    rm -f "$tmp" "$tmp_sums"
     return 1
   fi
   if ! verify_checksum "$tmp" "$asset" "$tmp_sums"; then
+    rm -f "$tmp" "$tmp_sums"
     return 1
   fi
 
   chmod +x "$tmp"
   mv "$tmp" "$INSTALL_DIR/$BIN_NAME"
+  rm -f "$tmp_sums"
   local installed_version
   installed_version="$("$INSTALL_DIR/$BIN_NAME" --version 2>/dev/null || echo "unknown")"
   echo "Installed gate v${installed_version} to $INSTALL_DIR/$BIN_NAME (checksum verified)"

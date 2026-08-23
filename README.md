@@ -5,6 +5,14 @@ An **agent-agnostic quality harness**. Gate turns the development flow -
 IMPLEMENT for DEBUG) - into an enforced state machine with deterministic
 quality gates. Any AI agent (or human) does the thinking; Gate holds the
 state, checks the evidence, and refuses to advance until the evidence is real.
+Every override - a skip, a re-trust, a streak reset - is a distinct, reasoned,
+recorded act, so the run's `run.json` is a tamper-evident audit trail of what
+actually happened, not a log an agent could hand-edit into looking clean. And
+because Gate is the one thing standing between an agent and "just keep
+retrying", it enforces a hard **failure-streak cap** ([see below](#loop-enforcement-failure-streak-cap)):
+a phase that fails the same gate three times in a row stops evaluating
+until a human explicitly clears it - the mechanical answer to a mindless
+retry loop.
 
 > Gate is an **umpire, not a driver.** It never invokes agents or LLMs, makes no
 > network calls, and has no telemetry. It holds state, verifies evidence, and
@@ -100,7 +108,8 @@ registers an artifact against the current phase (context for reviewers, never
 gate evidence).
 
 `gate check` runs the current gate without advancing; **its exit code is the
-verdict** (0 pass, 1 fail), so scripts and agents can branch on it. Note for CI:
+verdict** (0 pass, 1 fail; **3** past the failure-streak cap - see "Loop
+enforcement"), so scripts and agents can branch on it. Note for CI:
 `.gate/runs/` and `.gate/current.json` are gitignored by default (`gate init`
 writes the entries into `.gitignore`), so a CI checkout has no run to check -
 commit your run folders (or re-create the run in CI) if you want `gate check`
@@ -355,16 +364,64 @@ machine evidence is produced by Gate itself:
   A report staged in advance (by hand or via `gate log`) is ignored.
 - `run.json` is written atomically, so a crash never corrupts run state.
 
+## Loop enforcement (failure-streak cap)
+
+An agent stuck in a loop tends to do one thing: run `gate check`/`gate next`
+again and hope. Gate tracks each phase's *consecutive* failed evaluations in
+`run.json` and, once a phase hits the limit (default **3**), refuses to
+evaluate that phase at all - a distinct, non-zero exit (`3`) and a message
+naming the streak, pointing at the run's worklog/debug log, and naming both
+ways forward:
+
+```
+$ gate next
+gate: TEST blocked: 3 consecutive failures (limit 3). See the run's
+worklog/debug log for what's failing, then either `gate skip TEST --reason
+"<why>"` or `gate streak reset TEST --reason "<why>"` once a human has
+reviewed and a retry is warranted.
+```
+
+- **What counts as a failure**: `gate check`/`gate next` evaluating the
+  phase's gate and it failing. A gate refusing to run an untrusted command
+  (`gate trust`) does *not* count - retrying gives the identical result
+  until a human runs `gate trust`, so the cap would just add friction to a
+  problem it can't fix. Usage errors and a streak refusal itself never
+  count either.
+- **What resets the streak to 0**: a passing evaluation, advancing to the
+  next phase, `gate skip`, and `gate streak reset`.
+- **Recovery, once blocked** - both audited in `run.json` and visible in
+  `gate report`, the same as any other override:
+  - `gate skip <phase> --reason "…"` - the existing human-authorized skip.
+  - `gate streak reset [<phase>] --reason "…" [--by …]` - clear the streak
+    without skipping the phase, so the very next `gate check`/`gate next`
+    evaluates for real. `gate streak` (no subcommand) shows every phase's
+    current streak against the configured limit.
+- **Configuring the limit** - `thresholds.failure_streak_limit` in
+  `config.yml` (default 3 when unset); `0` disables the cap entirely. This
+  key is *not* part of the TOFU commands-block trust hash (see "Command
+  trust (TOFU)") - it doesn't change what gets executed, only how many
+  times Gate will look.
+
+Like every override in Gate, `gate streak reset` is honest about what it
+is: a CLI cannot stop an agent in the same shell from running it, the same
+way it cannot stop `gate skip` or `gate trust`. What it guarantees is that
+doing so is explicit and visible, not automatic - the point isn't to make
+looping impossible, it's to make continuing past a real, repeated failure a
+deliberate act with a paper trail, not something that happens by default.
+
 ## Threat model
 
-Gate defends against **sloppiness, not malice**. An agent (or human) in the
-same shell can still `gate skip`, `gate trust`, or claim a false identity -
-a CLI cannot prove a human acted. What Gate guarantees is that every override
-is an explicit, separate, recorded act: skips carry a reason and an identity
-and surface in `gate report`; approval is hash-bound to the plan it approved;
+Gate defends against **sloppiness and runaway loops, not malice**. An agent
+(or human) in the same shell can still `gate skip`, `gate trust`, `gate
+streak reset`, or claim a false identity - a CLI cannot prove a human acted.
+What Gate guarantees is that every override is an explicit, separate,
+recorded act: skips and streak resets carry a reason and an identity and
+surface in `gate report`; approval is hash-bound to the plan it approved;
 trust is hash-bound to the commands block it reviewed; the review packet is
-fingerprint-bound to the code it showed. Quiet drift is the failure mode Gate
-eliminates - loud, auditable overrides are the escape hatch it keeps.
+fingerprint-bound to the code it showed; a failed phase stops being
+re-evaluated at all past the failure-streak cap until one of those overrides
+fires. Quiet drift is the failure mode Gate eliminates - loud, auditable
+overrides are the escape hatch it keeps.
 
 ## Configuration
 
@@ -378,6 +435,7 @@ commands:
   coverage: "npm run coverage"   # optional
 thresholds:
   diff_coverage: 80              # only enforced when a coverage command is set
+  failure_streak_limit: 3        # optional - see "Loop enforcement"; 0 disables it
 phases:
   plan: required
   implement: required

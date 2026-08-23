@@ -43,7 +43,7 @@ use crate::gates::coverage::{coverage_report_paths, diff_coverage, load_coverage
 use crate::gates::implement::command_check;
 use crate::gates::plan_drift::plan_drift_check;
 use crate::gates::test_report::{parse_test_report, NormalizedReport, NormalizedTest};
-use crate::gates::types::{fail, pass, result, Check, GateContext, GateResult};
+use crate::gates::types::{fail, fail_untrusted, pass, result, Check, GateContext, GateResult};
 
 pub fn test_gate(ctx: &GateContext) -> GateResult {
     let report_path = run_paths(&ctx.root, &ctx.run.id).test_report;
@@ -60,7 +60,7 @@ pub fn test_gate(ctx: &GateContext) -> GateResult {
     // Untrusted config never spawns a process, for any target (proposal §9)
     // - the trust hash already covers the targets block.
     if !is_commands_trusted(&ctx.root) {
-        checks.push(fail(
+        checks.push(fail_untrusted(
             "test.command",
             "test command not trusted - review .gate/config.yml and run `gate trust`",
         ));

@@ -108,6 +108,10 @@ pub struct RetentionConfig {
     pub days: Option<i64>,
 }
 
+/// Default `thresholds.failure_streak_limit` (PUR-01 loop-enforcement cap)
+/// when the key is absent from `config.yml`.
+pub const DEFAULT_FAILURE_STREAK_LIMIT: i64 = 3;
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct GateConfig {
     pub commands: Commands,
@@ -126,11 +130,33 @@ pub struct GateConfig {
     /// what the scope check accepts, so widening it needs the same
     /// re-trust as changing a command.
     pub scope_ignore: Vec<String>,
+    /// `thresholds.failure_streak_limit` from `config.yml`, raw (pre
+    /// default/disable resolution - use `failure_streak_cap`). `None` when
+    /// unset. Top-level only, deliberately not part of `Thresholds` (which
+    /// is shared with per-target overrides): the streak is a property of a
+    /// run's phase, not of any one target, so a per-target value would
+    /// silently do nothing.
+    pub failure_streak_limit: Option<i64>,
 }
 
 impl GateConfig {
     pub fn get_target(&self, name: &str) -> Option<&TargetConfig> {
         self.targets.iter().find(|(n, _)| n == name).map(|(_, t)| t)
+    }
+
+    /// Effective failure-streak cap (PUR-01): unset -> the default (3);
+    /// explicit `0` -> disabled (`None`, no cap ever blocks); any other
+    /// explicit value -> that cap. `0` is otherwise a meaningless cap (the
+    /// streak starts at 0, so a cap of 0 would block before any evaluation
+    /// ever ran) - repurposing it as the "disable" sentinel needs no new
+    /// YAML syntax and mirrors the `--keep 0`/`0` = "unlimited" convention
+    /// common to CLI retention knobs.
+    pub fn failure_streak_cap(&self) -> Option<i64> {
+        match self.failure_streak_limit {
+            None => Some(DEFAULT_FAILURE_STREAK_LIMIT),
+            Some(0) => None,
+            Some(n) => Some(n),
+        }
     }
 }
 
@@ -145,6 +171,7 @@ impl Default for GateConfig {
             coverage_format: CoverageFormat::Auto,
             retention: RetentionConfig::default(),
             scope_ignore: Vec::new(),
+            failure_streak_limit: None,
         }
     }
 }
@@ -352,6 +379,8 @@ pub fn load_config(root: &Path) -> Result<GateConfig, UserError> {
         }
     };
 
+    let failure_streak_limit = extract_failure_streak_limit(raw.get("thresholds"))?;
+
     Ok(GateConfig {
         commands: extract_commands(raw.get("commands")),
         thresholds: extract_thresholds(raw.get("thresholds")),
@@ -361,7 +390,27 @@ pub fn load_config(root: &Path) -> Result<GateConfig, UserError> {
         coverage_format,
         retention: extract_retention(raw.get("retention")),
         scope_ignore,
+        failure_streak_limit,
     })
+}
+
+/// `thresholds.failure_streak_limit` (PUR-01): must be a non-negative
+/// integer when present - `0` is the explicit "disabled" sentinel (see
+/// `GateConfig::failure_streak_cap`), anything negative is a config error
+/// naming the fix rather than silently misbehaving.
+fn extract_failure_streak_limit(value: Option<&YamlValue>) -> Result<Option<i64>, UserError> {
+    let Some(YamlValue::Map(entries)) = value else {
+        return Ok(None);
+    };
+    let Some((_, raw)) = entries.iter().find(|(k, _)| k == "failure_streak_limit") else {
+        return Ok(None);
+    };
+    match raw.as_i64() {
+        Some(n) if n >= 0 => Ok(Some(n)),
+        _ => Err(UserError::new(
+            ".gate/config.yml: thresholds.failure_streak_limit must be a non-negative integer (0 disables the cap)",
+        )),
+    }
 }
 
 fn commands_to_json(commands: &Commands) -> JsonValue {
@@ -618,6 +667,53 @@ mod tests {
     fn throws_when_scope_ignore_contains_a_non_string_entry() {
         let root = tmp_dir("scope-ignore-non-string");
         write_config(&root, "scope_ignore:\n  - 5\n");
+        assert!(load_config(&root).is_err());
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn failure_streak_limit_defaults_to_none_and_cap_defaults_to_three() {
+        let root = tmp_dir("streak-limit-default");
+        write_config(&root, "commands: {}\n");
+        let config = load_config(&root).unwrap();
+        assert_eq!(config.failure_streak_limit, None);
+        assert_eq!(config.failure_streak_cap(), Some(3));
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn failure_streak_limit_loads_an_explicit_value() {
+        let root = tmp_dir("streak-limit-explicit");
+        write_config(&root, "thresholds:\n  failure_streak_limit: 5\n");
+        let config = load_config(&root).unwrap();
+        assert_eq!(config.failure_streak_limit, Some(5));
+        assert_eq!(config.failure_streak_cap(), Some(5));
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn failure_streak_limit_zero_disables_the_cap() {
+        let root = tmp_dir("streak-limit-disabled");
+        write_config(&root, "thresholds:\n  failure_streak_limit: 0\n");
+        let config = load_config(&root).unwrap();
+        assert_eq!(config.failure_streak_limit, Some(0));
+        assert_eq!(config.failure_streak_cap(), None);
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn failure_streak_limit_rejects_a_negative_value() {
+        let root = tmp_dir("streak-limit-negative");
+        write_config(&root, "thresholds:\n  failure_streak_limit: -1\n");
+        let err = load_config(&root).unwrap_err();
+        assert!(err.message().contains("failure_streak_limit"));
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn failure_streak_limit_rejects_a_non_integer_value() {
+        let root = tmp_dir("streak-limit-non-integer");
+        write_config(&root, "thresholds:\n  failure_streak_limit: \"soon\"\n");
         assert!(load_config(&root).is_err());
         fs::remove_dir_all(&root).unwrap();
     }

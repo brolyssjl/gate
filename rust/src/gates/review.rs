@@ -26,7 +26,7 @@ use crate::core::state_machine::Phase;
 use crate::core::targets::{check_name, resolve_phase_targets};
 use crate::core::trust::is_commands_trusted;
 use crate::gates::plan_drift::plan_drift_check;
-use crate::gates::types::{fail, pass, result, Check, GateContext, GateResult};
+use crate::gates::types::{fail, fail_untrusted, pass, result, Check, GateContext, GateResult};
 
 pub fn review_gate(ctx: &GateContext) -> GateResult {
     let mut checks: Vec<Check> = Vec::new();
@@ -204,7 +204,7 @@ fn evidence_checks(ctx: &GateContext, current: Option<&str>, touched: &[String])
                 return pass(name, "no build/lint/test commands configured - nothing to re-verify");
             }
             if !trusted {
-                return fail(
+                return fail_untrusted(
                     name,
                     "code changed since the last gate passed and commands are untrusted - run `gate trust`",
                 );

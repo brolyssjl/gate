@@ -14,6 +14,14 @@ pub struct Check {
     pub name: String,
     pub ok: bool,
     pub detail: String,
+    /// True for a failing check caused by Gate refusing to spawn an
+    /// untrusted command (`gate trust`), rather than the phase's actual
+    /// criteria failing. `GateResult::only_trust_blocked` uses this so
+    /// `gate check`/`gate next` can exclude it from the failure-streak
+    /// count (PUR-01) - retrying gives the identical result until a human
+    /// runs `gate trust`, so counting it toward the loop-enforcement cap
+    /// would block on a config problem the cap itself can't fix.
+    pub trust_blocked: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -21,6 +29,20 @@ pub struct GateResult {
     pub phase: Phase,
     pub ok: bool,
     pub checks: Vec<Check>,
+}
+
+impl GateResult {
+    /// True when the gate failed and every failing check is a trust
+    /// refusal - Gate found nothing wrong with the work itself, only that
+    /// `gate trust` hasn't been run (see `Check::trust_blocked`).
+    pub fn only_trust_blocked(&self) -> bool {
+        !self.ok
+            && self
+                .checks
+                .iter()
+                .filter(|c| !c.ok)
+                .all(|c| c.trust_blocked)
+    }
 }
 
 /// TS's `GateContext` takes `root: string`; the Rust port uses `PathBuf`
@@ -39,6 +61,7 @@ pub fn pass(name: impl Into<String>, detail: impl Into<String>) -> Check {
         name: name.into(),
         ok: true,
         detail: detail.into(),
+        trust_blocked: false,
     }
 }
 
@@ -47,6 +70,18 @@ pub fn fail(name: impl Into<String>, detail: impl Into<String>) -> Check {
         name: name.into(),
         ok: false,
         detail: detail.into(),
+        trust_blocked: false,
+    }
+}
+
+/// Like `fail`, for the specific case of Gate refusing to spawn an
+/// untrusted command - see `Check::trust_blocked`.
+pub fn fail_untrusted(name: impl Into<String>, detail: impl Into<String>) -> Check {
+    Check {
+        name: name.into(),
+        ok: false,
+        detail: detail.into(),
+        trust_blocked: true,
     }
 }
 
@@ -76,5 +111,32 @@ mod tests {
     #[test]
     fn result_with_no_checks_is_ok_vacuously() {
         assert!(result(Phase::Done, vec![]).ok);
+    }
+
+    #[test]
+    fn only_trust_blocked_is_true_when_every_failure_is_a_trust_refusal() {
+        let res = result(
+            Phase::Implement,
+            vec![pass("a", ""), fail_untrusted("b", "not trusted")],
+        );
+        assert!(res.only_trust_blocked());
+    }
+
+    #[test]
+    fn only_trust_blocked_is_false_when_a_real_failure_is_also_present() {
+        let res = result(
+            Phase::Implement,
+            vec![
+                fail("a", "real problem"),
+                fail_untrusted("b", "not trusted"),
+            ],
+        );
+        assert!(!res.only_trust_blocked());
+    }
+
+    #[test]
+    fn only_trust_blocked_is_false_on_a_passing_result() {
+        let res = result(Phase::Implement, vec![pass("a", "")]);
+        assert!(!res.only_trust_blocked());
     }
 }

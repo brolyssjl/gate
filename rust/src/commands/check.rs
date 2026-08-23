@@ -6,9 +6,11 @@
 //! pass.
 
 use crate::cli::args::parse_args;
-use crate::cli::context::require_active_run;
+use crate::cli::context::{require_active_run, ActiveContext};
 use crate::cli::output::UserError;
 use crate::commands::gate_run::render_gate;
+use crate::commands::streak::blocked_error;
+use crate::core::run::write_run;
 use crate::gates::run_gate;
 use crate::gates::types::GateContext;
 
@@ -22,13 +24,36 @@ pub fn run(argv: Vec<String>) -> Result<(), UserError> {
     let mut full = vec!["check".to_string()];
     full.extend(argv);
     let args = parse_args(&full);
-    let ctx = require_active_run(Some(&args))?;
-    let gate_ctx = GateContext {
-        root: ctx.root,
-        run: ctx.run,
-        config: ctx.config,
-    };
+    let ActiveContext { root, run, config } = require_active_run(Some(&args))?;
+
+    // PUR-01 loop-enforcement cap: refuse to evaluate at all once a phase
+    // has failed `limit` times in a row - a streak refusal never itself
+    // counts as a failure (see `blocked_error`'s callers).
+    let phase = run.phase;
+    if let Some(limit) = config.failure_streak_cap() {
+        let streak = run.failure_streak(phase);
+        if streak >= limit {
+            return Err(blocked_error(phase, streak, limit));
+        }
+    }
+
+    let gate_ctx = GateContext { root, run, config };
     let res = run_gate(&gate_ctx);
+    let GateContext { root, mut run, .. } = gate_ctx;
+
+    // `gate check` stays otherwise side-effect-free: only touch run.json
+    // when the streak itself actually changes (a failure, or a pass that
+    // clears a prior streak), never on a repeated no-op pass. A trust-
+    // blocked failure doesn't count at all (PUR-01) - see
+    // `GateResult::only_trust_blocked`.
+    let before = run.failure_streak(phase);
+    if res.ok || !res.only_trust_blocked() {
+        run.record_gate_evaluation(phase, res.ok);
+    }
+    if run.failure_streak(phase) != before {
+        write_run(&root, &mut run).map_err(|e| UserError::new(e.to_string()))?;
+    }
+
     let ok = render_gate(&res, Vec::new(), &args.flags)?;
     std::process::exit(if ok { 0 } else { 1 });
 }

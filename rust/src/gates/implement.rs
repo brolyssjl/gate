@@ -26,7 +26,7 @@ use crate::core::state_machine::Phase;
 use crate::core::targets::{check_name, resolve_phase_targets};
 use crate::core::trust::is_commands_trusted;
 use crate::gates::plan_drift::plan_drift_check;
-use crate::gates::types::{fail, pass, result, Check, GateContext, GateResult};
+use crate::gates::types::{fail, fail_untrusted, pass, result, Check, GateContext, GateResult};
 
 pub fn implement_gate(ctx: &GateContext) -> GateResult {
     let mut checks: Vec<Check> = Vec::new();
@@ -177,7 +177,7 @@ pub fn command_check(
         return pass(name, format!("no {label} command configured (skipped)"));
     };
     if !trusted {
-        return fail(
+        return fail_untrusted(
             name,
             format!("{label} command not trusted - review .gate/config.yml and run `gate trust`"),
         );

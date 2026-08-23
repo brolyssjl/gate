@@ -8,7 +8,9 @@ use crate::cli::context::require_active_run;
 use crate::cli::output::{emit, UserError};
 use crate::commands::advance::advance;
 use crate::core::json::Value;
-use crate::core::run::{now_iso, write_run, HistoryEntry, HistoryEvent, OverrideEntry, Run};
+use crate::core::run::{
+    now_iso, write_run, HistoryEntry, HistoryEvent, OverrideAction, OverrideEntry, Run,
+};
 use crate::core::state_machine::{can_skip, Phase};
 
 pub fn run(argv: Vec<String>) -> Result<(), UserError> {
@@ -61,6 +63,7 @@ fn execute(root: &Path, mut run: Run, args: &ParsedArgs) -> Result<(), UserError
         .or_else(|| std::env::var("GATE_SESSION_ID").ok());
     run.overrides.push(OverrideEntry {
         phase: run.phase,
+        action: OverrideAction::Skip,
         reason: reason.clone(),
         at: at.clone(),
         by,
@@ -72,6 +75,10 @@ fn execute(root: &Path, mut run: Run, args: &ParsedArgs) -> Result<(), UserError
         detail: Some(reason.clone()),
         tree_hash: None,
     });
+    // A skip is one of the two ways past a blocked phase (PUR-01): the
+    // human has explicitly moved on, so the failure streak that was
+    // blocking it no longer applies.
+    run.clear_failure_streak(run.phase);
     write_run(root, &mut run).map_err(|e| UserError::new(e.to_string()))?;
     let result = advance(root, &mut run)?;
 

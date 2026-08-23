@@ -30,6 +30,11 @@ pub fn advance(root: &Path, run: &mut Run) -> Result<Advance, UserError> {
     let from = run.phase;
     if let Some(to) = next_phase(from, &run.profile) {
         run.phase = to;
+        // Belt-and-suspenders (PUR-01): a phase is never re-entered within
+        // one run's profile sequence, so `to` already has streak 0 - but a
+        // phase advance is documented as an explicit reset trigger, so make
+        // it true by construction rather than by coincidence.
+        run.clear_failure_streak(to);
         run.history.push(HistoryEntry {
             phase: to,
             event: HistoryEvent::Entered,

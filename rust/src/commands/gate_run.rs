@@ -101,6 +101,7 @@ mod tests {
                 name: "n".to_string(),
                 ok: true,
                 detail: "d".to_string(),
+                trust_blocked: false,
             }],
         };
         let mut data = Value::object();

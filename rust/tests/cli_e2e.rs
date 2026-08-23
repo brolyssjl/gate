@@ -560,9 +560,30 @@ fn refuses_to_reach_done_when_a_review_fix_breaks_the_code_staleness_guard() {
     // Without --fresh an existing packet is not re-baselined.
     gate(&repo, &["review"]);
     assert_eq!(gate(&repo, &["next"]).code, 1);
-    // Even with a fresh packet, re-verification catches the red suite.
+    // Even with a fresh packet, re-verification catches the red suite - the
+    // 3rd consecutive REVIEW failure, tripping the default failure-streak
+    // cap (PUR-01).
     gate(&repo, &["review", "--fresh"]);
     assert_eq!(gate(&repo, &["next"]).code, 1);
+
+    // The cap is now open: even a would-be-passing `next` refuses to
+    // evaluate at all until a human explicitly resets the streak.
+    let blocked = gate(&repo, &["next"]);
+    assert_eq!(blocked.code, 3);
+    assert!(blocked.stderr.contains("3 consecutive failures"));
+    assert_eq!(
+        gate(
+            &repo,
+            &[
+                "streak",
+                "reset",
+                "--reason",
+                "human reviewed, retry warranted"
+            ]
+        )
+        .code,
+        0
+    );
 
     // A real fix, re-packeted, goes green and enters RETRO.
     write_file(&repo, "greet.js", "module.exports = (n) => 'Hello, ' + n\n");

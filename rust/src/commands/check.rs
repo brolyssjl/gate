@@ -26,9 +26,9 @@ pub fn run(argv: Vec<String>) -> Result<(), UserError> {
     let args = parse_args(&full);
     let ActiveContext { root, run, config } = require_active_run(Some(&args))?;
 
-    // PUR-01 loop-enforcement cap: refuse to evaluate at all once a phase
-    // has failed `limit` times in a row - a streak refusal never itself
-    // counts as a failure (see `blocked_error`'s callers).
+    // Loop-enforcement cap: refuse to evaluate at all once a phase has
+    // failed `limit` times in a row - a streak refusal never itself counts
+    // as a failure (see `blocked_error`'s callers).
     let phase = run.phase;
     if let Some(limit) = config.failure_streak_cap() {
         let streak = run.failure_streak(phase);
@@ -44,7 +44,7 @@ pub fn run(argv: Vec<String>) -> Result<(), UserError> {
     // `gate check` stays otherwise side-effect-free: only touch run.json
     // when the streak itself actually changes (a failure, or a pass that
     // clears a prior streak), never on a repeated no-op pass. A trust-
-    // blocked failure doesn't count at all (PUR-01) - see
+    // blocked failure doesn't count at all - see
     // `GateResult::only_trust_blocked`.
     let before = run.failure_streak(phase);
     if res.ok || !res.only_trust_blocked() {

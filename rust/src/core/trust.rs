@@ -2,7 +2,7 @@
 //! from config.yml. Gate itself runs the `commands:` block - the same trust
 //! class as npm scripts - so the IMPLEMENT/TEST gates refuse to run them
 //! until a human has run `gate trust`. `scope_ignore` and playbook
-//! overrides/overlays (SEC-01) ride in the same hash even though gate
+//! overrides/overlays ride in the same hash even though gate
 //! doesn't execute them directly: they're what gate *tells the agent* to
 //! execute, or what the agent's own diff is allowed to touch without
 //! challenge - an attacker who can edit either gets the same effective

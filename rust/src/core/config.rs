@@ -108,7 +108,7 @@ pub struct RetentionConfig {
     pub days: Option<i64>,
 }
 
-/// Default `thresholds.failure_streak_limit` (PUR-01 loop-enforcement cap)
+/// Default `thresholds.failure_streak_limit` (the loop-enforcement cap)
 /// when the key is absent from `config.yml`.
 pub const DEFAULT_FAILURE_STREAK_LIMIT: i64 = 3;
 
@@ -144,7 +144,7 @@ impl GateConfig {
         self.targets.iter().find(|(n, _)| n == name).map(|(_, t)| t)
     }
 
-    /// Effective failure-streak cap (PUR-01): unset -> the default (3);
+    /// Effective failure-streak cap: unset -> the default (3);
     /// explicit `0` -> disabled (`None`, no cap ever blocks); any other
     /// explicit value -> that cap. `0` is otherwise a meaningless cap (the
     /// streak starts at 0, so a cap of 0 would block before any evaluation
@@ -394,8 +394,8 @@ pub fn load_config(root: &Path) -> Result<GateConfig, UserError> {
     })
 }
 
-/// `thresholds.failure_streak_limit` (PUR-01): must be a non-negative
-/// integer when present - `0` is the explicit "disabled" sentinel (see
+/// `thresholds.failure_streak_limit` must be a non-negative integer when
+/// present - `0` is the explicit "disabled" sentinel (see
 /// `GateConfig::failure_streak_cap`), anything negative is a config error
 /// naming the fix rather than silently misbehaving.
 fn extract_failure_streak_limit(value: Option<&YamlValue>) -> Result<Option<i64>, UserError> {
@@ -445,7 +445,7 @@ fn targets_to_json(root: &Path, targets: &[(String, TargetConfig)]) -> JsonValue
 }
 
 /// Per-target `playbooks:` overlay map, keyed by phase, each entry carrying
-/// both its declared relative path AND that file's current content (SEC-01).
+/// both its declared relative path AND that file's current content.
 /// Hashing the path alone would let an attacker repoint an already-trusted
 /// path at different content without invalidating trust.
 fn target_playbooks_to_json(root: &Path, playbooks: &[(String, String)]) -> JsonValue {
@@ -463,7 +463,7 @@ fn target_playbooks_to_json(root: &Path, playbooks: &[(String, String)]) -> Json
 }
 
 /// `.gate/playbooks/*.md` overrides, sorted by filename, each paired with
-/// its current content - the other half of SEC-01's coverage (target
+/// its current content - the other half of the trust-hash coverage (target
 /// overlays are `target_playbooks_to_json`'s job). A file that can't be read
 /// (permissions, race) is silently omitted from hashing the same way a
 /// missing file omits a target overlay's content above; `resolve_playbook`
@@ -491,7 +491,7 @@ fn playbook_override_entries(root: &Path) -> Vec<(String, String)> {
 
 /// Relative paths of every playbook file currently folded into the trust
 /// hash - `.gate/playbooks/*.md` overrides and each target's `playbooks:`
-/// overlay files - for `gate trust` to report what it is approving (SEC-01).
+/// overlay files - for `gate trust` to report what it is approving.
 /// A malformed `targets:` block just yields no overlay paths here; loading
 /// the config for real surfaces that error elsewhere.
 pub fn trusted_playbook_paths(root: &Path) -> Vec<String> {
@@ -517,17 +517,17 @@ pub fn trusted_playbook_paths(root: &Path) -> Vec<String> {
 /// Raw commands-block text, used by TOFU trust hashing (`core/trust.rs`,
 /// wave 2). `scope_ignore` rides in the same hash: it changes what the
 /// scope check accepts as noise rather than an undeclared file, the same
-/// trust class as a command. Playbooks ride in it too (SEC-01): gate
-/// executes `commands:` directly, and *tells the agent* to execute
-/// `playbooks:` - both are instructions an attacker could plant, so both
-/// need a human's review before they take effect.
+/// trust class as a command. Playbooks ride in it too: gate executes
+/// `commands:` directly, and *tells the agent* to execute `playbooks:` -
+/// both are instructions an attacker could plant, so both need a human's
+/// review before they take effect.
 ///
 /// `scope_ignore` and the two playbook sources are included only when
-/// non-empty (review finding F4, extended the same way for SEC-01): a repo
-/// upgrading from a config with none of these has no way to have set them,
-/// and the empty/absent default must hash identically to the pre-existing
-/// shape (`{ commands, targets }`) or every existing `trust.json` on disk
-/// would silently go stale the moment `gate` is upgraded. A repo that
+/// non-empty: a repo upgrading from a config with none of these has no way
+/// to have set them, and the empty/absent default must hash identically to
+/// the pre-existing shape (`{ commands, targets }`) or every existing
+/// `trust.json` on disk would silently go stale the moment `gate` is
+/// upgraded. A repo that
 /// already has non-empty playbook overrides/overlays, however, is expected
 /// to go stale on upgrade - that coverage is the point of this change.
 pub fn commands_block_hash_source(root: &Path) -> String {

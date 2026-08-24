@@ -18,7 +18,7 @@ pub struct Check {
     /// untrusted command (`gate trust`), rather than the phase's actual
     /// criteria failing. `GateResult::only_trust_blocked` uses this so
     /// `gate check`/`gate next` can exclude it from the failure-streak
-    /// count (PUR-01) - retrying gives the identical result until a human
+    /// count - retrying gives the identical result until a human
     /// runs `gate trust`, so counting it toward the loop-enforcement cap
     /// would block on a config problem the cap itself can't fix.
     pub trust_blocked: bool,

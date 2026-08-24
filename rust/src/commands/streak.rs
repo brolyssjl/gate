@@ -1,6 +1,7 @@
-//! `gate streak` / `gate streak reset` - not a TS port (new, PUR-01
-//! loop-enforcement cap). `gate streak` shows each phase's consecutive
-//! `gate check`/`gate next` failure count against the configured cap;
+//! `gate streak` / `gate streak reset` - not a TS port (new, a
+//! failure-streak loop-enforcement cap). `gate streak` shows each phase's
+//! consecutive `gate check`/`gate next` failure count against the
+//! configured cap;
 //! `gate streak reset [<phase>] --reason "..."` is one of the two ways past
 //! a blocked phase (the other is `gate skip`) - an explicit, reasoned,
 //! audited act, never automatic, the same discipline the README's threat

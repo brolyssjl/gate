@@ -75,9 +75,9 @@ fn execute(root: &Path, mut run: Run, args: &ParsedArgs) -> Result<(), UserError
         detail: Some(reason.clone()),
         tree_hash: None,
     });
-    // A skip is one of the two ways past a blocked phase (PUR-01): the
-    // human has explicitly moved on, so the failure streak that was
-    // blocking it no longer applies.
+    // A skip is one of the two ways past a blocked phase: the human has
+    // explicitly moved on, so the failure streak that was blocking it no
+    // longer applies.
     run.clear_failure_streak(run.phase);
     write_run(root, &mut run).map_err(|e| UserError::new(e.to_string()))?;
     let result = advance(root, &mut run)?;

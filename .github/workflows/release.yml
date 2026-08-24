@@ -62,7 +62,7 @@ jobs:
         with:
           path: release-assets
           merge-multiple: true
-      - name: Generate SHA256SUMS (SEC-02/03 - install.sh verifies against this)
+      - name: Generate SHA256SUMS (install.sh verifies against this)
         run: |
           cd release-assets
           shopt -s nullglob

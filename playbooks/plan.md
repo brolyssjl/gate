@@ -11,7 +11,10 @@ is your job; Gate only checks structure.
    `.specify/`, `_bmad/`), read it first and **cite** the spec path rather than
    restating it. When Gate detects an SDD directory (and `integrations.sdd` is
    not `off`), put that path in the `spec:` frontmatter field - the gate checks
-   it points somewhere real under the SDD dir. No SDD present: leave it blank.
+   it points somewhere real under the SDD dir. A blank `spec:` is only valid
+   when **no** SDD directory is detected at all; leave it blank in that case.
+   If an SDD dir *is* present, a blank `spec:` fails `plan.spec` - cite a real
+   path before you `gate approve`, not after `gate check` tells you so.
 3. **List every file** you expect to touch (globs allowed). IMPLEMENT will reject
    changes to files not covered here, so be honest and complete.
 4. **Write acceptance criteria.** Each must be *checkable*: give it a `verify`

@@ -6,7 +6,13 @@ Gate will not let you call this done over a red or hollow suite.
 ## Do
 
 1. For every criterion with `verify: test: <name>`, write or extend a test whose
-   **title contains that substring**. That is the mechanical link the gate checks.
+   **title contains that substring**. That is the mechanical link the gate checks -
+   but it only works if `commands.test` actually emits a JSON test report (see
+   "Report" below); with no JSON reporter wired up, `test.criteria` fails closed
+   with "no parseable test report found" no matter how well the test matches.
+   If this repo's test command has no JSON reporter and you're not going to wire
+   one up now, use `verify: manual` in plan.md instead - don't leave `test:`
+   criteria that can never pass.
 2. **Never weaken an assertion** to make a suite pass. Never delete a failing test
    to make it green. If a test reveals a bug, that is a DEBUG concern (later
    milestone) - do not paper over it here.

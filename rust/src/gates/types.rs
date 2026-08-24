@@ -22,6 +22,14 @@ pub struct Check {
     /// runs `gate trust`, so counting it toward the loop-enforcement cap
     /// would block on a config problem the cap itself can't fix.
     pub trust_blocked: bool,
+    /// True for a passing check Gate could not actually verify - it did
+    /// not block, but its detail is a disclaimer, not a proof. Rendered
+    /// with its own marker (not the plain "verified" checkmark) so a
+    /// passing gate doesn't read as stronger than it is - e.g.
+    /// `review.reviewer` when no implementer session id exists to compare
+    /// against, so reviewer independence went unchecked rather than
+    /// confirmed.
+    pub advisory: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -62,6 +70,19 @@ pub fn pass(name: impl Into<String>, detail: impl Into<String>) -> Check {
         ok: true,
         detail: detail.into(),
         trust_blocked: false,
+        advisory: false,
+    }
+}
+
+/// Like `pass`, for a check that didn't block but also couldn't actually be
+/// verified - see `Check::advisory`.
+pub fn pass_advisory(name: impl Into<String>, detail: impl Into<String>) -> Check {
+    Check {
+        name: name.into(),
+        ok: true,
+        detail: detail.into(),
+        trust_blocked: false,
+        advisory: true,
     }
 }
 
@@ -71,6 +92,7 @@ pub fn fail(name: impl Into<String>, detail: impl Into<String>) -> Check {
         ok: false,
         detail: detail.into(),
         trust_blocked: false,
+        advisory: false,
     }
 }
 
@@ -82,6 +104,7 @@ pub fn fail_untrusted(name: impl Into<String>, detail: impl Into<String>) -> Che
         ok: false,
         detail: detail.into(),
         trust_blocked: true,
+        advisory: false,
     }
 }
 

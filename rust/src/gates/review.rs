@@ -26,7 +26,9 @@ use crate::core::state_machine::Phase;
 use crate::core::targets::{check_name, resolve_phase_targets};
 use crate::core::trust::is_commands_trusted;
 use crate::gates::plan_drift::plan_drift_check;
-use crate::gates::types::{fail, fail_untrusted, pass, result, Check, GateContext, GateResult};
+use crate::gates::types::{
+    fail, fail_untrusted, pass, pass_advisory, result, Check, GateContext, GateResult,
+};
 
 pub fn review_gate(ctx: &GateContext) -> GateResult {
     let mut checks: Vec<Check> = Vec::new();
@@ -123,8 +125,10 @@ fn findings_check(review: &Review) -> Check {
 /// name fails: it is the cheapest mechanical proof that *someone* went
 /// through the rubric, and without it `gate review --fresh && gate next`
 /// would pass on the untouched scaffold. Equal to the implementer's session
-/// id fails (self-review); an unknown implementer passes with a note - a
-/// CLI cannot prove a human.
+/// id fails (self-review); an unknown implementer can't be compared at all,
+/// so this passes *advisory* rather than verified - a CLI cannot prove a
+/// human, and folding "we couldn't check" into a plain checkmark would
+/// overstate what Gate actually confirmed.
 fn reviewer_check(ctx: &GateContext, review: &Review) -> Check {
     if review.reviewer.is_empty() {
         return fail(
@@ -144,16 +148,20 @@ fn reviewer_check(ctx: &GateContext, review: &Review) -> Check {
             );
         }
     }
-    pass(
-        "review.reviewer",
-        match implementer {
-            Some(_) => format!("reviewed by {} (\u{2260} implementer)", review.reviewer),
-            None => format!(
-                "reviewed by {} (implementer identity unknown - independence unverified)",
+    match implementer {
+        Some(_) => pass(
+            "review.reviewer",
+            format!("reviewed by {} (\u{2260} implementer)", review.reviewer),
+        ),
+        None => pass_advisory(
+            "review.reviewer",
+            format!(
+                "reviewed by {} - independence unverified: no implementer session id was \
+recorded for this run, so Gate could not compare it against the reviewer (advisory only, not blocking)",
                 review.reviewer
             ),
-        },
-    )
+        ),
+    }
 }
 
 /// Staleness guard for the review-fix loop: fixing a finding changes the
@@ -466,7 +474,34 @@ mod tests {
             config: GateConfig::default(),
         };
         let res = review_gate(&ctx);
-        assert!(check(&res, "review.reviewer").unwrap().ok);
+        let c = check(&res, "review.reviewer").unwrap();
+        assert!(c.ok);
+        assert!(
+            !c.advisory,
+            "a verified distinct reviewer must not read as advisory"
+        );
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn reviewer_independence_is_advisory_not_verified_when_no_implementer_session_id_is_known() {
+        let root = make_repo("review-reviewer-unknown-implementer");
+        let run = review_run(&root, None);
+        write_packet(&root);
+        write_review(&root, SIGNED_EMPTY_REVIEW);
+        let ctx = GateContext {
+            root: root.clone(),
+            run,
+            config: GateConfig::default(),
+        };
+        let res = review_gate(&ctx);
+        let c = check(&res, "review.reviewer").unwrap();
+        assert!(c.ok, "must still be non-blocking");
+        assert!(
+            c.advisory,
+            "unverifiable independence must render distinctly from a verified pass"
+        );
+        assert!(c.detail.contains("independence unverified"));
         fs::remove_dir_all(&root).unwrap();
     }
 

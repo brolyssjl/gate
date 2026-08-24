@@ -180,6 +180,14 @@ carries over unchanged._
       can't reach a private repo (audit RM-03)
 - [ ] Docs site + case study (with agnosgram, the 2026-07/08 constructflow
       soak)
+- [ ] Reviewer identity threading (milestone-sized) - `review.reviewer`'s
+      independence check can only compare against `run.session_id`, which is
+      `None` in every CLI-driven flow unless the calling harness explicitly
+      passes `gate start --session`/`GATE_SESSION_ID`; today that leaves the
+      check advisory-only (a distinct, non-blocking warning marker, not real
+      enforcement - see the 2026-08-24 soak-friction fix). Needs a stable,
+      unspoofable session/agent identity threaded from the calling harness
+      into every gate-touching command, not a one-line fix.
 
 ## Fixes & improvements
 

@@ -13,8 +13,17 @@ The packet is fingerprint-bound to the code it was generated from: if you
 change anything afterwards - fixing a finding counts - the gate blocks until
 you re-run `gate review --fresh` so the reviewer sees the final code, and Gate
 re-verifies build/lint/test on its own. Hand the packet to a reviewer who is
-not you; the gate rejects a reviewer equal to your session id when both are
-known.
+not you.
+
+Independence enforcement is advisory, not guaranteed: the gate only rejects a
+reviewer equal to your *session id*, and a session id only exists on this run
+if the calling harness passed one (`gate start --session` or
+`GATE_SESSION_ID`). Most CLI-driven flows never set one, so nothing stops the
+same agent from filling in a different `reviewer:` string and signing off on
+its own work - `gate check`/`gate review` will say "independence unverified"
+rather than pretend to have confirmed it. Treat "hand it to someone else" as
+the actual control until a harness wires up real session identity (tracked on
+the roadmap).
 
 Solo, with no second session to hand the packet to: run `gate review --human`
 instead. It emits the same packet, prints this rubric, then prompts for
@@ -67,12 +76,14 @@ acceptable (a human decision, recorded for the audit trail).
   fingerprint) - any edit after the packet requires `gate review --fresh`.
 - `review.md` parses and names its `reviewer:`; no blocker/major finding is
   left `open`; any waived blocker/major carries a `waiver:` rationale.
-- The reviewer differs from the implementer's session id, when both are known.
+- The reviewer differs from the implementer's session id, when both are known
+  (advisory only when no session id was recorded for the run - see above).
 - If the code changed since the last gate passed (review fixes), Gate re-runs
   `build`/`lint`/`test` and they must be green.
 
 ## Advance
 
-`gate next` once every blocker/major is resolved or waived → DONE. After any
-fix: re-run `gate review --fresh` first, and expect the gate to re-verify the
-commands.
+`gate next` once every blocker/major is resolved or waived → RETRO, then
+DONE (RETRO always follows REVIEW - it is never skipped in a profile that
+has REVIEW at all). After any fix: re-run `gate review --fresh` first, and
+expect the gate to re-verify the commands.

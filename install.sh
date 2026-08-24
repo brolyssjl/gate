@@ -47,8 +47,7 @@ arch() {
 # https://github.com/OWNER/REPO/releases/latest/download/<asset> redirects
 # straight to the current release's asset - no need to resolve the tag via
 # the (rate-limited) api.github.com first. Pinned via $GATE_VERSION, it
-# targets that tag's own asset path instead. Works unauthenticated once the
-# repo is public.
+# targets that tag's own asset path instead. Works unauthenticated.
 release_url() {
   local asset="$1"
   if [ -n "$VERSION" ]; then
@@ -65,10 +64,11 @@ download_asset() {
   if curl -fsSL "$url" -o "$dest"; then
     return 0
   fi
-  # While the repo is private, unauthenticated asset downloads 404 even when
-  # the asset exists. gh reuses your existing auth and sees the same assets.
+  # Fallback for a network hiccup or GitHub API rate limiting on an
+  # unauthenticated request. gh reuses your existing auth and sees the same
+  # assets.
   if command -v gh >/dev/null 2>&1; then
-    echo "Direct download failed - retrying via gh (needed while the repo is private)..." >&2
+    echo "Direct download failed - retrying via gh (uses your existing GitHub auth)..." >&2
     local gh_args=(--repo "$REPO" --pattern "$asset" --output "$dest" --clobber)
     if [ -n "$VERSION" ]; then
       gh_args=("v${VERSION}" "${gh_args[@]}")

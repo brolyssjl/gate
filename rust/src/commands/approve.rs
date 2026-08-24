@@ -11,7 +11,7 @@ use crate::cli::output::{emit, UserError};
 use crate::core::json::Value;
 use crate::core::paths::run_paths;
 use crate::core::run::{now_iso, write_run, Approval, Run};
-use crate::core::state_machine::Phase;
+use crate::core::state_machine::{next_phase, Phase};
 
 fn snapshot_approved_plan(
     root: &std::path::Path,
@@ -130,8 +130,13 @@ fn execute(root: &Path, mut run: Run, args: &ParsedArgs) -> Result<(), UserError
     snapshot_approved_plan(root, &run.id, &plan_path)?;
     write_run(root, &mut run).map_err(|e| UserError::new(e.to_string()))?;
 
+    // The phase after PLAN varies by profile (bugfix skips straight to
+    // DEBUG) - derive it from the run's own configured sequence rather than
+    // hardcoding the feature-profile default, which prints an actively
+    // wrong phase name on any other profile.
+    let next = next_phase(Phase::Plan, &run.profile).unwrap_or(Phase::Done);
     let human = format!(
-        "Plan approved{}. Run `gate next` to enter IMPLEMENT.",
+        "Plan approved{}. Run `gate next` to enter {next}.",
         by.as_deref()
             .map(|b| format!(" by {b}"))
             .unwrap_or_default()
@@ -163,11 +168,15 @@ mod tests {
     }
 
     fn setup_run(root: &Path, plan: &str) -> Run {
+        setup_run_with_profile(root, plan, "feature")
+    }
+
+    fn setup_run_with_profile(root: &Path, plan: &str, profile: &str) -> Run {
         fs::create_dir_all(root.join(".gate")).unwrap();
         let mut r = new_run(NewRunParams {
             id: "r1".to_string(),
             title: "t".to_string(),
-            profile: "feature".to_string(),
+            profile: profile.to_string(),
             branch: None,
             base_ref: None,
             session_id: None,

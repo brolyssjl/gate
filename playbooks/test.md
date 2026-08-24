@@ -57,4 +57,6 @@ Jest/Vitest `--reporter=json` and the generic `{ "tests": [{ "name",
 
 ## Advance
 
-`gate next`. In this milestone TEST is the last gate before DONE.
+`gate next` to enter REVIEW - a fresh reviewer, not you, judges the diff
+before RETRO and DONE. `gate status` shows the run's full phase sequence if
+you want to confirm.

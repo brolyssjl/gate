@@ -22,5 +22,7 @@ changed something, stayed in scope, and left the build and lint green.
 
 ## Advance
 
-`gate next` to enter TEST. Do **not** write tests to game criteria here - that is
-the next phase, with its own gate.
+`gate next`. Most profiles enter TEST next - do **not** write tests to game
+criteria here, that is TEST's own gate, not this one. A `docs` run has no
+TEST phase at all and goes straight to DONE; `gate status` shows the actual
+sequence if you're unsure.

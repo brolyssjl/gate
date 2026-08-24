@@ -1,7 +1,7 @@
 # PLAN playbook
 
 You are in the **PLAN** phase. Produce `plan.md` in the run folder. Gate will not
-let you into IMPLEMENT until the plan is schema-valid and approved. Plan *quality*
+let you past PLAN until the plan is schema-valid and approved. Plan *quality*
 is your job; Gate only checks structure.
 
 ## Do
@@ -57,4 +57,6 @@ Free-form detail. Cite the SDD spec path here if one exists.
 ## Advance
 
 `gate check` to see what's missing → `gate approve` (after sign-off) →
-`gate next` to enter IMPLEMENT.
+`gate next`. Which phase comes next depends on the run's profile (`gate
+approve`'s own confirmation names it; `gate status` shows the full sequence) -
+don't assume IMPLEMENT, a bugfix run enters DEBUG instead.

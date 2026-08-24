@@ -26,7 +26,7 @@ use crate::core::state_machine::Phase;
 use crate::core::targets::{check_name, resolve_phase_targets};
 use crate::core::trust::is_commands_trusted;
 use crate::gates::plan_drift::plan_drift_check;
-use crate::gates::types::{fail, pass, result, Check, GateContext, GateResult};
+use crate::gates::types::{fail, fail_untrusted, pass, result, Check, GateContext, GateResult};
 
 pub fn implement_gate(ctx: &GateContext) -> GateResult {
     let mut checks: Vec<Check> = Vec::new();
@@ -121,7 +121,7 @@ pub fn scope_check(name: &str, ctx: &GateContext, touched: &[String]) -> Vec<Che
     let mut checks: Vec<Check> = Vec::new();
     if undeclared.is_empty() {
         // Truthful even when some touched files weren't declared but
-        // matched scope_ignore instead (review finding F5) - "all ...
+        // matched scope_ignore instead - "all ...
         // declared in plan.md" was misleading when `ignored` was the reason
         // some passed.
         let detail = if !ignored.is_empty() {
@@ -177,7 +177,7 @@ pub fn command_check(
         return pass(name, format!("no {label} command configured (skipped)"));
     };
     if !trusted {
-        return fail(
+        return fail_untrusted(
             name,
             format!("{label} command not trusted - review .gate/config.yml and run `gate trust`"),
         );

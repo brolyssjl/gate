@@ -9,6 +9,7 @@ use crate::cli::context::{require_active_run, ActiveContext};
 use crate::cli::output::UserError;
 use crate::commands::advance::advance;
 use crate::commands::gate_run::render_gate;
+use crate::commands::streak::blocked_error;
 use crate::core::git::tree_fingerprint;
 use crate::core::json::Value;
 use crate::core::playbooks::resolve_playbook_with_overlays;
@@ -34,6 +35,17 @@ pub fn run(argv: Vec<String>) -> Result<(), UserError> {
     let ctx = require_active_run(Some(&args))?;
     let ActiveContext { root, run, config } = ctx;
 
+    // Loop-enforcement cap: refuse to evaluate at all once a phase has
+    // failed `limit` times in a row - a streak refusal never itself counts
+    // as a failure (see `blocked_error`'s callers).
+    let phase = run.phase;
+    if let Some(limit) = config.failure_streak_cap() {
+        let streak = run.failure_streak(phase);
+        if streak >= limit {
+            return Err(blocked_error(phase, streak, limit));
+        }
+    }
+
     let gate_ctx = GateContext { root, run, config };
     let res = run_gate(&gate_ctx);
     let GateContext {
@@ -41,6 +53,12 @@ pub fn run(argv: Vec<String>) -> Result<(), UserError> {
         mut run,
         config,
     } = gate_ctx;
+
+    // A trust-blocked failure doesn't count toward the streak - see
+    // `GateResult::only_trust_blocked`.
+    if res.ok || !res.only_trust_blocked() {
+        run.record_gate_evaluation(phase, res.ok);
+    }
 
     if !res.ok {
         // Record the failed advancement attempt so `gate report` can show

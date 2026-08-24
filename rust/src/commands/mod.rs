@@ -26,4 +26,5 @@ pub mod shared;
 pub mod skip;
 pub mod start;
 pub mod status;
+pub mod streak;
 pub mod trust;

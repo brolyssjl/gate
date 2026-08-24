@@ -28,13 +28,15 @@ use cli::args::parse_args;
 use cli::output::UserError;
 use core::version::read_version;
 
-/// Byte-for-byte copy of `src/cli.ts`'s `HELP` template literal, with
+/// Originally a byte-for-byte copy of `src/cli.ts`'s `HELP` template literal
+/// (captured from `node dist/cli.js --help`'s real output rather than
+/// transcribed by hand, to eliminate escaping-transcription risk), with
 /// `${ADAPTER_KEYS.join(", ")}` already resolved to its frozen value
 /// (`claude, claude-skill, cursor, cline, windsurf, agents` - see
-/// `src/adapters/index.ts` / `adapters::adapter_keys()`). Captured directly
-/// from `node dist/cli.js --help`'s real output rather than transcribed by
-/// hand, to eliminate escaping-transcription risk (backticks/quotes inside
-/// the TS template literal).
+/// `src/adapters/index.ts` / `adapters::adapter_keys()`). The TS
+/// implementation is now retired; the `streak` entry below (the
+/// failure-streak loop-enforcement cap) is Rust-only and has no TS
+/// counterpart.
 const HELP: &str = r#"gate - an agent-agnostic quality harness (umpire, not a driver).
 
 Usage: gate <command> [options]
@@ -61,8 +63,14 @@ Commands:
                           after
   status                  Active run for the current branch, plus any other
                           branches with a run in flight
-  check [--run <id>]      Run the current gate; exit code = verdict
+  check [--run <id>]      Run the current gate; exit code = verdict (0/1),
+                          or 3 once the failure-streak cap blocks the phase
   next [--run <id>]       Check + advance on pass; on fail, print what's missing
+                          (same 0/1/3 exit codes as check)
+  streak [--run <id>]     Show each phase's consecutive check/next failure
+                          count against the configured cap (loop enforcement)
+    reset [phase] --reason [--by]  Explicitly clear a phase's failure streak
+                          (defaults to the current phase); audited in run.json
   review [--fresh] [--by] [--run <id>]  Emit a self-contained review packet
                           (REVIEW phase); --fresh regenerates it from the
                           current code
@@ -120,6 +128,7 @@ fn dispatch(command: &str) -> Option<CommandFn> {
         "log" => commands::log::run,
         "playbook" => commands::playbook::run,
         "guard" => commands::guard::run,
+        "streak" => commands::streak::run,
         _ => return None,
     })
 }

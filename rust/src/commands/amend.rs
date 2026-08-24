@@ -26,7 +26,7 @@ struct DiffResult {
 }
 
 /// The diff `gate amend` shows, only ever computed from a snapshot proven
-/// to be the plan `gate approve` actually recorded (review finding F2):
+/// to be the plan `gate approve` actually recorded:
 /// trusting `plan.approved.md` on its face would let a doctored snapshot
 /// produce an empty or misleading diff. The snapshot is trustworthy only
 /// when its own hash matches `approval.planHash`; anything else (missing,

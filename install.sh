@@ -85,7 +85,7 @@ download_asset() {
 # format: "<hex digest>  <filename>" per line). Checks just that one line,
 # via each tool's own `-c` mode fed on stdin, run from the file's own
 # directory so the checksum line's bare filename resolves without requiring
-# every other release asset to be present alongside it (SEC-02/03).
+# every other release asset to be present alongside it.
 verify_checksum() {
   local file="$1" asset="$2" sums_file="$3"
 

@@ -10,7 +10,7 @@
 //! neither and falls through to `embedded_playbooks`. Starting point:
 //! `std::env::current_exe()`.
 //!
-//! SEC-01: `.gate/playbooks/*.md` overrides and target `playbooks:`
+//! `.gate/playbooks/*.md` overrides and target `playbooks:`
 //! overlays are what gate *tells the agent* to execute, the same trust
 //! class as `commands:` (`core/trust.rs` and `gates/implement.rs`'s
 //! `command_check`, which this mirrors) - so both are folded into the TOFU
@@ -69,8 +69,8 @@ fn bundled_or_embedded(name: &str, phase: Phase) -> Option<String> {
 }
 
 /// Resolve the active playbook for a phase: the user's editable copy under
-/// `.gate/playbooks/` wins, PROVIDED the commands-block trust hash covers it
-/// (SEC-01) - an untrusted override is refused and the bundled default on
+/// `.gate/playbooks/` wins, PROVIDED the commands-block trust hash covers
+/// it - an untrusted override is refused and the bundled default on
 /// disk is used instead, falling back further to the copy compiled into the
 /// binary at build time. `None` for phases without a playbook (e.g. DONE).
 pub fn resolve_playbook(root: &Path, phase: Phase) -> Option<String> {
@@ -93,7 +93,7 @@ pub fn resolve_playbook(root: &Path, phase: Phase) -> Option<String> {
 /// The base playbook for `phase`, with one `## Target overlay: <name>`
 /// section appended per affected target that declares an overlay for this
 /// phase in its `config.yml` `playbooks:` map, PROVIDED the commands-block
-/// trust hash covers it (SEC-01) - untrusted overlays are refused (skipped
+/// trust hash covers it - untrusted overlays are refused (skipped
 /// entirely, with a banner naming which ones) rather than appended. No
 /// affected targets, or none with an overlay for this phase, returns the
 /// base playbook unchanged.
@@ -196,8 +196,8 @@ mod tests {
         stdfs::remove_dir_all(&root).unwrap();
     }
 
-    /// SEC-01: an override written after (or without ever) running `gate
-    /// trust` must not take effect - it's refused, the bundled/embedded
+    /// An override written after (or without ever) running `gate trust`
+    /// must not take effect - it's refused, the bundled/embedded
     /// default is used instead, and a banner says so (so the refusal is
     /// visible wherever this content surfaces: `gate start`/`next`,
     /// `gate playbook`, the review packet).
@@ -279,7 +279,7 @@ mod tests {
         stdfs::remove_dir_all(&root).unwrap();
     }
 
-    /// SEC-01: an overlay declared in config.yml but not covered by the
+    /// An overlay declared in config.yml but not covered by the
     /// current trust hash (never trusted, or trusted before the overlay was
     /// added/edited) is refused - skipped entirely, not appended - and the
     /// base playbook still comes back with a banner naming what was

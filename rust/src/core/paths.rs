@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 use crate::cli::output::UserError;
 
 /// Reject a run id that could escape `.gate/runs/`/`.gate/archive/` via a
-/// path-traversal or absolute-path component (SEC-04: `gate report
-/// ../../x` otherwise reaches `run_paths`'s plain `Path::join` unchecked,
+/// path-traversal or absolute-path component (`gate report ../../x`
+/// otherwise reaches `run_paths`'s plain `Path::join` unchecked,
 /// and `Path::join` with an absolute second argument discards the base
 /// entirely). Every entry point that takes a run id from free text - the
 /// `gate report <id>` positional, `gate playbook <phase> --run <id>`, and

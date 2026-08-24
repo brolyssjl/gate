@@ -10,11 +10,16 @@
 use std::path::Path;
 
 use crate::cli::args::{parse_args, ParsedArgs};
-use crate::cli::context::require_active_run;
+use crate::cli::context::{require_active_run, require_root};
 use crate::cli::output::{emit, UserError};
-use crate::core::config::GateConfig;
+use crate::commands::report::most_recent_run_id;
+use crate::core::config::{load_config, GateConfig};
+use crate::core::current::{read_current_run_id, resolve_branch_key, BranchKeyResolution};
 use crate::core::json::Value;
-use crate::core::run::{now_iso, write_run, OverrideAction, OverrideEntry, Run};
+use crate::core::paths::validate_run_id;
+use crate::core::run::{
+    now_iso, read_run, write_run, OverrideAction, OverrideEntry, Run, RunStatus,
+};
 use crate::core::state_machine::{Phase, GATED_PHASES};
 
 /// The message `gate check`/`gate next` return when a phase is blocked -
@@ -40,20 +45,70 @@ pub fn run(argv: Vec<String>) -> Result<(), UserError> {
     let mut full = vec!["streak".to_string()];
     full.extend(argv);
     let args = parse_args(&full);
-    let ctx = require_active_run(Some(&args))?;
 
     match args.positionals.first().map(String::as_str) {
-        None => show(&ctx.run, &ctx.config, &args),
-        Some("reset") => reset(&ctx.root, ctx.run, &args),
+        // Read-only: also resolves a run that has already reached DONE (or
+        // any other non-active status), unlike `require_active_run` - a
+        // finished run still has a final streak state worth reporting
+        // (usually all-zero, since a phase's streak clears the moment it
+        // passes) instead of just erroring because there's nothing "active"
+        // for the branch anymore.
+        None => {
+            let root = require_root()?;
+            let config = load_config(&root)?;
+            let run = resolve_run_for_show(&root, &args)?;
+            show(&run, &config, &args)
+        }
+        Some("reset") => {
+            let ctx = require_active_run(Some(&args))?;
+            reset(&ctx.root, ctx.run, &args)
+        }
         Some(other) => Err(UserError::usage(format!(
             "unknown gate streak subcommand \"{other}\" - use `gate streak` or `gate streak reset`"
         ))),
     }
 }
 
+/// Resolve which run `gate streak` (no subcommand) reports on: `--run <id>`
+/// wins outright (any status - unlike `require_active_run`'s `--run`, which
+/// only accepts an active run); otherwise the branch's active run, falling
+/// back to the most recently updated run overall (live or just-finished) so
+/// a run that reached DONE and had its "current" pointer cleared
+/// (`clear_run_everywhere`, called from `advance`) is still reachable
+/// without an explicit id. Mirrors `gate report`'s own fallback chain.
+fn resolve_run_for_show(root: &Path, args: &ParsedArgs) -> Result<Run, UserError> {
+    if let Some(id) = args.flags.str("run") {
+        validate_run_id(id)?;
+        return read_run(root, id);
+    }
+    let resolved = resolve_branch_key(root);
+    let BranchKeyResolution::Key(key) = &resolved else {
+        return Err(UserError::new(
+            "HEAD is detached - no branch to resolve a run from; pass a run id: gate streak --run <id>",
+        ));
+    };
+    let id = read_current_run_id(root, key)?
+        .or_else(|| most_recent_run_id(root))
+        .ok_or_else(|| {
+            UserError::new(
+                "no run to show a streak for - start one with `gate start \"<title>\"`, or pass a run id: gate streak --run <id>",
+            )
+        })?;
+    read_run(root, &id)
+}
+
 fn show(run: &Run, config: &GateConfig, args: &ParsedArgs) -> Result<(), UserError> {
     let limit = config.failure_streak_cap();
-    let mut lines = vec![format!("Run \"{}\" - current phase {}", run.id, run.phase)];
+    let mut lines = vec![format!(
+        "Run \"{}\" - current phase {}{}",
+        run.id,
+        run.phase,
+        if run.status == RunStatus::Active {
+            String::new()
+        } else {
+            format!(" (status: {})", run.status.as_str())
+        }
+    )];
     lines.push(match limit {
         Some(n) => format!("Failure-streak cap: {n} (thresholds.failure_streak_limit)"),
         None => "Failure-streak cap: disabled (thresholds.failure_streak_limit: 0)".to_string(),
@@ -80,6 +135,7 @@ fn show(run: &Run, config: &GateConfig, args: &ParsedArgs) -> Result<(), UserErr
 
     let mut data = Value::object();
     data.insert("phase", run.phase.as_str());
+    data.insert("status", run.status.as_str());
     data.insert("limit", limit);
     data.insert("streaks", streaks);
     emit(&lines.join("\n"), &data, &args.flags)

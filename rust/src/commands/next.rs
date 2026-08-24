@@ -62,21 +62,15 @@ pub fn run(argv: Vec<String>) -> Result<(), UserError> {
 
     if !res.ok {
         // Record the failed advancement attempt so `gate report` can show
-        // it. `gate check` stays side-effect free; `next` is the
-        // deliberate attempt to advance.
+        // it (both the bounded history event and the permanent per-phase
+        // count - see `Run::record_gate_failure_event`).
         let failed: Vec<String> = res
             .checks
             .iter()
             .filter(|c| !c.ok)
             .map(|c| c.name.clone())
             .collect();
-        run.history.push(HistoryEntry {
-            phase: run.phase,
-            event: HistoryEvent::Failed,
-            at: now_iso(),
-            detail: Some(failed.join(", ")),
-            tree_hash: None,
-        });
+        run.record_gate_failure_event(run.phase, &failed);
         write_run(&root, &mut run).map_err(|e| UserError::new(e.to_string()))?;
         render_gate(
             &res,

@@ -11,7 +11,8 @@ use crate::cli::output::{emit, UserError};
 use crate::core::config::trusted_playbook_paths;
 use crate::core::json::Value;
 use crate::core::trust::{
-    current_commands_hash, has_no_commands, is_commands_trusted, read_trust, write_trust,
+    current_commands_hash, diagnose_mismatch, has_no_commands, is_commands_trusted, read_trust,
+    write_trust, MismatchReason,
 };
 
 pub fn run(argv: Vec<String>) -> Result<(), UserError> {
@@ -35,6 +36,11 @@ fn execute(root: &Path, args: &ParsedArgs) -> Result<(), UserError> {
         let record = read_trust(root);
         let current_hash = current_commands_hash(root);
         let playbook_paths = trusted_playbook_paths(root);
+        let mismatch = if trusted {
+            None
+        } else {
+            record.as_ref().map(|r| diagnose_mismatch(root, r))
+        };
         let human = if trusted {
             format!(
                 "trusted ({}){}",
@@ -44,6 +50,15 @@ fn execute(root: &Path, args: &ParsedArgs) -> Result<(), UserError> {
                     current_hash.clone()
                 },
                 playbook_summary_suffix(&playbook_paths),
+            )
+        } else if mismatch == Some(MismatchReason::CoverageExpanded) {
+            format!(
+                "gate's trust coverage expanded in this version - nothing you previously trusted has changed. Review the newly covered playbooks{} and run `gate trust`.",
+                if playbook_paths.is_empty() {
+                    String::new()
+                } else {
+                    format!(" ({})", playbook_paths.join(", "))
+                },
             )
         } else {
             format!(
@@ -61,6 +76,13 @@ fn execute(root: &Path, args: &ParsedArgs) -> Result<(), UserError> {
         data.insert("trusted", trusted);
         data.insert("currentHash", current_hash);
         data.insert("storedHash", record.map(|r| r.commands_hash));
+        data.insert(
+            "mismatchReason",
+            mismatch.map(|m| match m {
+                MismatchReason::CoverageExpanded => "coverageExpanded",
+                MismatchReason::Changed => "changed",
+            }),
+        );
         data.insert("playbookPaths", playbook_paths);
         emit(&human, &data, &args.flags)?;
         // Mirrors TS's `process.exitCode = trusted ? 0 : 1; return;` - the
@@ -95,6 +117,7 @@ fn execute(root: &Path, args: &ParsedArgs) -> Result<(), UserError> {
     data.insert("commandsHash", record.commands_hash.clone());
     data.insert("trustedAt", record.trusted_at.clone());
     data.insert("trustedBy", record.trusted_by.clone());
+    data.insert("coverageVersion", record.coverage_version as i64);
     data.insert("playbookPaths", playbook_paths);
     emit(&human, &data, &args.flags)
 }

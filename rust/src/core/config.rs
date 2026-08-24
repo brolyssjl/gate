@@ -514,6 +514,48 @@ pub fn trusted_playbook_paths(root: &Path) -> Vec<String> {
     paths
 }
 
+fn targets_to_json_legacy(targets: &[(String, TargetConfig)]) -> JsonValue {
+    let mut obj = JsonValue::object();
+    for (name, t) in targets {
+        let mut entry = JsonValue::object();
+        entry.insert("match", t.match_globs.clone());
+        entry.insert("commands", commands_to_json(&t.commands));
+        obj.insert(name.as_str(), entry);
+    }
+    obj
+}
+
+/// The pre-SEC-01 shape of `commands_block_hash_source` (trust coverage
+/// version 1): commands + targets (without each target's `playbooks:`
+/// overlay) + `scope_ignore` when non-empty - no playbook coverage at all.
+/// Exists only so `core/trust.rs` can tell a real config edit apart from
+/// gate's own coverage-widening upgrades on a `trust.json` written before
+/// SEC-01: if a stored hash matches this legacy recomputation, the
+/// pre-existing trust surface is genuinely unchanged and only gate's
+/// coverage grew.
+pub fn commands_block_hash_source_legacy(root: &Path) -> String {
+    let config_path = gate_paths(root).config;
+    if !config_path.exists() {
+        return String::new();
+    }
+    let raw = fs::read_to_string(&config_path)
+        .ok()
+        .and_then(|text| yaml::parse_yaml(&text).ok())
+        .unwrap_or(YamlValue::Null);
+
+    let commands = extract_commands(raw.get("commands"));
+    let targets = validate_and_extract_targets(raw.get("targets")).unwrap_or_default();
+    let scope_ignore = extract_string_array(raw.get("scope_ignore")).unwrap_or_default();
+
+    let mut source = JsonValue::object();
+    source.insert("commands", commands_to_json(&commands));
+    source.insert("targets", targets_to_json_legacy(&targets));
+    if !scope_ignore.is_empty() {
+        source.insert("scope_ignore", scope_ignore);
+    }
+    json::stringify_compact(&source)
+}
+
 /// Raw commands-block text, used by TOFU trust hashing (`core/trust.rs`,
 /// wave 2). `scope_ignore` rides in the same hash: it changes what the
 /// scope check accepts as noise rather than an undeclared file, the same
@@ -809,6 +851,42 @@ mod tests {
         let v2 = commands_block_hash_source(&root);
         assert_ne!(v1, v2);
         assert!(v2.contains("v2"));
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn legacy_hash_source_never_includes_playbooks_even_when_present() {
+        let root = tmp_dir("hash-source-legacy-ignores-playbooks");
+        write_config(
+            &root,
+            "commands:\n  test: echo hi\ntargets:\n  api:\n    match: [apps/api/**]\n    playbooks: { test: overlay.md }\n",
+        );
+        fs::write(root.join("overlay.md"), "overlay\n").unwrap();
+        fs::create_dir_all(root.join(".gate/playbooks")).unwrap();
+        fs::write(root.join(".gate/playbooks/plan.md"), "override\n").unwrap();
+
+        let legacy = commands_block_hash_source_legacy(&root);
+        assert!(!legacy.contains("playbook"));
+        assert!(!legacy.contains("overlay"));
+        assert!(!legacy.contains("override"));
+        assert_eq!(
+            legacy,
+            "{\"commands\":{\"test\":\"echo hi\"},\"targets\":{\"api\":{\"match\":[\"apps/api/**\"],\"commands\":{}}}}"
+        );
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn legacy_hash_source_matches_current_source_when_no_playbook_coverage_exists() {
+        let root = tmp_dir("hash-source-legacy-matches-current");
+        write_config(
+            &root,
+            "commands:\n  test: echo hi\nscope_ignore:\n  - dist/**\n",
+        );
+        assert_eq!(
+            commands_block_hash_source_legacy(&root),
+            commands_block_hash_source(&root)
+        );
         fs::remove_dir_all(&root).unwrap();
     }
 

@@ -67,6 +67,14 @@ impl Value {
         }
     }
 
+    pub fn as_i64(&self) -> Option<i64> {
+        match self {
+            Value::Int(n) => Some(*n),
+            Value::Float(f) => Some(*f as i64),
+            _ => None,
+        }
+    }
+
     pub fn as_object(&self) -> Option<&[(String, Value)]> {
         match self {
             Value::Object(entries) => Some(entries.as_slice()),

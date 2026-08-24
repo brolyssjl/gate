@@ -14,18 +14,44 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use crate::core::config::commands_block_hash_source;
+use crate::core::config::{commands_block_hash_source, commands_block_hash_source_legacy};
 use crate::core::fsx::write_file_atomic;
 use crate::core::json::{self, Value};
 use crate::core::paths::gate_paths;
 use crate::core::run::now_iso;
 use crate::core::sha256::sha256_prefixed;
 
+/// The trust-hash schema/coverage version this build writes. Version 1 (the
+/// implicit default for any `trust.json` with no `coverageVersion` field) is
+/// the pre-SEC-01 shape: commands + targets + scope_ignore, no playbook
+/// coverage. Version 2 adds `.gate/playbooks/*.md` overrides and target
+/// `playbooks:` overlays to the hash. Bump this again the next time gate
+/// widens what the trust hash covers.
+pub const CURRENT_COVERAGE_VERSION: u32 = 2;
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct TrustRecord {
     pub commands_hash: String,
     pub trusted_at: String,
     pub trusted_by: Option<String>,
+    /// Trust-hash schema version this record was written under. Absent in
+    /// the stored JSON (any `trust.json` from before this field existed)
+    /// reads back as `1`, the pre-SEC-01 shape.
+    pub coverage_version: u32,
+}
+
+/// Why a stored trust record's hash doesn't match the current one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MismatchReason {
+    /// The stored hash was computed under an older, narrower coverage
+    /// version, and recomputing under THAT version's shape still matches -
+    /// gate's trust coverage grew, but nothing the user previously trusted
+    /// actually changed.
+    CoverageExpanded,
+    /// The hash differs even accounting for coverage growth: a real edit to
+    /// `commands:`, `scope_ignore:`, or a covered playbook - or outright
+    /// tampering.
+    Changed,
 }
 
 fn trust_path(root: &Path) -> PathBuf {
@@ -34,6 +60,27 @@ fn trust_path(root: &Path) -> PathBuf {
 
 pub fn current_commands_hash(root: &Path) -> String {
     sha256_prefixed(commands_block_hash_source(root).as_bytes())
+}
+
+/// Hash of the config under the coverage-version-1 (pre-SEC-01) shape - see
+/// `commands_block_hash_source_legacy`.
+pub fn legacy_commands_hash(root: &Path) -> String {
+    sha256_prefixed(commands_block_hash_source_legacy(root).as_bytes())
+}
+
+/// Diagnose a hash mismatch for a stored `record` against the current
+/// config. Only meaningful once the caller already knows `record.commands_hash
+/// != current_commands_hash(root)` - a record whose stored coverage version
+/// is already current can't be explained by coverage growth, so it always
+/// reads as `Changed`.
+pub fn diagnose_mismatch(root: &Path, record: &TrustRecord) -> MismatchReason {
+    if record.coverage_version < CURRENT_COVERAGE_VERSION
+        && record.commands_hash == legacy_commands_hash(root)
+    {
+        MismatchReason::CoverageExpanded
+    } else {
+        MismatchReason::Changed
+    }
 }
 
 /// True when the commands block is empty (nothing executes, e.g. `{}`) AND
@@ -55,6 +102,11 @@ pub fn read_trust(root: &Path) -> Option<TrustRecord> {
             .get("trustedBy")
             .and_then(|v| v.as_str())
             .map(String::from),
+        coverage_version: parsed
+            .get("coverageVersion")
+            .and_then(|v| v.as_i64())
+            .map(|n| n as u32)
+            .unwrap_or(1),
     })
 }
 
@@ -63,11 +115,13 @@ pub fn write_trust(root: &Path, by: Option<&str>) -> io::Result<TrustRecord> {
         commands_hash: current_commands_hash(root),
         trusted_at: now_iso(),
         trusted_by: by.map(String::from),
+        coverage_version: CURRENT_COVERAGE_VERSION,
     };
     let mut obj = Value::object();
     obj.insert("commandsHash", record.commands_hash.as_str());
     obj.insert("trustedAt", record.trusted_at.as_str());
     obj.insert("trustedBy", record.trusted_by.clone());
+    obj.insert("coverageVersion", record.coverage_version as i64);
     let text = json::stringify_pretty(&obj) + "\n";
     write_file_atomic(&trust_path(root), &text)?;
     Ok(record)
@@ -169,6 +223,87 @@ mod tests {
         write_config(&root, "commands:\n  test: \"echo hi\"\nscope_ignore: []\n");
         assert_eq!(current_commands_hash(&root), pre_upgrade_hash);
         assert!(is_commands_trusted(&root));
+        stdfs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn round_trips_an_old_format_trust_json_with_no_coverage_version_field() {
+        let root = tmp_dir("old-format-round-trip");
+        write_config(&root, "commands:\n  test: echo hi\n");
+        stdfs::create_dir_all(root.join(".gate")).unwrap();
+        stdfs::write(
+            root.join(".gate/trust.json"),
+            "{\n  \"commandsHash\": \"sha256:abc\",\n  \"trustedAt\": \"2026-01-01T00:00:00.000Z\",\n  \"trustedBy\": null\n}\n",
+        )
+        .unwrap();
+
+        let record = read_trust(&root).unwrap();
+        assert_eq!(record.commands_hash, "sha256:abc");
+        assert_eq!(record.coverage_version, 1);
+        stdfs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn write_trust_stamps_the_current_coverage_version() {
+        let root = tmp_dir("write-stamps-coverage-version");
+        write_config(&root, "commands:\n  test: echo hi\n");
+        let record = write_trust(&root, None).unwrap();
+        assert_eq!(record.coverage_version, CURRENT_COVERAGE_VERSION);
+        let reread = read_trust(&root).unwrap();
+        assert_eq!(reread.coverage_version, CURRENT_COVERAGE_VERSION);
+        stdfs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn diagnoses_a_coverage_expansion_when_the_legacy_hash_still_matches() {
+        let root = tmp_dir("diagnose-coverage-expanded");
+        write_config(&root, "commands:\n  test: echo hi\n");
+        // A version-1 record, hashed under the legacy (pre-SEC-01) shape,
+        // for a config that has since grown playbook coverage (which the
+        // current, version-2 hash source would fold in) but whose commands
+        // themselves never changed.
+        let legacy_hash = legacy_commands_hash(&root);
+        stdfs::create_dir_all(root.join(".gate/playbooks")).unwrap();
+        stdfs::write(root.join(".gate/playbooks/plan.md"), "# custom\n").unwrap();
+        let record = TrustRecord {
+            commands_hash: legacy_hash,
+            trusted_at: now_iso(),
+            trusted_by: None,
+            coverage_version: 1,
+        };
+        assert_ne!(record.commands_hash, current_commands_hash(&root));
+        assert_eq!(
+            diagnose_mismatch(&root, &record),
+            MismatchReason::CoverageExpanded
+        );
+        stdfs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn diagnoses_a_real_change_when_the_legacy_hash_also_no_longer_matches() {
+        let root = tmp_dir("diagnose-real-change");
+        write_config(&root, "commands:\n  test: echo one\n");
+        let legacy_hash = legacy_commands_hash(&root);
+        write_config(&root, "commands:\n  test: echo two\n");
+        let record = TrustRecord {
+            commands_hash: legacy_hash,
+            trusted_at: now_iso(),
+            trusted_by: None,
+            coverage_version: 1,
+        };
+        assert_eq!(diagnose_mismatch(&root, &record), MismatchReason::Changed);
+        stdfs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn diagnoses_a_real_change_when_the_stored_record_is_already_current_version() {
+        let root = tmp_dir("diagnose-current-version-mismatch");
+        write_config(&root, "commands:\n  test: echo one\n");
+        write_trust(&root, None).unwrap();
+        write_config(&root, "commands:\n  test: echo two\n");
+        let record = read_trust(&root).unwrap();
+        assert_eq!(record.coverage_version, CURRENT_COVERAGE_VERSION);
+        assert_eq!(diagnose_mismatch(&root, &record), MismatchReason::Changed);
         stdfs::remove_dir_all(&root).unwrap();
     }
 

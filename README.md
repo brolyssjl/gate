@@ -175,7 +175,13 @@ re-baselined.
 
 The reviewer signs off by filling in `reviewer:` in `review.md` - identity is
 claimed at sign-off, not at packet time, and the gate rejects an anonymous
-review and a reviewer equal to the implementer's session id.
+review and a reviewer equal to the implementer's session id, *when a session
+id was recorded for the run*. Most CLI-driven flows never set one (it only
+exists if the calling harness passed `gate start --session`/
+`GATE_SESSION_ID`), so in practice this check is advisory: `review.reviewer`
+still passes, but with a distinct warning marker and an "independence
+unverified" detail rather than the plain checkmark a genuinely confirmed
+pass gets.
 
 Fixes made during review change the code *after* IMPLEMENT/TEST certified it,
 so when the tree no longer matches the fingerprint recorded at the last gate

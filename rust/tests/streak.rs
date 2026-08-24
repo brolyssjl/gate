@@ -171,6 +171,56 @@ fn streak_show_reports_the_current_state_as_json() {
     assert_eq!(data.get("limit").unwrap().as_i64(), Some(3));
 }
 
+/// Once a run reaches DONE, `advance` clears its branch's "current run"
+/// pointer (`clear_run_everywhere`) - `gate streak` used to rely entirely on
+/// that pointer, so it could show nothing at all for a run that had just
+/// finished. It should instead report the finished run's final state.
+#[test]
+fn streak_show_reports_a_finished_runs_final_state_instead_of_nothing() {
+    let repo = make_repo(&[]);
+    gate(&repo, &["init"]);
+    let started = gate(
+        &repo,
+        &["start", "docs demo", "--profile", "docs", "--json"],
+    );
+    let plan_path = started.json().str("plan").unwrap().to_string();
+    let run_id = started.json().str("id").unwrap().to_string();
+    common::write_file(
+        &repo,
+        &plan_path,
+        "---\ngoal: g\nfiles:\n  - a.txt\ncriteria:\n  - id: c1\n    text: t\n    verify: manual\n---\n",
+    );
+    assert_eq!(gate(&repo, &["approve", "--by", "human"]).code, 0);
+    assert_eq!(gate(&repo, &["next"]).code, 0); // PLAN -> IMPLEMENT
+
+    common::write_file(&repo, "a.txt", "docs change\n");
+    let advanced = gate(&repo, &["next", "--json"]);
+    assert_eq!(advanced.code, 0);
+    assert_eq!(
+        advanced.json().get("done").and_then(|v| v.as_bool()),
+        Some(true)
+    );
+
+    // No `--run`: resolved via the fallback (no active run left for the
+    // branch once DONE cleared the pointer).
+    let shown = gate(&repo, &["streak", "--json"]);
+    assert_eq!(shown.code, 0);
+    let data = shown.json();
+    assert_eq!(data.str("phase"), Some("DONE"));
+    assert_eq!(data.str("status"), Some("done"));
+    assert_eq!(
+        data.get("streaks").unwrap().get("PLAN").unwrap().as_i64(),
+        Some(0)
+    );
+    let shown_human = gate(&repo, &["streak"]);
+    assert!(shown_human.stdout.contains("status: done"));
+
+    // Explicit `--run <finished-id>` also works, unlike `require_active_run`.
+    let shown_explicit = gate(&repo, &["streak", "--run", &run_id, "--json"]);
+    assert_eq!(shown_explicit.code, 0);
+    assert_eq!(shown_explicit.json().str("status"), Some("done"));
+}
+
 #[test]
 fn a_usage_error_never_counts_as_a_failure() {
     let repo = make_repo(&[]);

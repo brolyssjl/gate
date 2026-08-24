@@ -125,7 +125,58 @@ fn emits_a_stable_json_schema_for_check() {
     assert_eq!(parsed.bool_at("ok"), Some(false));
     assert!(parsed.get("checks").unwrap().as_array().is_some());
     let check0 = &parsed.get("checks").unwrap().as_array().unwrap()[0];
-    assert_eq!(check0.sorted_keys(), vec!["detail", "name", "ok"]);
+    assert_eq!(
+        check0.sorted_keys(),
+        vec!["advisory", "detail", "name", "ok"]
+    );
+}
+
+/// `gate approve`'s printed transition line must name the phase the run's
+/// own profile actually enters next, not the feature-profile default
+/// (soak finding: a bugfix run printed "enter IMPLEMENT" when the next
+/// phase is DEBUG - bugfix skips IMPLEMENT entirely).
+/// `gate <subcommand> --help` must print that subcommand's own usage, not
+/// the entire top-level command list - previously `--help` was intercepted
+/// in `main` before dispatch ever saw which command it followed.
+#[test]
+fn subcommand_help_prints_its_own_usage_not_the_full_help() {
+    let repo = make_repo(&[]);
+    let trust_help = gate(&repo, &["trust", "--help"]);
+    assert_eq!(trust_help.code, 0);
+    assert!(trust_help.stdout.starts_with("Usage: gate trust"));
+    assert!(!trust_help.stdout.contains("Usage: gate <command>"));
+    assert!(!trust_help.stdout.contains("Commands:"));
+
+    let short_flag = gate(&repo, &["streak", "-h"]);
+    assert_eq!(short_flag.code, 0);
+    assert!(short_flag.stdout.starts_with("Usage: gate streak"));
+
+    // No subcommand, or an unrecognized one, still gets the full help.
+    let full = gate(&repo, &["--help"]);
+    assert!(full.stdout.contains("Usage: gate <command> [options]"));
+    let unknown = gate(&repo, &["not-a-real-command", "--help"]);
+    assert!(unknown.stdout.contains("Usage: gate <command> [options]"));
+}
+
+#[test]
+fn gate_approve_names_the_actual_next_phase_for_a_non_feature_profile() {
+    let repo = make_repo(&[]);
+    gate(&repo, &["init"]);
+    gate(&repo, &["start", "fix login", "--profile", "bugfix"]);
+    let run_id = gate(&repo, &["status", "--json"])
+        .json()
+        .str("id")
+        .unwrap()
+        .to_string();
+    write_file(
+        &repo,
+        &format!(".gate/runs/{run_id}/plan.md"),
+        "---\ngoal: fix it\nfiles:\n  - a.txt\ncriteria:\n  - id: c1\n    text: t\n    verify: manual\n---\n",
+    );
+    let approved = gate(&repo, &["approve"]);
+    assert_eq!(approved.code, 0);
+    assert!(approved.stdout.contains("enter DEBUG"));
+    assert!(!approved.stdout.contains("enter IMPLEMENT"));
 }
 
 #[test]
@@ -500,6 +551,68 @@ fn untrusted_dot_gate_playbooks_override_is_refused_until_gate_trust_runs() {
     assert!(tampered_text.contains("UNTRUSTED PLAYBOOK IGNORED"));
 }
 
+/// A `gate trust --check` mismatch caused purely by gate's own trust-hash
+/// coverage growing (a `trust.json` written before playbooks joined the
+/// hash, replayed against a config whose commands never changed) reads as a
+/// coverage-expansion notice, not a tampering warning.
+#[test]
+fn trust_check_distinguishes_coverage_expansion_from_a_real_change() {
+    let repo = make_repo(&[]);
+    gate(&repo, &["init"]);
+
+    // Capture the coverage-version-1 (pre-SEC-01) hash: the commands block
+    // as `gate init` scaffolded it, with no playbook overrides present -
+    // `gate init` seeds `.gate/playbooks/*.md` by default, so they're
+    // removed first to isolate the pre-playbook-coverage shape.
+    std::fs::remove_dir_all(repo.join(".gate/playbooks")).unwrap();
+    let legacy_trusted = gate(&repo, &["trust", "--json"]).json();
+    let legacy_hash = legacy_trusted.str("commandsHash").unwrap().to_string();
+
+    // Simulate a `trust.json` written before playbook coverage existed:
+    // same hash, coverage version 1.
+    write_file(
+        &repo,
+        ".gate/trust.json",
+        &format!("{{\n  \"commandsHash\": \"{legacy_hash}\",\n  \"trustedAt\": \"2026-01-01T00:00:00.000Z\",\n  \"trustedBy\": null,\n  \"coverageVersion\": 1\n}}\n"),
+    );
+
+    // Widen coverage the way SEC-01 did, without re-trusting: bring back a
+    // `.gate/playbooks/*.md` override. The commands block itself is
+    // untouched.
+    write_file(&repo, ".gate/playbooks/plan.md", "# custom plan\n");
+
+    let check = gate(&repo, &["trust", "--check", "--json"]);
+    assert_eq!(check.code, 1);
+    let data = check.json();
+    assert_eq!(data.get("trusted").unwrap().as_bool(), Some(false));
+    assert_eq!(data.str("mismatchReason"), Some("coverageExpanded"));
+
+    let check_human = gate(&repo, &["trust", "--check"]);
+    assert_eq!(check_human.code, 1);
+    assert!(!check_human.stdout.contains("NOT trusted"));
+    assert!(check_human.stdout.contains("coverage expanded"));
+    assert!(check_human
+        .stdout
+        .contains("nothing you previously trusted has changed"));
+
+    // A genuine edit to the commands block, by contrast, still reads as a
+    // real, tampering-appropriate mismatch.
+    write_file(
+        &repo,
+        ".gate/config.yml",
+        "commands:\n  test: echo tampered\n",
+    );
+    let tampered_check = gate(&repo, &["trust", "--check", "--json"]);
+    assert_eq!(tampered_check.code, 1);
+    let tampered_data = tampered_check.json();
+    assert_eq!(tampered_data.str("mismatchReason"), Some("changed"));
+
+    let tampered_human = gate(&repo, &["trust", "--check"]);
+    assert_eq!(tampered_human.code, 1);
+    assert!(tampered_human.stdout.contains("NOT trusted"));
+    assert!(!tampered_human.stdout.contains("coverage expanded"));
+}
+
 #[test]
 fn refuses_to_reach_done_when_a_review_fix_breaks_the_code_staleness_guard() {
     let repo = make_repo(&[
@@ -734,6 +847,58 @@ fn reports_per_run_durations_gate_failures_and_findings() {
     let phases = report.get("phases").unwrap().as_array().unwrap();
     assert!(phases.iter().any(|p| p.str("phase") == Some("PLAN")));
     assert!(report.get("findings").unwrap().is_null()); // no review.md yet
+}
+
+/// `gate check` is the read-only precheck the playbooks tell an agent to
+/// run before `gate next` - a real gate FAIL discovered there used to leave
+/// no trace anywhere but scrollback (`gate report`'s failure count and
+/// `run.json`'s history only ever came from `gate next`). Confirms `gate
+/// check` failures now show up identically.
+#[test]
+fn gate_check_failures_are_persisted_and_show_up_in_gate_report() {
+    let repo = make_repo(&[]);
+    gate(&repo, &["init"]);
+    gate(&repo, &["start", "check-failure demo"]);
+
+    assert_eq!(gate(&repo, &["check"]).code, 1);
+    assert_eq!(gate(&repo, &["check"]).code, 1);
+
+    let report = gate(&repo, &["report", "--json"]).json();
+    assert!(report.get("gateFailures").unwrap().as_i64().unwrap() >= 2);
+    let phases = report.get("phases").unwrap().as_array().unwrap();
+    let plan = phases
+        .iter()
+        .find(|p| p.str("phase") == Some("PLAN"))
+        .unwrap();
+    assert_eq!(plan.get("gateFailures").unwrap().as_i64(), Some(2));
+}
+
+/// The per-phase failure count survives past `MAX_FAILURE_HISTORY_EVENTS`
+/// (20) failed evaluations - `gate report` must keep reporting the true
+/// total via the permanent counter, not undercount from whatever's left in
+/// the (deliberately bounded) `history` events.
+#[test]
+fn gate_report_failure_count_stays_accurate_past_the_bounded_history_window() {
+    let repo = make_repo(&[]);
+    gate(&repo, &["init"]);
+    common::write_file(
+        &repo,
+        ".gate/config.yml",
+        "thresholds:\n  failure_streak_limit: 0\n",
+    );
+    gate(&repo, &["start", "many failures demo"]);
+
+    for _ in 0..25 {
+        assert_eq!(gate(&repo, &["check"]).code, 1);
+    }
+
+    let report = gate(&repo, &["report", "--json"]).json();
+    let phases = report.get("phases").unwrap().as_array().unwrap();
+    let plan = phases
+        .iter()
+        .find(|p| p.str("phase") == Some("PLAN"))
+        .unwrap();
+    assert_eq!(plan.get("gateFailures").unwrap().as_i64(), Some(25));
 }
 
 #[test]

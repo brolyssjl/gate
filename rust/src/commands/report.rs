@@ -17,7 +17,7 @@ use crate::cli::output::{emit, UserError};
 use crate::core::current::{read_current_run_id, resolve_branch_key, BranchKeyResolution};
 use crate::core::json::{self, Value};
 use crate::core::paths::{archive_path, gate_paths, run_paths, validate_run_id};
-use crate::core::run::{read_run, HistoryEntry, HistoryEvent, Run, RunStatus};
+use crate::core::run::{read_run, HistoryEntry, HistoryEvent, OverrideAction, Run, RunStatus};
 use crate::core::state_machine::Phase;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -42,6 +42,7 @@ pub struct FindingsSummary {
 #[derive(Debug, Clone, PartialEq)]
 pub struct OverrideOut {
     pub phase: Phase,
+    pub action: OverrideAction,
     pub reason: String,
     pub at: String,
     pub by: Option<String>,
@@ -219,6 +220,7 @@ pub fn build_report_data(root: &Path, run: &Run) -> ReportData {
         .iter()
         .map(|o| OverrideOut {
             phase: o.phase,
+            action: o.action,
             reason: o.reason.clone(),
             at: o.at.clone(),
             by: o.by.clone(),
@@ -310,7 +312,11 @@ pub fn render_report_human(data: &ReportData, archived: bool) -> String {
                         .filter(|s| !s.is_empty())
                         .map(|s| format!(", by {s}"))
                         .unwrap_or_default();
-                format!("{} ({}{})", o.phase, o.reason, by_part)
+                let label = match o.action {
+                    OverrideAction::Skip => "skip",
+                    OverrideAction::StreakReset => "streak reset",
+                };
+                format!("{} [{}] ({}{})", o.phase, label, o.reason, by_part)
             })
             .collect::<Vec<_>>()
             .join(", ");
@@ -337,6 +343,7 @@ fn phase_report_to_json(p: &PhaseReport) -> Value {
 fn override_out_to_json(o: &OverrideOut) -> Value {
     let mut v = Value::object();
     v.insert("phase", o.phase.as_str());
+    v.insert("action", o.action.as_str());
     v.insert("reason", o.reason.as_str());
     v.insert("at", o.at.as_str());
     v.insert("by", o.by.clone());
@@ -422,6 +429,11 @@ fn override_out_from_json(v: &Value) -> OverrideOut {
             .and_then(|x| x.as_str())
             .and_then(Phase::from_str_opt)
             .unwrap_or(Phase::Plan),
+        action: v
+            .get("action")
+            .and_then(|x| x.as_str())
+            .map(OverrideAction::from_str_opt)
+            .unwrap_or(OverrideAction::Skip),
         reason: v
             .get("reason")
             .and_then(|x| x.as_str())
@@ -741,6 +753,7 @@ mod tests {
             }),
             overrides: vec![OverrideOut {
                 phase: Phase::Plan,
+                action: OverrideAction::Skip,
                 reason: "trivial".to_string(),
                 at: "2026-01-01T00:00:00.000Z".to_string(),
                 by: Some("alice".to_string()),
@@ -787,6 +800,31 @@ mod tests {
             assert!(idx >= last, "key {key} out of order");
             last = idx;
         }
+    }
+
+    #[test]
+    fn render_report_human_labels_a_streak_reset_override_distinctly_from_a_skip() {
+        let data = ReportData {
+            id: "r1".to_string(),
+            title: "t".to_string(),
+            profile: "feature".to_string(),
+            phase: Phase::Test,
+            status: RunStatus::Active,
+            total_seconds: 0,
+            gate_failures: 3,
+            phases: vec![],
+            findings: None,
+            overrides: vec![OverrideOut {
+                phase: Phase::Test,
+                action: OverrideAction::StreakReset,
+                reason: "reviewed the failures, retry warranted".to_string(),
+                at: "2026-08-23T00:00:00.000Z".to_string(),
+                by: Some("human".to_string()),
+            }],
+            artifacts: vec![],
+        };
+        let human = render_report_human(&data, false);
+        assert!(human.contains("TEST [streak reset]"));
     }
 
     #[test]

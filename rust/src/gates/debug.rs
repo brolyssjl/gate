@@ -30,7 +30,7 @@ use crate::gates::implement::scope_check;
 use crate::gates::plan_drift::plan_drift_check;
 use crate::gates::test::{load_report, stat_report, target_report_path};
 use crate::gates::test_report::{NormalizedReport, NormalizedTest, TestStatus};
-use crate::gates::types::{fail, pass, result, Check, GateContext, GateResult};
+use crate::gates::types::{fail, fail_untrusted, pass, result, Check, GateContext, GateResult};
 
 pub fn debug_gate(ctx: &GateContext) -> GateResult {
     let mut checks: Vec<Check> = Vec::new();
@@ -125,7 +125,7 @@ fn triggering_test_check(
         return fail(name, "no test command configured (commands.test)");
     };
     if !is_commands_trusted(&ctx.root) {
-        return fail(
+        return fail_untrusted(
             name,
             "test command not trusted - review .gate/config.yml and run `gate trust`",
         );
@@ -210,7 +210,7 @@ fn targeted_triggering_test_checks(
             continue;
         };
         if !trusted {
-            checks.push(fail(
+            checks.push(fail_untrusted(
                 name,
                 "test command not trusted - review .gate/config.yml and run `gate trust`",
             ));

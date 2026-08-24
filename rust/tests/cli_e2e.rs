@@ -251,7 +251,7 @@ fn targets_target_override_wins_and_playbook_overlays_surface_for_affected_targe
         ".gate/config.yml",
         "commands: {}\nthresholds: {}\ntargets:\n  web:\n    match: [\"apps/web/**\"]\n    playbooks: { test: \".gate/playbooks/test.web.md\" }\n  api:\n    match: [\"apps/api/**\"]\nphases: {}\nintegrations: { agnosgram: off, sdd: off }\n",
     );
-    // SEC-01: the target playbook overlay must be trusted before it takes effect.
+    // The target playbook overlay must be trusted before it takes effect.
     assert_eq!(gate(&repo, &["trust"]).code, 0);
 
     assert_eq!(
@@ -283,7 +283,7 @@ fn playbook_run_honors_the_named_runs_targets_not_the_current_branchs_own_run() 
         ".gate/config.yml",
         "commands: {}\nthresholds: {}\ntargets:\n  web:\n    match: [\"apps/web/**\"]\n    playbooks: { test: \".gate/playbooks/test.web.md\" }\n  api:\n    match: [\"apps/api/**\"]\n    playbooks: { test: \".gate/playbooks/test.api.md\" }\nphases: {}\nintegrations: { agnosgram: off, sdd: off }\n",
     );
-    // SEC-01: both target playbook overlays must be trusted before they take effect.
+    // Both target playbook overlays must be trusted before they take effect.
     assert_eq!(gate(&repo, &["trust"]).code, 0);
     let main_branch = git_out(&repo, &["branch", "--show-current"]);
 
@@ -356,7 +356,7 @@ fn target_playbook_overlays_surface_inline_at_gate_start_not_just_the_standalone
         ".gate/config.yml",
         "commands: {}\nthresholds: {}\ntargets:\n  api:\n    match: [\"apps/api/**\"]\n    playbooks: { plan: .gate/playbooks/plan.api.md }\nphases: {}\nintegrations: { agnosgram: off, sdd: off }\n",
     );
-    // SEC-01: the target playbook overlay must be trusted before it takes effect.
+    // The target playbook overlay must be trusted before it takes effect.
     assert_eq!(gate(&repo, &["trust"]).code, 0);
 
     let started = gate(&repo, &["start", "api overlay demo", "--target", "api"]);
@@ -379,7 +379,7 @@ fn target_playbook_overlays_surface_inline_at_gate_nexts_phase_entry_print() {
         ".gate/config.yml",
         "commands: {}\nthresholds: {}\ntargets:\n  api:\n    match: [\"apps/api/**\"]\n    playbooks: { test: .gate/playbooks/test.api.md }\nphases: {}\nintegrations: { agnosgram: off, sdd: off }\n",
     );
-    // SEC-01: the target playbook overlay must be trusted before it takes effect.
+    // The target playbook overlay must be trusted before it takes effect.
     assert_eq!(gate(&repo, &["trust"]).code, 0);
     gate(&repo, &["start", "api overlay demo", "--target", "api"]);
     let run_id = gate(&repo, &["status", "--json"])
@@ -415,7 +415,7 @@ fn target_playbook_overlays_surface_inline_in_gate_reviews_emitted_rubric() {
         ".gate/config.yml",
         "commands: {}\nthresholds: {}\ntargets:\n  api:\n    match: [\"apps/api/**\"]\n    playbooks: { review: .gate/playbooks/review.api.md }\nphases: {}\nintegrations: { agnosgram: off, sdd: off }\n",
     );
-    // SEC-01: the target playbook overlay must be trusted before it takes effect.
+    // The target playbook overlay must be trusted before it takes effect.
     assert_eq!(gate(&repo, &["trust"]).code, 0);
     gate(&repo, &["start", "api overlay demo", "--target", "api"]);
     assert_eq!(gate(&repo, &["skip", "PLAN", "--reason", "test"]).code, 0);
@@ -430,11 +430,11 @@ fn target_playbook_overlays_surface_inline_in_gate_reviews_emitted_rubric() {
     assert!(rubric.contains("Check the api error envelope."));
 }
 
-/// SEC-01: a target playbook overlay declared in config.yml is refused
-/// (never appended) until a human runs `gate trust` - the untrusted config
-/// change must not silently start steering the agent.
+/// A target playbook overlay declared in config.yml is refused (never
+/// appended) until a human runs `gate trust` - the untrusted config change
+/// must not silently start steering the agent.
 #[test]
-fn sec01_untrusted_target_playbook_overlay_is_refused_until_gate_trust_runs() {
+fn untrusted_target_playbook_overlay_is_refused_until_gate_trust_runs() {
     let repo = make_repo(&[]);
     gate(&repo, &["init"]);
     write_file(
@@ -449,7 +449,10 @@ fn sec01_untrusted_target_playbook_overlay_is_refused_until_gate_trust_runs() {
     );
     // No `gate trust` yet: the overlay must be refused, not appended, in the
     // playbook `gate start` prints inline.
-    let started = gate(&repo, &["start", "sec01 overlay demo", "--target", "api"]);
+    let started = gate(
+        &repo,
+        &["start", "untrusted overlay demo", "--target", "api"],
+    );
     assert_eq!(started.code, 0);
     assert!(!started.stdout.contains("## Target overlay: api"));
     assert!(!started.stdout.contains("API_OVERLAY_MARKER"));
@@ -469,12 +472,11 @@ fn sec01_untrusted_target_playbook_overlay_is_refused_until_gate_trust_runs() {
     assert!(trusted_text.contains("API_OVERLAY_MARKER"));
 }
 
-/// SEC-01: a `.gate/playbooks/<phase>.md` override is refused (falls back
-/// to the bundled/embedded default) until a human runs `gate trust`, and
-/// editing an already-trusted override again without re-trusting refuses it
-/// again.
+/// A `.gate/playbooks/<phase>.md` override is refused (falls back to the
+/// bundled/embedded default) until a human runs `gate trust`, and editing
+/// an already-trusted override again without re-trusting refuses it again.
 #[test]
-fn sec01_untrusted_dot_gate_playbooks_override_is_refused_until_gate_trust_runs() {
+fn untrusted_dot_gate_playbooks_override_is_refused_until_gate_trust_runs() {
     let repo = make_repo(&[]);
     gate(&repo, &["init"]);
     write_file(&repo, ".gate/playbooks/plan.md", "# CUSTOM_PLAN_MARKER\n");
@@ -560,9 +562,30 @@ fn refuses_to_reach_done_when_a_review_fix_breaks_the_code_staleness_guard() {
     // Without --fresh an existing packet is not re-baselined.
     gate(&repo, &["review"]);
     assert_eq!(gate(&repo, &["next"]).code, 1);
-    // Even with a fresh packet, re-verification catches the red suite.
+    // Even with a fresh packet, re-verification catches the red suite - the
+    // 3rd consecutive REVIEW failure, tripping the default failure-streak
+    // cap.
     gate(&repo, &["review", "--fresh"]);
     assert_eq!(gate(&repo, &["next"]).code, 1);
+
+    // The cap is now open: even a would-be-passing `next` refuses to
+    // evaluate at all until a human explicitly resets the streak.
+    let blocked = gate(&repo, &["next"]);
+    assert_eq!(blocked.code, 3);
+    assert!(blocked.stderr.contains("3 consecutive failures"));
+    assert_eq!(
+        gate(
+            &repo,
+            &[
+                "streak",
+                "reset",
+                "--reason",
+                "human reviewed, retry warranted"
+            ]
+        )
+        .code,
+        0
+    );
 
     // A real fix, re-packeted, goes green and enters RETRO.
     write_file(&repo, "greet.js", "module.exports = (n) => 'Hello, ' + n\n");
@@ -853,11 +876,11 @@ fn json_schema_check_report_playbook_expose_stable_top_level_keys() {
     );
 }
 
-/// SEC-04: `gate report <id>` must reject a path-traversal / absolute run
-/// id before it ever reaches `run_paths`/`archive_path` - `gate report
+/// `gate report <id>` must reject a path-traversal / absolute run id
+/// before it ever reaches `run_paths`/`archive_path` - `gate report
 /// ../../x` must not be able to escape `.gate/runs/`.
 #[test]
-fn sec04_gate_report_rejects_a_path_traversal_run_id() {
+fn gate_report_rejects_a_path_traversal_run_id() {
     let repo = make_repo(&[]);
     gate(&repo, &["init"]);
 
@@ -868,7 +891,10 @@ fn sec04_gate_report_rejects_a_path_traversal_run_id() {
     }
 
     // A normal, gate-generated run id is unaffected.
-    gate(&repo, &["start", "sec04 demo", "--profile", "docs"]);
+    gate(
+        &repo,
+        &["start", "path traversal demo", "--profile", "docs"],
+    );
     let run_id = gate(&repo, &["status", "--json"])
         .json()
         .str("id")
@@ -879,17 +905,14 @@ fn sec04_gate_report_rejects_a_path_traversal_run_id() {
     assert_eq!(ok.json().str("id"), Some(run_id.as_str()));
 }
 
-/// SEC-04: the shared `--run <id>` flag (every phase command, resolved via
+/// The shared `--run <id>` flag (every phase command, resolved via
 /// `cli/context.rs`'s `require_active_run`) must reject the same
 /// traversal/absolute shapes, not just `gate report`'s positional.
 #[test]
-fn sec04_gate_run_flag_rejects_a_path_traversal_run_id() {
+fn gate_run_flag_rejects_a_path_traversal_run_id() {
     let repo = make_repo(&[]);
     gate(&repo, &["init"]);
-    gate(
-        &repo,
-        &["start", "sec04 run flag demo", "--profile", "docs"],
-    );
+    gate(&repo, &["start", "run flag demo", "--profile", "docs"]);
 
     for bad in ["../../etc/passwd", "..", "a/b"] {
         let res = gate(&repo, &["check", "--run", bad]);
@@ -898,12 +921,12 @@ fn sec04_gate_run_flag_rejects_a_path_traversal_run_id() {
     }
 }
 
-/// SEC-04: `gate playbook <phase> --run <id>` goes through a second,
-/// independent `--run` resolution path (`commands/playbook.rs`'s
+/// `gate playbook <phase> --run <id>` goes through a second, independent
+/// `--run` resolution path (`commands/playbook.rs`'s
 /// `execute_explicit_phase`, not `require_active_run`) - must reject the
 /// same shapes.
 #[test]
-fn sec04_gate_playbook_run_flag_rejects_a_path_traversal_run_id() {
+fn gate_playbook_run_flag_rejects_a_path_traversal_run_id() {
     let repo = make_repo(&[]);
     gate(&repo, &["init"]);
 

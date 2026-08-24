@@ -90,9 +90,43 @@ pub struct HistoryEntry {
     pub tree_hash: Option<String>,
 }
 
+/// What kind of explicit human override an `OverrideEntry` records. Both
+/// are "loud, auditable overrides" in the README's threat-model sense - a
+/// distinct, reasoned, recorded act, never automatic.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OverrideAction {
+    /// `gate skip <phase> --reason` - move past the phase without its gate
+    /// passing.
+    Skip,
+    /// `gate streak reset <phase> --reason` - clear a phase's
+    /// consecutive-failure count so `gate check`/`gate next` can evaluate it
+    /// again (the loop-enforcement cap).
+    StreakReset,
+}
+
+impl OverrideAction {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            OverrideAction::Skip => "skip",
+            OverrideAction::StreakReset => "streak_reset",
+        }
+    }
+
+    /// Unrecognized/missing (every `run.json` written before `StreakReset`
+    /// existed) defaults to `Skip` - the only action that ever existed, and
+    /// the value `override_entry_to_json` already wrote unconditionally.
+    pub fn from_str_opt(value: &str) -> OverrideAction {
+        match value {
+            "streak_reset" => OverrideAction::StreakReset,
+            _ => OverrideAction::Skip,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct OverrideEntry {
     pub phase: Phase,
+    pub action: OverrideAction,
     pub reason: String,
     pub at: String,
     /// Who authorized (from --by or GATE_SESSION_ID); best-effort. TS types
@@ -186,6 +220,11 @@ pub struct Run {
     pub overrides: Vec<OverrideEntry>,
     /// Registered artifacts keyed by relative filename, insertion-ordered.
     pub artifacts: Vec<(String, ArtifactEntry)>,
+    /// Consecutive failed `gate check`/`gate next` evaluations per phase,
+    /// since the last pass, phase advance, `gate skip`, or `gate streak
+    /// reset` (the loop-enforcement cap). Sparse: a phase absent here has
+    /// streak 0 - see `failure_streak`/`record_gate_evaluation`.
+    pub failure_streaks: Vec<(Phase, i64)>,
     pub approval: Option<Approval>,
     pub amendment: Option<Amendment>,
     pub review: Option<ReviewRequest>,
@@ -227,10 +266,46 @@ pub fn new_run(params: NewRunParams) -> Run {
         }],
         overrides: Vec::new(),
         artifacts: Vec::new(),
+        failure_streaks: Vec::new(),
         approval: None,
         amendment: None,
         review: None,
         retro: None,
+    }
+}
+
+impl Run {
+    /// Consecutive failed `gate check`/`gate next` evaluations of `phase`
+    /// since it was last cleared. A phase never evaluated, or already
+    /// cleared, is 0.
+    pub fn failure_streak(&self, phase: Phase) -> i64 {
+        self.failure_streaks
+            .iter()
+            .find(|(p, _)| *p == phase)
+            .map(|(_, n)| *n)
+            .unwrap_or(0)
+    }
+
+    /// Clear `phase`'s streak to 0 - on a passing evaluation, a phase
+    /// advance, `gate skip`, or `gate streak reset`.
+    pub fn clear_failure_streak(&mut self, phase: Phase) {
+        self.failure_streaks.retain(|(p, _)| *p != phase);
+    }
+
+    /// Record one `gate check`/`gate next` evaluation of `phase`: passing
+    /// clears the streak, failing increments it. Callers decide when an
+    /// evaluation doesn't count at all (a trust-blocked failure) by
+    /// simply not calling this.
+    pub fn record_gate_evaluation(&mut self, phase: Phase, passed: bool) {
+        if passed {
+            self.clear_failure_streak(phase);
+            return;
+        }
+        let n = self.failure_streak(phase) + 1;
+        match self.failure_streaks.iter_mut().find(|(p, _)| *p == phase) {
+            Some(entry) => entry.1 = n,
+            None => self.failure_streaks.push((phase, n)),
+        }
     }
 }
 
@@ -299,6 +374,11 @@ fn override_entry_from_json(v: &Value) -> OverrideEntry {
             .and_then(|x| x.as_str())
             .and_then(Phase::from_str_opt)
             .unwrap_or(Phase::Plan),
+        action: v
+            .get("action")
+            .and_then(|x| x.as_str())
+            .map(OverrideAction::from_str_opt)
+            .unwrap_or(OverrideAction::Skip),
         reason: v
             .get("reason")
             .and_then(|x| x.as_str())
@@ -316,7 +396,7 @@ fn override_entry_from_json(v: &Value) -> OverrideEntry {
 fn override_entry_to_json(o: &OverrideEntry) -> Value {
     let mut v = Value::object();
     v.insert("phase", o.phase.as_str());
-    v.insert("action", "skip");
+    v.insert("action", o.action.as_str());
     v.insert("reason", o.reason.as_str());
     v.insert("at", o.at.as_str());
     v.insert("by", o.by.clone());
@@ -452,6 +532,32 @@ fn review_request_to_json(r: &ReviewRequest) -> Value {
     o
 }
 
+fn failure_streaks_to_json(streaks: &[(Phase, i64)]) -> Value {
+    let mut obj = Value::object();
+    for (phase, n) in streaks {
+        obj.insert(phase.as_str(), *n);
+    }
+    obj
+}
+
+fn failure_streaks_from_json(v: &Value) -> Vec<(Phase, i64)> {
+    let Some(entries) = v.as_object() else {
+        return Vec::new();
+    };
+    entries
+        .iter()
+        .filter_map(|(k, v)| {
+            let phase = Phase::from_str_opt(k)?;
+            let n = as_i64(v)?;
+            if n > 0 {
+                Some((phase, n))
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
 /// `JSON.stringify(run, null, 2)`'s exact key order/shape for a `Run`.
 pub fn run_to_json(run: &Run) -> Value {
     let mut o = Value::object();
@@ -484,6 +590,12 @@ pub fn run_to_json(run: &Run) -> Value {
         artifacts.insert(name.as_str(), artifact_entry_to_json(entry));
     }
     o.insert("artifacts", artifacts);
+    if !run.failure_streaks.is_empty() {
+        o.insert(
+            "failureStreaks",
+            failure_streaks_to_json(&run.failure_streaks),
+        );
+    }
     if let Some(a) = &run.approval {
         o.insert("approval", approval_to_json(a));
     }
@@ -608,6 +720,10 @@ fn parse_run(raw: &Value, run_id: &str) -> Result<Run, UserError> {
                 .collect()
         })
         .unwrap_or_default();
+    let failure_streaks = raw
+        .get("failureStreaks")
+        .map(failure_streaks_from_json)
+        .unwrap_or_default();
     let approval = raw.get("approval").map(approval_from_json);
     let amendment = raw.get("amendment").map(amendment_from_json);
     let review = raw.get("review").map(review_request_from_json);
@@ -629,6 +745,7 @@ fn parse_run(raw: &Value, run_id: &str) -> Result<Run, UserError> {
         history,
         overrides,
         artifacts,
+        failure_streaks,
         approval,
         amendment,
         review,
@@ -915,5 +1032,133 @@ mod tests {
             format!("2026-08-22-{}", "a".repeat(48))
         );
         assert_eq!(make_run_id_on("--wow--", "2026-08-22"), "2026-08-22-wow");
+    }
+
+    #[test]
+    fn failure_streak_starts_at_zero_and_increments_on_failure() {
+        let mut run = new_run(NewRunParams {
+            id: "r1".to_string(),
+            title: "t".to_string(),
+            profile: "feature".to_string(),
+            branch: None,
+            base_ref: None,
+            session_id: None,
+            target_override: None,
+        });
+        assert_eq!(run.failure_streak(Phase::Plan), 0);
+        run.record_gate_evaluation(Phase::Plan, false);
+        run.record_gate_evaluation(Phase::Plan, false);
+        assert_eq!(run.failure_streak(Phase::Plan), 2);
+        // Unrelated phase untouched.
+        assert_eq!(run.failure_streak(Phase::Implement), 0);
+    }
+
+    #[test]
+    fn failure_streak_clears_on_a_passing_evaluation() {
+        let mut run = new_run(NewRunParams {
+            id: "r1".to_string(),
+            title: "t".to_string(),
+            profile: "feature".to_string(),
+            branch: None,
+            base_ref: None,
+            session_id: None,
+            target_override: None,
+        });
+        run.record_gate_evaluation(Phase::Plan, false);
+        run.record_gate_evaluation(Phase::Plan, false);
+        run.record_gate_evaluation(Phase::Plan, true);
+        assert_eq!(run.failure_streak(Phase::Plan), 0);
+    }
+
+    #[test]
+    fn clear_failure_streak_resets_a_single_phase_only() {
+        let mut run = new_run(NewRunParams {
+            id: "r1".to_string(),
+            title: "t".to_string(),
+            profile: "feature".to_string(),
+            branch: None,
+            base_ref: None,
+            session_id: None,
+            target_override: None,
+        });
+        run.record_gate_evaluation(Phase::Plan, false);
+        run.record_gate_evaluation(Phase::Implement, false);
+        run.clear_failure_streak(Phase::Plan);
+        assert_eq!(run.failure_streak(Phase::Plan), 0);
+        assert_eq!(run.failure_streak(Phase::Implement), 1);
+    }
+
+    #[test]
+    fn failure_streaks_round_trip_through_json_sparse() {
+        let root = tmp_dir("failure-streaks-json");
+        let mut run = new_run(NewRunParams {
+            id: "r1".to_string(),
+            title: "t".to_string(),
+            profile: "feature".to_string(),
+            branch: None,
+            base_ref: None,
+            session_id: None,
+            target_override: None,
+        });
+        run.record_gate_evaluation(Phase::Implement, false);
+        run.record_gate_evaluation(Phase::Implement, false);
+        write_run(&root, &mut run).unwrap();
+
+        let text = fs::read_to_string(root.join(".gate/runs/r1/run.json")).unwrap();
+        assert!(text.contains("\"failureStreaks\""));
+        assert!(text.contains("\"IMPLEMENT\": 2"));
+
+        let reloaded = read_run(&root, "r1").unwrap();
+        assert_eq!(reloaded.failure_streak(Phase::Implement), 2);
+        assert_eq!(reloaded.failure_streak(Phase::Plan), 0);
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn a_fresh_run_omits_failure_streaks_from_json_entirely() {
+        let root = tmp_dir("failure-streaks-empty");
+        let mut run = new_run(NewRunParams {
+            id: "r1".to_string(),
+            title: "t".to_string(),
+            profile: "feature".to_string(),
+            branch: None,
+            base_ref: None,
+            session_id: None,
+            target_override: None,
+        });
+        write_run(&root, &mut run).unwrap();
+        let text = fs::read_to_string(root.join(".gate/runs/r1/run.json")).unwrap();
+        assert!(!text.contains("failureStreaks"));
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn override_action_round_trips_and_defaults_unknown_to_skip() {
+        assert_eq!(OverrideAction::from_str_opt("skip"), OverrideAction::Skip);
+        assert_eq!(
+            OverrideAction::from_str_opt("streak_reset"),
+            OverrideAction::StreakReset
+        );
+        assert_eq!(
+            OverrideAction::from_str_opt("garbage"),
+            OverrideAction::Skip
+        );
+        assert_eq!(OverrideAction::Skip.as_str(), "skip");
+        assert_eq!(OverrideAction::StreakReset.as_str(), "streak_reset");
+    }
+
+    #[test]
+    fn override_entry_json_round_trips_the_action_field() {
+        let entry = OverrideEntry {
+            phase: Phase::Test,
+            action: OverrideAction::StreakReset,
+            reason: "reviewed, retry warranted".to_string(),
+            at: "2026-08-23T00:00:00.000Z".to_string(),
+            by: Some("human".to_string()),
+        };
+        let json = override_entry_to_json(&entry);
+        assert_eq!(json.get("action").unwrap().as_str(), Some("streak_reset"));
+        let back = override_entry_from_json(&json);
+        assert_eq!(back, entry);
     }
 }

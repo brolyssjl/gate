@@ -99,7 +99,7 @@ fn execute(root: &Path, args: &ParsedArgs) -> Result<(), UserError> {
     emit(&human, &data, &args.flags)
 }
 
-/// " - playbooks: a, b" when non-empty, else "" - SEC-01: `gate trust` must
+/// " - playbooks: a, b" when non-empty, else "" - `gate trust` must
 /// show/record what it is trusting, and this crate's convention for
 /// `commands:` itself is to show a hash rather than raw content, so
 /// playbooks get the same treatment: name what's covered, not its content.

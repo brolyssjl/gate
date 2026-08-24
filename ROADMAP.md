@@ -189,18 +189,23 @@ agnosgram#14, all merged) that don't fit the milestones above._
 - [x] Cut `1.0.1` so checksum-verified installs become real: the `1.0.0`
       release predates `SHA256SUMS`; the first post-#11 tag publishes it.
       Small, do soon. (audit SEC-02 tail)
-- [ ] Failure-streak cap - owner decision, then likely a feature: `gate
-      check`/`gate next` record consecutive failures per phase in run.json
-      and refuse past N without an explicit `gate skip` - makes the "loop
-      enforcement" reading of gate's purpose true in code. Pairs with the
-      wording decision below. (audit PUR-01)
-- [ ] Pitch wording - owner decision, docs-only: "loop enforcement" and
-      "security" in the external one-liner - either implement the
-      failure-streak cap above and keep "loop enforcement", and/or narrow
-      "security" to "tamper-evident evidence"/"audit trail" as the README
-      threat model already does. (audit PUR-01, PUR-03)
-- [ ] Pin GitHub Actions to commit SHAs - owner decision: accept
-      tag-pinning risk, or pin + add update automation. (audit SEC-08)
+- [x] Failure-streak cap - owner decision: implement, default limit 3.
+      `gate check`/`gate next` track consecutive failed evaluations per
+      phase in `run.json` and refuse to evaluate past the limit (distinct
+      exit code 3) until `gate skip` or the new `gate streak reset`
+      explicitly clears it - makes the "loop enforcement" reading of gate's
+      purpose true in code. Configurable via `thresholds.failure_streak_limit`
+      (`0` disables it). See README's "Loop enforcement" section. (audit
+      PUR-01)
+- [x] Pitch wording - owner decision: narrowed the README's pitch to
+      "tamper-evident audit trail" phrasing, matching the threat model, and
+      added an honest "loop enforcement" claim now that the failure-streak
+      cap above backs it with code. (audit PUR-01, PUR-03)
+- [x] Pin GitHub Actions to commit SHAs - owner decision: pinned every
+      `uses:` in `ci.yml`/`release.yml` to the commit SHA its tag/branch
+      currently resolves to (with a `# vX.Y.Z` comment), and added
+      `.github/dependabot.yml` (`github-actions` ecosystem, weekly) so pins
+      get bumped automatically instead of going stale. (audit SEC-08)
 
 ## Deferred / v2
 

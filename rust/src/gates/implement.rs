@@ -121,7 +121,7 @@ pub fn scope_check(name: &str, ctx: &GateContext, touched: &[String]) -> Vec<Che
     let mut checks: Vec<Check> = Vec::new();
     if undeclared.is_empty() {
         // Truthful even when some touched files weren't declared but
-        // matched scope_ignore instead (review finding F5) - "all ...
+        // matched scope_ignore instead - "all ...
         // declared in plan.md" was misleading when `ignored` was the reason
         // some passed.
         let detail = if !ignored.is_empty() {

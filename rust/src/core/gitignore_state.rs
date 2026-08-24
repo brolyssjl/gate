@@ -1,7 +1,7 @@
 //! Port of `src/core/gitignoreState.ts`: records what `gate init` last left
 //! the repo-root `.gitignore` containing, so the scope check can tell
 //! "gate's own bookkeeping write, untouched since" apart from "someone
-//! edited .gitignore after that" (review finding F1). Only an exact content
+//! edited .gitignore after that". Only an exact content
 //! match to the hash recorded right after `gate init` wrote the file counts
 //! as bookkeeping; any other edit is a normal touched file.
 

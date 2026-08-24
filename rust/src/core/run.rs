@@ -100,7 +100,7 @@ pub enum OverrideAction {
     Skip,
     /// `gate streak reset <phase> --reason` - clear a phase's
     /// consecutive-failure count so `gate check`/`gate next` can evaluate it
-    /// again (PUR-01 loop-enforcement cap).
+    /// again (the loop-enforcement cap).
     StreakReset,
 }
 
@@ -222,7 +222,7 @@ pub struct Run {
     pub artifacts: Vec<(String, ArtifactEntry)>,
     /// Consecutive failed `gate check`/`gate next` evaluations per phase,
     /// since the last pass, phase advance, `gate skip`, or `gate streak
-    /// reset` (PUR-01 loop-enforcement cap). Sparse: a phase absent here has
+    /// reset` (the loop-enforcement cap). Sparse: a phase absent here has
     /// streak 0 - see `failure_streak`/`record_gate_evaluation`.
     pub failure_streaks: Vec<(Phase, i64)>,
     pub approval: Option<Approval>,
@@ -294,7 +294,7 @@ impl Run {
 
     /// Record one `gate check`/`gate next` evaluation of `phase`: passing
     /// clears the streak, failing increments it. Callers decide when an
-    /// evaluation doesn't count at all (a trust-blocked failure, PUR-01) by
+    /// evaluation doesn't count at all (a trust-blocked failure) by
     /// simply not calling this.
     pub fn record_gate_evaluation(&mut self, phase: Phase, passed: bool) {
         if passed {

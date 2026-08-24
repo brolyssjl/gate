@@ -1,5 +1,5 @@
-//! Conformance tests for the failure-streak cap (PUR-01 loop-enforcement
-//! circuit breaker). Not a TS port - no TS counterpart exists. See
+//! Conformance tests for the failure-streak cap (a loop-enforcement circuit
+//! breaker). Not a TS port - no TS counterpart exists. See
 //! `CONFORMANCE_MAP.md`.
 //!
 //! PLAN is used throughout as the phase under test: a freshly started run's

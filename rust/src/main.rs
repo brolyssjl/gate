@@ -34,8 +34,9 @@ use core::version::read_version;
 /// `${ADAPTER_KEYS.join(", ")}` already resolved to its frozen value
 /// (`claude, claude-skill, cursor, cline, windsurf, agents` - see
 /// `src/adapters/index.ts` / `adapters::adapter_keys()`). The TS
-/// implementation is now retired; the `streak` entry below (PUR-01
-/// loop-enforcement cap) is Rust-only and has no TS counterpart.
+/// implementation is now retired; the `streak` entry below (the
+/// failure-streak loop-enforcement cap) is Rust-only and has no TS
+/// counterpart.
 const HELP: &str = r#"gate - an agent-agnostic quality harness (umpire, not a driver).
 
 Usage: gate <command> [options]

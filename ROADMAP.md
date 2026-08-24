@@ -180,14 +180,6 @@ carries over unchanged._
       can't reach a private repo (audit RM-03)
 - [ ] Docs site + case study (with agnosgram, the 2026-07/08 constructflow
       soak)
-- [ ] Reviewer identity threading (milestone-sized) - `review.reviewer`'s
-      independence check can only compare against `run.session_id`, which is
-      `None` in every CLI-driven flow unless the calling harness explicitly
-      passes `gate start --session`/`GATE_SESSION_ID`; today that leaves the
-      check advisory-only (a distinct, non-blocking warning marker, not real
-      enforcement - see the 2026-08-24 soak-friction fix). Needs a stable,
-      unspoofable session/agent identity threaded from the calling harness
-      into every gate-touching command, not a one-line fix.
 
 ## Fixes & improvements
 
@@ -214,6 +206,33 @@ agnosgram#14, all merged) that don't fit the milestones above._
       currently resolves to (with a `# vX.Y.Z` comment), and added
       `.github/dependabot.yml` (`github-actions` ecosystem, weekly) so pins
       get bumped automatically instead of going stale. (audit SEC-08)
+
+_Open items from the 2026-08-24 soak-friction round (real-project soak of
+the Rust binaries, feeding Milestone 6's "real-project soak" item above)._
+
+- [ ] Reviewer identity threading - `review.reviewer`'s independence check
+      can only compare against `run.session_id`, which is `None` in every
+      CLI-driven flow unless the calling harness explicitly passes `gate
+      start --session`/`GATE_SESSION_ID`; today that leaves the check
+      advisory-only (a distinct, non-blocking warning marker, not real
+      enforcement - see the soak-friction fix below). Needs a stable,
+      unspoofable session/agent identity threaded from the calling harness
+      into every gate-touching command, not a one-line fix.
+- [x] 2026-08-24 soak-friction fixes - owner decision: shipped directly
+      (this branch IS the fix, no separate remediation PR). Trust-hash
+      mismatches now distinguish a coverage-version expansion from a real
+      config edit; `review.reviewer` renders unverifiable independence as
+      advisory rather than a plain pass; `gate check`/`gate next` failures
+      persist into `run.json` (bounded history + a permanent per-phase
+      count `gate report` reads) and `gate streak` now reports a finished
+      run's final state; phase-transition text (playbooks and `gate
+      approve`'s confirmation) derives from the run's actual profile
+      instead of assuming feature; PLAN/TEST playbooks state their real
+      failure conditions before an agent hits them; plus `gate <cmd>
+      --help`, `gate amend`'s diff headers, the RETRO->journal separator,
+      and an `install.sh` legacy-install-dir note. Also fixed a real, unrelated
+      test flake found along the way (a racy shared-env-var mutation in
+      `integrations::agnosgram_write`'s test suite).
 
 ## Deferred / v2
 

@@ -156,7 +156,31 @@ install_binary() {
     *":$INSTALL_DIR:"*) ;;
     *) echo "Add it to your PATH: export PATH=\"$INSTALL_DIR:\$PATH\"" ;;
   esac
+  note_legacy_install_dirs
   return 0
+}
+
+# gate predates this binary-release install path: an npm-era prototype
+# installed itself under ~/.local/share/brainstorm-tools/gate-v*. That path
+# is dead (Milestone 6's TypeScript retirement, see ROADMAP.md) - flag any
+# leftover copies so a still-on-PATH stale `gate` doesn't quietly shadow the
+# one this script just installed. Informational only: never deletes anything.
+note_legacy_install_dirs() {
+  local legacy_root="$HOME/.local/share/brainstorm-tools"
+  local found=()
+  local d
+  for d in "$legacy_root"/gate-v*; do
+    if [ -d "$d" ]; then
+      found+=("$d")
+    fi
+  done
+  if [ "${#found[@]}" -gt 0 ]; then
+    local joined="${found[0]}" i
+    for ((i = 1; i < ${#found[@]}; i++)); do
+      joined="${joined}, ${found[$i]}"
+    done
+    echo "Note: found obsolete pre-Rust gate install dir(s): ${joined} - safe to delete, not touched by this script."
+  fi
 }
 
 install_from_source() {

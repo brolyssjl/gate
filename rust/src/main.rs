@@ -107,6 +107,36 @@ Global options:
 The agent loop is two commands: `gate playbook` (what do I do?) → `gate next`
 (am I done?). All state lives on disk under .gate/."#;
 
+/// Per-command usage text for `gate <command> --help` - previously
+/// unhandled, so `--help` after a subcommand printed the entire top-level
+/// `HELP` block instead of that command's own usage (friction: unhelpfully
+/// verbose, reads as broken to a first-time user). Content is lifted
+/// verbatim from `HELP`'s own per-command block, just wrapped standalone
+/// rather than duplicated by hand - keep the two in sync if either changes.
+fn command_usage(command: &str) -> Option<&'static str> {
+    Some(match command {
+        "adapt" => "Usage: gate adapt [adapter...]\n\nWrite/refresh agent config pointer blocks (default:\nall of claude, claude-skill, cursor, cline, windsurf, agents)",
+        "init" => "Usage: gate init [--refresh]\n\nScaffold .gate/, infer commands, detect integrations",
+        "trust" => "Usage: gate trust [--check] [--by]\n\nApprove the config commands block (TOFU); required\nbefore gates will execute build/test/lint",
+        "start" => "Usage: gate start \"<title>\" [--profile <p>] [--target <a,b>]\n\nCreate a run, enter PLAN, print the plan playbook.\nOne active run per branch: a branch with a run\nalready in flight is resumed, not restarted\n\n  --profile <p>   Phases to run: feature|bugfix|refactor|docs (default feature)\n  --target <a,b>  Override target resolution (comma-separated names);\n                  wins over file-based resolution for this run",
+        "approve" => "Usage: gate approve [--by] [--reason] [--run <id>] [--amend]\n\nRecord PLAN sign-off, bound to the plan's content\n\n  --amend  Re-approve a plan that drifted after approval,\n           recording a new hash for the delta `gate amend`\n           showed (requires `gate amend` to have run first)",
+        "amend" => "Usage: gate amend [--by] [--run <id>]\n\nShow the diff between plan.md and the approved\nsnapshot and record intent to re-approve it; does\nnot itself re-approve - run `gate approve --amend` after",
+        "status" => "Usage: gate status\n\nActive run for the current branch, plus any other\nbranches with a run in flight",
+        "check" => "Usage: gate check [--run <id>]\n\nRun the current gate; exit code = verdict (0/1),\nor 3 once the failure-streak cap blocks the phase",
+        "next" => "Usage: gate next [--run <id>]\n\nCheck + advance on pass; on fail, print what's missing\n(same 0/1/3 exit codes as check)",
+        "streak" => "Usage: gate streak [--run <id>]\n       gate streak reset [phase] --reason [--by]\n\nShow each phase's consecutive check/next failure\ncount against the configured cap (loop enforcement)\n\n  reset [phase] --reason [--by]  Explicitly clear a phase's failure streak\n                  (defaults to the current phase); audited in run.json",
+        "review" => "Usage: gate review [--fresh] [--by] [--run <id>] [--human]\n\nEmit a self-contained review packet\n(REVIEW phase); --fresh regenerates it from the current code\n\n  --human  Walk the rubric via terminal prompts instead of\n           handing the packet to another session (solo-dev\n           review mode; readline only, no new dependencies)",
+        "retro" => "Usage: gate retro [--run <id>]\n\nSync retro.md into the Agnosgram journal (RETRO\nphase); no-op without a .agnosgram/ store",
+        "report" => "Usage: gate report [<run-id>]\n\nPer-run summary: durations, gate failures, findings\n(falls back to an archived summary after prune)",
+        "prune" => "Usage: gate prune [--keep n] [--days n] [--dry-run]\n\nArchive non-active runs past the\nretention window to .gate/archive/, then remove them",
+        "skip" => "Usage: gate skip <phase> --reason [--by] [--run <id>]\n\nHuman-authorized skip of the\ncurrent phase (recorded with who and why; shown by `gate report`)",
+        "log" => "Usage: gate log <file> [--run <id>]\n\nRegister an artifact against the current phase",
+        "playbook" => "Usage: gate playbook [phase] [--run <id>]\n\nPrint the active playbook for a phase",
+        "guard" => "Usage: gate guard install|uninstall\n\nManage an opt-in .git/hooks/pre-commit guard;\nbacks up and chains any existing hook. Cheap\ndeterministic checks only (active run, staged files\nin plan scope, not still in PLAN) - never installed\nby `init`, never load-bearing. Bypass per commit\nwith --no-verify, or always with GATE_GUARD=0",
+        _ => return None,
+    })
+}
+
 type CommandFn = fn(Vec<String>) -> Result<(), UserError>;
 
 fn dispatch(command: &str) -> Option<CommandFn> {
@@ -137,10 +167,21 @@ fn main() {
     let argv: Vec<String> = std::env::args().skip(1).collect();
     let args = parse_args(&argv);
 
-    if args.flags.is_true("help")
-        || args.flags.is_true("h")
-        || args.command.as_deref() == Some("help")
-    {
+    let wants_help = args.flags.is_true("help") || args.flags.is_true("h");
+    if wants_help {
+        // A real subcommand before `--help` gets its own usage, not the
+        // full top-level help - `gate trust --help` previously printed the
+        // entire command list, unhelpfully verbose for a first-time user.
+        if let Some(command) = args.command.as_deref() {
+            if let Some(usage) = command_usage(command) {
+                println!("{usage}\n\nSee `gate --help` for the full command list.");
+                return;
+            }
+        }
+        println!("{HELP}");
+        return;
+    }
+    if args.command.as_deref() == Some("help") {
         println!("{HELP}");
         return;
     }

@@ -136,11 +136,17 @@ pub fn staged_files(root: &Path) -> Vec<String> {
 }
 
 /// Unified diff between two files on disk, independent of any git repo or
-/// index. Exits non-zero when the files differ; the diff is still on
-/// stdout.
-pub fn diff_no_index(a: &str, b: &str) -> String {
+/// index. `a`/`b` are resolved relative to `dir` (the diff headers'
+/// `a/`/`b/` prefixes come straight from whatever's passed here - an
+/// absolute path makes git strip its leading `/` and use the remainder
+/// verbatim, producing a header that *looks* like a normal relative path
+/// but isn't, e.g. `a/private/tmp/x` reading as `a/tmp/x`; a short relative
+/// path avoids that entirely). Exits non-zero when the files differ; the
+/// diff is still on stdout.
+pub fn diff_no_index(dir: &Path, a: &str, b: &str) -> String {
     Command::new("git")
         .args(["diff", "--no-color", "--no-index", "--", a, b])
+        .current_dir(dir)
         .output()
         .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
         .unwrap_or_default()
@@ -534,12 +540,21 @@ mod tests {
         let dir = tmp_dir("diff-no-index");
         write_file(&dir, "a.txt", "one\n");
         write_file(&dir, "b.txt", "two\n");
-        let diff = diff_no_index(
-            dir.join("a.txt").to_str().unwrap(),
-            dir.join("b.txt").to_str().unwrap(),
-        );
+        let diff = diff_no_index(&dir, "a.txt", "b.txt");
         assert!(diff.contains("-one"));
         assert!(diff.contains("+two"));
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn diff_no_index_headers_use_the_given_relative_paths_not_a_mangled_absolute_one() {
+        let dir = tmp_dir("diff-no-index-headers");
+        write_file(&dir, "plan.approved.md", "one\n");
+        write_file(&dir, "plan.md", "two\n");
+        let diff = diff_no_index(&dir, "plan.approved.md", "plan.md");
+        assert!(diff.contains("a/plan.approved.md"));
+        assert!(diff.contains("b/plan.md"));
+        assert!(!diff.contains(dir.to_str().unwrap()));
         fs::remove_dir_all(&dir).unwrap();
     }
 

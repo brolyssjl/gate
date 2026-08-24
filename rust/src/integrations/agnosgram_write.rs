@@ -8,14 +8,20 @@
 //! ```text
 //! ## YYYY-MM-DD HH:MM · gate · <branch>
 //! - **Did:** Completed gate run "<title>" (<run-id>, profile <profile>)
-//! - **Learned:** <broke entries; joined "; ">
+//! - **Learned:** <broke entries, joined " · ">
 //! - **Decided:** <conventions entries>
 //! - **Avoid:** <avoid entries>
 //! - **Source:** .gate/runs/<run-id>
 //! ```
 //!
-//! Empty slots are omitted. `format_journal_entry` is pure and golden-tested
-//! against that exact block; everything else here is I/O.
+//! Empty slots are omitted. Multiple entries in one slot stay on that
+//! slot's single line (the pinned v1 contract is one line per slot, and
+//! this repo has no way to confirm agnosgram's own parser tolerates a
+//! nested bullet list under a slot heading) - joined with " · " rather
+//! than "; ", both to read more cleanly and to avoid colliding with a
+//! semicolon that might legitimately appear inside one entry's own prose.
+//! `format_journal_entry` is pure and golden-tested against that exact
+//! block; everything else here is I/O.
 //!
 //! No TS counterpart: local-time formatting via `localtime_r` (direct
 //! `extern "C"` binding), the same pattern agnosgram's Rust port uses for
@@ -128,16 +134,16 @@ pub fn format_journal_entry(params: &JournalEntryParams) -> String {
         params.run_title, params.run_id, params.run_profile
     ));
     if !params.retro.broke.is_empty() {
-        lines.push(format!("- **Learned:** {}", params.retro.broke.join("; ")));
+        lines.push(format!("- **Learned:** {}", params.retro.broke.join(" · ")));
     }
     if !params.retro.conventions.is_empty() {
         lines.push(format!(
             "- **Decided:** {}",
-            params.retro.conventions.join("; ")
+            params.retro.conventions.join(" · ")
         ));
     }
     if !params.retro.avoid.is_empty() {
-        lines.push(format!("- **Avoid:** {}", params.retro.avoid.join("; ")));
+        lines.push(format!("- **Avoid:** {}", params.retro.avoid.join(" · ")));
     }
     lines.push(format!("- **Source:** .gate/runs/{}", params.run_id));
 
@@ -318,6 +324,26 @@ mod tests {
         result
     }
 
+    static AGNOSGRAM_BIN_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// Serializes tests that mutate the shared `GATE_AGNOSGRAM_BIN` env var.
+    /// `cargo test` runs a crate's tests in parallel threads within one
+    /// process; unlike `with_tz` (every caller here wants the same "UTC",
+    /// so a race is harmless), these tests want different values - a real,
+    /// observed flake where one test's stub path leaked into another's
+    /// `write_journal_entry` call.
+    fn with_agnosgram_bin<T>(bin: &str, f: impl FnOnce() -> T) -> T {
+        let _guard = AGNOSGRAM_BIN_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let prior = env::var("GATE_AGNOSGRAM_BIN").ok();
+        env::set_var("GATE_AGNOSGRAM_BIN", bin);
+        let result = f();
+        match prior {
+            Some(v) => env::set_var("GATE_AGNOSGRAM_BIN", v),
+            None => env::remove_var("GATE_AGNOSGRAM_BIN"),
+        }
+        result
+    }
+
     fn tmp_repo(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!(
             "gate-agnosgramwrite-rs-{name}-{}",
@@ -398,7 +424,7 @@ mod tests {
     }
 
     #[test]
-    fn joins_multiple_entries_in_a_slot_with_semicolon() {
+    fn joins_multiple_entries_in_a_slot_with_a_middle_dot() {
         with_tz("UTC", || {
             let retro = RetroLog {
                 broke: vec![
@@ -417,7 +443,8 @@ mod tests {
                 branch: Some("main"),
                 when: Some(WHEN),
             });
-            assert!(entry.contains("- **Learned:** one thing broke; another thing broke"));
+            assert!(entry.contains("- **Learned:** one thing broke \u{b7} another thing broke"));
+            assert!(!entry.contains("; "));
         });
     }
 
@@ -456,17 +483,9 @@ mod tests {
         });
 
         let result = with_tz("UTC", || {
-            let prior = env::var("GATE_AGNOSGRAM_BIN").ok();
-            env::set_var(
-                "GATE_AGNOSGRAM_BIN",
-                "/nonexistent/gate-agnosgram-test-stub",
-            );
-            let r = write_journal_entry(&root, &entry, Some(WHEN)).unwrap();
-            match prior {
-                Some(v) => env::set_var("GATE_AGNOSGRAM_BIN", v),
-                None => env::remove_var("GATE_AGNOSGRAM_BIN"),
-            }
-            r
+            with_agnosgram_bin("/nonexistent/gate-agnosgram-test-stub", || {
+                write_journal_entry(&root, &entry, Some(WHEN)).unwrap()
+            })
         });
         assert_eq!(result.method, JournalWriteMethod::Fallback);
         assert_eq!(result.journal_file, ".agnosgram/journal/2026-07.md");
@@ -511,17 +530,12 @@ mod tests {
             when: Some(WHEN),
         });
 
-        let prior = env::var("GATE_AGNOSGRAM_BIN").ok();
-        env::set_var(
-            "GATE_AGNOSGRAM_BIN",
-            "/nonexistent/gate-agnosgram-test-stub",
-        );
-        let r1 = write_journal_entry(&root, &first, Some(WHEN)).unwrap();
-        let r2 = write_journal_entry(&root, &second, Some(WHEN)).unwrap();
-        match prior {
-            Some(v) => env::set_var("GATE_AGNOSGRAM_BIN", v),
-            None => env::remove_var("GATE_AGNOSGRAM_BIN"),
-        }
+        let (r1, r2) = with_agnosgram_bin("/nonexistent/gate-agnosgram-test-stub", || {
+            (
+                write_journal_entry(&root, &first, Some(WHEN)).unwrap(),
+                write_journal_entry(&root, &second, Some(WHEN)).unwrap(),
+            )
+        });
         assert_eq!(r1.journal_file, r2.journal_file);
 
         let content = stdfs::read_to_string(root.join(&r1.journal_file)).unwrap();
@@ -565,13 +579,9 @@ mod tests {
             when: Some(WHEN),
         });
 
-        let prior = env::var("GATE_AGNOSGRAM_BIN").ok();
-        env::set_var("GATE_AGNOSGRAM_BIN", &stub);
-        let result = write_journal_entry(&root, &entry, Some(WHEN)).unwrap();
-        match prior {
-            Some(v) => env::set_var("GATE_AGNOSGRAM_BIN", v),
-            None => env::remove_var("GATE_AGNOSGRAM_BIN"),
-        }
+        let result = with_agnosgram_bin(stub.to_str().unwrap(), || {
+            write_journal_entry(&root, &entry, Some(WHEN)).unwrap()
+        });
         assert_eq!(result.method, JournalWriteMethod::AgnosgramCli);
         assert_eq!(result.journal_file, ".agnosgram/journal/2026-07.md");
         assert_eq!(stdfs::read_to_string(&record_path).unwrap(), entry);

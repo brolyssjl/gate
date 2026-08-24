@@ -32,9 +32,10 @@ puts it on your PATH - no Node required:
 curl -fsSL https://raw.githubusercontent.com/brolyssjl/gate/main/install.sh | bash
 ```
 
-While this repository is private, the unauthenticated one-liner 404s (both
-the raw script and the release assets). Run the script from a clone instead -
-it falls back to `gh release download`, which reuses your GitHub auth:
+If the direct download fails (network hiccup, GitHub API rate limiting on an
+unauthenticated request), `install.sh` falls back to `gh release download`
+when the `gh` CLI is available - it reuses your existing GitHub auth. Clone
+the repo first so the script is on disk to fall back within:
 
 ```bash
 git clone https://github.com/brolyssjl/gate.git && ./gate/install.sh

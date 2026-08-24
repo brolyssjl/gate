@@ -40,13 +40,13 @@ binaries; no npm publishing.
 
 `release.yml`'s `release` job hashes every built asset (`sha256sum`) into a
 `SHA256SUMS` file and publishes it alongside the binaries. `install.sh`
-downloads it the same way it downloads the binary (direct, with the `gh`
-fallback for the private-repo case) and verifies the binary against it
-*before* `chmod +x`/`mv` - a checksum mismatch, or a missing `SHA256SUMS`
-entry, aborts with nothing installed. `GATE_VERSION=X.Y.Z` pins an exact
-release instead of the latest one; either way, the script prints the version
-actually installed (`gate --version`, read back from the binary it just
-placed, not just echoed from an env var).
+downloads it the same way it downloads the binary (direct, with a `gh`
+fallback for network hiccups or unauthenticated rate limiting) and verifies
+the binary against it *before* `chmod +x`/`mv` - a checksum mismatch, or a
+missing `SHA256SUMS` entry, aborts with nothing installed. `GATE_VERSION=X.Y.Z`
+pins an exact release instead of the latest one; either way, the script
+prints the version actually installed (`gate --version`, read back from the
+binary it just placed, not just echoed from an env var).
 
 `install.sh` guards its `main "$@"` call behind a
 `[ "${BASH_SOURCE[0]}" = "${0}" ]` check, so it can be `source`d for testing

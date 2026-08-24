@@ -118,22 +118,23 @@ pub(crate) fn parse_iso_millis_or(s: &str, fallback: i64) -> i64 {
 }
 
 /// Per-phase wall-clock, summed across re-entries, plus failed-attempt
-/// counts.
-pub fn phase_reports(history: &[HistoryEntry]) -> Vec<PhaseReport> {
+/// counts. `failure_counts` (`run.json`'s permanent per-phase counters,
+/// never pruned - see `Run::record_gate_failure_event`) is the source for
+/// the counts, not a tally of `Failed` events still present in `history`:
+/// `history` only retains the most recent `MAX_FAILURE_HISTORY_EVENTS`
+/// failures, so counting from it directly would silently undercount a
+/// phase that failed more than that many times over the run's life.
+pub fn phase_reports(
+    history: &[HistoryEntry],
+    failure_counts: &[(Phase, i64)],
+) -> Vec<PhaseReport> {
     let mut seconds: Vec<(Phase, f64)> = Vec::new();
-    let mut failures: Vec<(Phase, i64)> = Vec::new();
     let mut order: Vec<Phase> = Vec::new();
     let last_at = history.last().map(|h| h.at.clone());
 
     for (i, entry) in history.iter().enumerate() {
         if !order.contains(&entry.phase) {
             order.push(entry.phase);
-        }
-        if entry.event == HistoryEvent::Failed {
-            match failures.iter_mut().find(|(p, _)| *p == entry.phase) {
-                Some((_, c)) => *c += 1,
-                None => failures.push((entry.phase, 1)),
-            }
         }
         if entry.event == HistoryEvent::Entered {
             // A phase spans from its `entered` event to the next phase
@@ -165,6 +166,15 @@ pub fn phase_reports(history: &[HistoryEntry]) -> Vec<PhaseReport> {
         }
     }
 
+    // A phase normally reaches `order` via its `Entered` event before it
+    // can ever fail - this only guards against a failure count with no
+    // matching history (e.g. hand-edited/migrated data).
+    for (phase, _) in failure_counts {
+        if !order.contains(phase) {
+            order.push(*phase);
+        }
+    }
+
     order
         .into_iter()
         .map(|phase| {
@@ -173,7 +183,7 @@ pub fn phase_reports(history: &[HistoryEntry]) -> Vec<PhaseReport> {
                 .find(|(p, _)| *p == phase)
                 .map(|(_, s)| *s)
                 .unwrap_or(0.0);
-            let fails = failures
+            let fails = failure_counts
                 .iter()
                 .find(|(p, _)| *p == phase)
                 .map(|(_, c)| *c)
@@ -211,7 +221,7 @@ fn summarize_findings(root: &Path, run_id: &str) -> Option<FindingsSummary> {
 }
 
 pub fn build_report_data(root: &Path, run: &Run) -> ReportData {
-    let phases = phase_reports(&run.history);
+    let phases = phase_reports(&run.history, &run.failure_counts);
     let total_seconds: i64 = phases.iter().map(|p| p.seconds).sum();
     let gate_failures: i64 = phases.iter().map(|p| p.gate_failures).sum();
     let findings = summarize_findings(root, &run.id);
@@ -516,7 +526,7 @@ fn report_data_from_json(v: &Value) -> ReportData {
     }
 }
 
-fn most_recent_run_id(root: &Path) -> Option<String> {
+pub(crate) fn most_recent_run_id(root: &Path) -> Option<String> {
     let runs_dir = gate_paths(root).runs;
     if !runs_dir.exists() {
         return None;
@@ -667,7 +677,7 @@ mod tests {
     }
 
     #[test]
-    fn phase_reports_sums_duration_across_re_entries_and_counts_failures() {
+    fn phase_reports_sums_duration_across_re_entries_and_reads_failures_from_the_permanent_count() {
         let history = vec![
             entry(
                 Phase::Plan,
@@ -690,7 +700,7 @@ mod tests {
                 "2026-01-01T00:02:00.000Z",
             ),
         ];
-        let reports = phase_reports(&history);
+        let reports = phase_reports(&history, &[(Phase::Plan, 1)]);
         let plan = reports.iter().find(|r| r.phase == Phase::Plan).unwrap();
         assert_eq!(plan.seconds, 60);
         assert_eq!(plan.gate_failures, 1);
@@ -702,6 +712,31 @@ mod tests {
         // next "entered" at 00:02:00); the second entered event starts a
         // fresh zero-length span with nothing after it.
         assert_eq!(implement.seconds, 60);
+        assert_eq!(implement.gate_failures, 0);
+    }
+
+    #[test]
+    fn phase_reports_reads_failures_from_the_permanent_count_not_from_pruned_history() {
+        // A phase that failed more times than `MAX_FAILURE_HISTORY_EVENTS`
+        // retains only its most recent `Failed` events in `history`, but
+        // `failure_counts` (the permanent counter) still has the true total
+        // - `phase_reports` must report that total, not undercount from
+        // what's left in `history`.
+        let history = vec![
+            entry(
+                Phase::Test,
+                HistoryEvent::Entered,
+                "2026-01-01T00:00:00.000Z",
+            ),
+            entry(
+                Phase::Test,
+                HistoryEvent::Failed,
+                "2026-01-01T00:00:05.000Z",
+            ),
+        ];
+        let reports = phase_reports(&history, &[(Phase::Test, 47)]);
+        let test = reports.iter().find(|r| r.phase == Phase::Test).unwrap();
+        assert_eq!(test.gate_failures, 47);
     }
 
     #[test]
@@ -718,7 +753,7 @@ mod tests {
                 "2026-01-01T00:01:00.000Z",
             ),
         ];
-        let reports = phase_reports(&history);
+        let reports = phase_reports(&history, &[]);
         assert_eq!(reports[0].phase, Phase::Plan);
         assert_eq!(reports[1].phase, Phase::Implement);
     }

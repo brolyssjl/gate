@@ -5,13 +5,25 @@
 use crate::cli::args::Flags;
 use crate::cli::output::{emit, UserError};
 use crate::core::json::Value;
-use crate::gates::types::GateResult;
+use crate::gates::types::{Check, GateResult};
 
 fn mark(ok: bool) -> &'static str {
     if ok {
         "\u{2713}"
     } else {
         "\u{2717}"
+    }
+}
+
+/// Per-check marker: a passing check that couldn't actually be verified
+/// (`Check::advisory`) gets its own symbol, distinct from the plain
+/// checkmark a genuinely verified pass earns - folding both into "\u{2713}"
+/// would read as a stronger guarantee than Gate can back up.
+fn check_mark(c: &Check) -> &'static str {
+    if c.ok && c.advisory {
+        "\u{26A0}"
+    } else {
+        mark(c.ok)
     }
 }
 
@@ -31,7 +43,7 @@ pub fn render_gate(
         if res.ok { "PASS" } else { "FAIL" }
     )];
     for c in &res.checks {
-        let mut line = format!("  {} {}", mark(c.ok), c.name);
+        let mut line = format!("  {} {}", check_mark(c), c.name);
         if !c.detail.is_empty() {
             line.push_str(" - ");
             line.push_str(&c.detail);
@@ -48,6 +60,7 @@ pub fn render_gate(
         co.insert("name", c.name.as_str());
         co.insert("ok", c.ok);
         co.insert("detail", c.detail.as_str());
+        co.insert("advisory", c.advisory);
         checks.push(co);
     }
     data.insert("checks", checks);
@@ -102,6 +115,7 @@ mod tests {
                 ok: true,
                 detail: "d".to_string(),
                 trust_blocked: false,
+                advisory: false,
             }],
         };
         let mut data = Value::object();

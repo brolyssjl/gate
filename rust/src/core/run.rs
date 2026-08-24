@@ -22,6 +22,15 @@ use crate::core::state_machine::Phase;
 
 pub const CURRENT_SCHEMA: i64 = 4;
 
+/// Cap on how many `Failed` events `history` retains at once - the oldest
+/// `Failed` entries are pruned past this so a long, failure-heavy run's
+/// `run.json` doesn't grow without bound. `Entered`/`Passed`/`Skipped`
+/// entries are never pruned (phase-duration reporting needs every
+/// `Entered` span). The permanent per-phase count (`failure_counts`) is
+/// unaffected by pruning - it's the source `gate report` reads, not a count
+/// of what's left in `history`.
+pub const MAX_FAILURE_HISTORY_EVENTS: usize = 20;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RunStatus {
     Active,
@@ -225,6 +234,13 @@ pub struct Run {
     /// reset` (the loop-enforcement cap). Sparse: a phase absent here has
     /// streak 0 - see `failure_streak`/`record_gate_evaluation`.
     pub failure_streaks: Vec<(Phase, i64)>,
+    /// Total failed gate evaluations per phase over the run's entire
+    /// lifetime - unlike `failure_streaks`, never cleared by a pass, skip,
+    /// or streak reset, and unaffected by `history`'s failure-event pruning
+    /// (see `MAX_FAILURE_HISTORY_EVENTS`). Sparse: a phase absent here has
+    /// never failed. `gate report`'s per-phase failure counts read this,
+    /// not a count of `Failed` events left in `history`.
+    pub failure_counts: Vec<(Phase, i64)>,
     pub approval: Option<Approval>,
     pub amendment: Option<Amendment>,
     pub review: Option<ReviewRequest>,
@@ -267,6 +283,7 @@ pub fn new_run(params: NewRunParams) -> Run {
         overrides: Vec::new(),
         artifacts: Vec::new(),
         failure_streaks: Vec::new(),
+        failure_counts: Vec::new(),
         approval: None,
         amendment: None,
         review: None,
@@ -306,6 +323,62 @@ impl Run {
             Some(entry) => entry.1 = n,
             None => self.failure_streaks.push((phase, n)),
         }
+    }
+
+    /// Total failed gate evaluations `phase` has ever recorded (see
+    /// `failure_counts`). A phase never failed reads as 0.
+    pub fn failure_count(&self, phase: Phase) -> i64 {
+        self.failure_counts
+            .iter()
+            .find(|(p, _)| *p == phase)
+            .map(|(_, n)| *n)
+            .unwrap_or(0)
+    }
+
+    /// Persist one failed gate evaluation of `phase` into `run.json`'s
+    /// audit trail: bumps the permanent per-phase count (`failure_counts`)
+    /// and appends a `Failed` history event naming which checks failed,
+    /// then prunes the oldest `Failed` events past
+    /// `MAX_FAILURE_HISTORY_EVENTS`. Independent of `record_gate_evaluation`
+    /// (the streak/loop-enforcement bookkeeping) - callers that exclude a
+    /// trust-blocked failure from the streak make the same choice here.
+    pub fn record_gate_failure_event(&mut self, phase: Phase, failed_checks: &[String]) {
+        match self.failure_counts.iter_mut().find(|(p, _)| *p == phase) {
+            Some(entry) => entry.1 += 1,
+            None => self.failure_counts.push((phase, 1)),
+        }
+        self.history.push(HistoryEntry {
+            phase,
+            event: HistoryEvent::Failed,
+            at: now_iso(),
+            detail: Some(failed_checks.join(", ")),
+            tree_hash: None,
+        });
+        self.prune_failure_history();
+    }
+
+    /// Drop the oldest `Failed` history entries past
+    /// `MAX_FAILURE_HISTORY_EVENTS`, leaving every other event untouched.
+    fn prune_failure_history(&mut self) {
+        let failed_count = self
+            .history
+            .iter()
+            .filter(|h| h.event == HistoryEvent::Failed)
+            .count();
+        let Some(mut to_drop) = failed_count.checked_sub(MAX_FAILURE_HISTORY_EVENTS) else {
+            return;
+        };
+        if to_drop == 0 {
+            return;
+        }
+        self.history.retain(|h| {
+            if h.event == HistoryEvent::Failed && to_drop > 0 {
+                to_drop -= 1;
+                false
+            } else {
+                true
+            }
+        });
     }
 }
 
@@ -532,7 +605,7 @@ fn review_request_to_json(r: &ReviewRequest) -> Value {
     o
 }
 
-fn failure_streaks_to_json(streaks: &[(Phase, i64)]) -> Value {
+fn phase_counts_to_json(streaks: &[(Phase, i64)]) -> Value {
     let mut obj = Value::object();
     for (phase, n) in streaks {
         obj.insert(phase.as_str(), *n);
@@ -540,7 +613,7 @@ fn failure_streaks_to_json(streaks: &[(Phase, i64)]) -> Value {
     obj
 }
 
-fn failure_streaks_from_json(v: &Value) -> Vec<(Phase, i64)> {
+fn phase_counts_from_json(v: &Value) -> Vec<(Phase, i64)> {
     let Some(entries) = v.as_object() else {
         return Vec::new();
     };
@@ -591,10 +664,10 @@ pub fn run_to_json(run: &Run) -> Value {
     }
     o.insert("artifacts", artifacts);
     if !run.failure_streaks.is_empty() {
-        o.insert(
-            "failureStreaks",
-            failure_streaks_to_json(&run.failure_streaks),
-        );
+        o.insert("failureStreaks", phase_counts_to_json(&run.failure_streaks));
+    }
+    if !run.failure_counts.is_empty() {
+        o.insert("failureCounts", phase_counts_to_json(&run.failure_counts));
     }
     if let Some(a) = &run.approval {
         o.insert("approval", approval_to_json(a));
@@ -722,7 +795,11 @@ fn parse_run(raw: &Value, run_id: &str) -> Result<Run, UserError> {
         .unwrap_or_default();
     let failure_streaks = raw
         .get("failureStreaks")
-        .map(failure_streaks_from_json)
+        .map(phase_counts_from_json)
+        .unwrap_or_default();
+    let failure_counts = raw
+        .get("failureCounts")
+        .map(phase_counts_from_json)
         .unwrap_or_default();
     let approval = raw.get("approval").map(approval_from_json);
     let amendment = raw.get("amendment").map(amendment_from_json);
@@ -746,6 +823,7 @@ fn parse_run(raw: &Value, run_id: &str) -> Result<Run, UserError> {
         overrides,
         artifacts,
         failure_streaks,
+        failure_counts,
         approval,
         amendment,
         review,
@@ -1129,6 +1207,106 @@ mod tests {
         write_run(&root, &mut run).unwrap();
         let text = fs::read_to_string(root.join(".gate/runs/r1/run.json")).unwrap();
         assert!(!text.contains("failureStreaks"));
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn record_gate_failure_event_bumps_the_permanent_count_and_appends_history() {
+        let mut run = new_run(NewRunParams {
+            id: "r1".to_string(),
+            title: "t".to_string(),
+            profile: "feature".to_string(),
+            branch: None,
+            base_ref: None,
+            session_id: None,
+            target_override: None,
+        });
+        assert_eq!(run.failure_count(Phase::Test), 0);
+        run.record_gate_failure_event(Phase::Test, &["test.suite".to_string()]);
+        run.record_gate_failure_event(Phase::Test, &["test.suite".to_string()]);
+        assert_eq!(run.failure_count(Phase::Test), 2);
+        let failed_entries: Vec<&HistoryEntry> = run
+            .history
+            .iter()
+            .filter(|h| h.event == HistoryEvent::Failed)
+            .collect();
+        assert_eq!(failed_entries.len(), 2);
+        assert_eq!(failed_entries[0].detail.as_deref(), Some("test.suite"));
+    }
+
+    #[test]
+    fn failure_count_never_clears_on_a_passing_evaluation_unlike_the_streak() {
+        let mut run = new_run(NewRunParams {
+            id: "r1".to_string(),
+            title: "t".to_string(),
+            profile: "feature".to_string(),
+            branch: None,
+            base_ref: None,
+            session_id: None,
+            target_override: None,
+        });
+        run.record_gate_failure_event(Phase::Test, &["c".to_string()]);
+        run.record_gate_evaluation(Phase::Test, false);
+        run.record_gate_evaluation(Phase::Test, true); // clears the streak
+        assert_eq!(run.failure_streak(Phase::Test), 0);
+        assert_eq!(run.failure_count(Phase::Test), 1);
+    }
+
+    #[test]
+    fn prunes_the_oldest_failed_history_events_past_the_cap_keeping_the_count_accurate() {
+        let mut run = new_run(NewRunParams {
+            id: "r1".to_string(),
+            title: "t".to_string(),
+            profile: "feature".to_string(),
+            branch: None,
+            base_ref: None,
+            session_id: None,
+            target_override: None,
+        });
+        for i in 0..(MAX_FAILURE_HISTORY_EVENTS + 5) {
+            run.record_gate_failure_event(Phase::Test, &[format!("attempt-{i}")]);
+        }
+        let failed_entries: Vec<&HistoryEntry> = run
+            .history
+            .iter()
+            .filter(|h| h.event == HistoryEvent::Failed)
+            .collect();
+        assert_eq!(failed_entries.len(), MAX_FAILURE_HISTORY_EVENTS);
+        // The oldest entries were dropped; the most recent ones survive.
+        assert_eq!(
+            failed_entries.last().unwrap().detail.as_deref(),
+            Some(format!("attempt-{}", MAX_FAILURE_HISTORY_EVENTS + 4).as_str())
+        );
+        // The permanent count is unaffected by pruning.
+        assert_eq!(
+            run.failure_count(Phase::Test),
+            (MAX_FAILURE_HISTORY_EVENTS + 5) as i64
+        );
+    }
+
+    #[test]
+    fn failure_counts_round_trip_through_json_sparse() {
+        let root = tmp_dir("failure-counts-json");
+        let mut run = new_run(NewRunParams {
+            id: "r1".to_string(),
+            title: "t".to_string(),
+            profile: "feature".to_string(),
+            branch: None,
+            base_ref: None,
+            session_id: None,
+            target_override: None,
+        });
+        run.record_gate_failure_event(Phase::Implement, &["implement.build".to_string()]);
+        run.record_gate_failure_event(Phase::Implement, &["implement.build".to_string()]);
+        write_run(&root, &mut run).unwrap();
+
+        let text = fs::read_to_string(root.join(".gate/runs/r1/run.json")).unwrap();
+        assert!(text.contains("\"failureCounts\""));
+        assert!(text.contains("\"IMPLEMENT\": 2"));
+
+        let reloaded = read_run(&root, "r1").unwrap();
+        assert_eq!(reloaded.failure_count(Phase::Implement), 2);
+        assert_eq!(reloaded.failure_count(Phase::Plan), 0);
         fs::remove_dir_all(&root).unwrap();
     }
 

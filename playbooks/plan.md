@@ -1,7 +1,7 @@
 # PLAN playbook
 
 You are in the **PLAN** phase. Produce `plan.md` in the run folder. Gate will not
-let you into IMPLEMENT until the plan is schema-valid and approved. Plan *quality*
+let you past PLAN until the plan is schema-valid and approved. Plan *quality*
 is your job; Gate only checks structure.
 
 ## Do
@@ -11,7 +11,10 @@ is your job; Gate only checks structure.
    `.specify/`, `_bmad/`), read it first and **cite** the spec path rather than
    restating it. When Gate detects an SDD directory (and `integrations.sdd` is
    not `off`), put that path in the `spec:` frontmatter field - the gate checks
-   it points somewhere real under the SDD dir. No SDD present: leave it blank.
+   it points somewhere real under the SDD dir. A blank `spec:` is only valid
+   when **no** SDD directory is detected at all; leave it blank in that case.
+   If an SDD dir *is* present, a blank `spec:` fails `plan.spec` - cite a real
+   path before you `gate approve`, not after `gate check` tells you so.
 3. **List every file** you expect to touch (globs allowed). IMPLEMENT will reject
    changes to files not covered here, so be honest and complete.
 4. **Write acceptance criteria.** Each must be *checkable*: give it a `verify`
@@ -57,4 +60,6 @@ Free-form detail. Cite the SDD spec path here if one exists.
 ## Advance
 
 `gate check` to see what's missing → `gate approve` (after sign-off) →
-`gate next` to enter IMPLEMENT.
+`gate next`. Which phase comes next depends on the run's profile (`gate
+approve`'s own confirmation names it; `gate status` shows the full sequence) -
+don't assume IMPLEMENT, a bugfix run enters DEBUG instead.

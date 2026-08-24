@@ -50,7 +50,22 @@ pub fn run(argv: Vec<String>) -> Result<(), UserError> {
     if res.ok || !res.only_trust_blocked() {
         run.record_gate_evaluation(phase, res.ok);
     }
-    if run.failure_streak(phase) != before {
+    // A real failure is always persisted into the run's audit trail (a
+    // `Failed` history event plus the permanent per-phase count), even the
+    // trust-blocked case - matching `gate next`'s existing failure
+    // recording (`commands/next.rs`) so `gate check` and `gate next`
+    // failures show up identically in `gate report`, not just in
+    // scrollback.
+    if !res.ok {
+        let failed: Vec<String> = res
+            .checks
+            .iter()
+            .filter(|c| !c.ok)
+            .map(|c| c.name.clone())
+            .collect();
+        run.record_gate_failure_event(phase, &failed);
+    }
+    if !res.ok || run.failure_streak(phase) != before {
         write_run(&root, &mut run).map_err(|e| UserError::new(e.to_string()))?;
     }
 

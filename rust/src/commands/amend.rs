@@ -58,10 +58,25 @@ fn render_diff(approved_path: &Path, plan_path: &Path, approved_hash: &str) -> D
             ),
         };
     }
+    // `plan_approved`/`plan` are both files directly under the same run
+    // dir - passing their bare filenames with that dir as cwd gives clean
+    // `a/plan.approved.md` / `b/plan.md` diff headers, instead of `git
+    // diff --no-index`'s absolute-path handling (strips the leading `/`
+    // and uses the remainder verbatim, so `a/private/tmp/.../plan.md`
+    // prints as `a/tmp/.../plan.md` - a header that looks like a normal
+    // relative path but isn't).
+    let dir = plan_path.parent().unwrap_or(plan_path);
     DiffResult {
         diff: diff_no_index(
-            &approved_path.to_string_lossy(),
-            &plan_path.to_string_lossy(),
+            dir,
+            approved_path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("plan.approved.md"),
+            plan_path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("plan.md"),
         ),
         trusted_snapshot: true,
         warning: None,

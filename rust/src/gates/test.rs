@@ -45,6 +45,16 @@ use crate::gates::plan_drift::plan_drift_check;
 use crate::gates::test_report::{parse_test_report, NormalizedReport, NormalizedTest};
 use crate::gates::types::{fail, fail_untrusted, pass, result, Check, GateContext, GateResult};
 
+/// Shared by both the bare and targeted `test.criteria` failure paths: a
+/// criterion verified via `verify: "test: <name>"` needs a parseable JSON
+/// test report to map against, and a suite with no JSON reporter wired up
+/// can never produce one - no amount of retrying fixes this on its own, so
+/// the failure names the fix inline rather than just the symptom.
+const NO_PARSEABLE_REPORT_FOR_CRITERIA: &str =
+    "cannot verify criterion\u{2192}test mapping: no parseable test report found - \
+verify: \"test: <name>\" requires the test command to emit a JSON report (on stdout, \
+or written to $GATE_TEST_REPORT); if no JSON reporter is wired up, use verify: manual instead";
+
 pub fn test_gate(ctx: &GateContext) -> GateResult {
     let report_path = run_paths(&ctx.root, &ctx.run.id).test_report;
     let touched: Vec<String> = changed_files(&ctx.root, ctx.run.base_ref.as_deref())
@@ -161,10 +171,7 @@ fn run_bare_target_gate(
     } else if let Some(report) = &report {
         checks.push(criteria_check("test.criteria", &test_criteria, report));
     } else {
-        checks.push(fail(
-            "test.criteria",
-            "cannot verify criterion\u{2192}test mapping: no parseable test report found",
-        ));
+        checks.push(fail("test.criteria", NO_PARSEABLE_REPORT_FOR_CRITERIA));
     }
 
     if let Some(report) = &report {
@@ -302,10 +309,7 @@ emit a JSON report on stdout or write it to $GATE_TEST_REPORT",
     } else if let Some(combined) = &combined {
         checks.push(criteria_check("test.criteria", &test_criteria, combined));
     } else {
-        checks.push(fail(
-            "test.criteria",
-            "cannot verify criterion\u{2192}test mapping: no parseable test report found",
-        ));
+        checks.push(fail("test.criteria", NO_PARSEABLE_REPORT_FOR_CRITERIA));
     }
 
     if let Some(combined) = &combined {
@@ -724,6 +728,28 @@ mod tests {
         };
         let res = test_gate(&ctx);
         assert!(!check(&res, "test.criteria").unwrap().ok);
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn fails_with_actionable_guidance_when_a_test_verified_criterion_has_no_parseable_report() {
+        let root = make_repo("no-parseable-report-for-criteria");
+        write_plan(&root, GOOD_PLAN);
+        // A green suite that prints plain text, not JSON - the exact soak
+        // scenario: `verify: "test: <name>"` in the plan, but the test
+        // command has no JSON reporter wired up at all.
+        let cmd = node_script_cmd(&root, "test.js", "console.log('ok');\n");
+        let config = write_test_command(&root, &cmd, true);
+        let ctx = GateContext {
+            root: root.clone(),
+            run: run_on(),
+            config,
+        };
+        let res = test_gate(&ctx);
+        let criteria = check(&res, "test.criteria").unwrap();
+        assert!(!criteria.ok);
+        assert!(criteria.detail.contains("verify: manual"));
+        assert!(criteria.detail.contains("$GATE_TEST_REPORT"));
         fs::remove_dir_all(&root).unwrap();
     }
 

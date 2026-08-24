@@ -73,6 +73,26 @@ fn approve_amend_refuses_without_gate_amend_having_recorded_intent_first() {
     assert!(res.stderr.contains("gate amend"));
 }
 
+/// `gate amend`'s diff must show clean `a/plan.approved.md` / `b/plan.md`
+/// unified-diff headers, not `git diff --no-index`'s mangled form for
+/// absolute paths (the leading `/` silently dropped, so
+/// `a//private/tmp/.../plan.approved.md` prints as
+/// `a/tmp/.../plan.approved.md` - a header that looks like a real relative
+/// path but isn't).
+#[test]
+fn amend_diff_headers_use_clean_relative_plan_paths_not_a_mangled_absolute_one() {
+    let repo = make_repo(&[]);
+    let (_run_id, plan_path) = setup_approved_run(&repo, &["a.txt"]);
+    write_file(&repo, &plan_path, &plan_with_files(&["a.txt", "b.txt"]));
+
+    let amend = gate(&repo, &["amend", "--json"]);
+    assert_eq!(amend.code, 0);
+    let diff = amend.json().str("diff").unwrap().to_string();
+    assert!(diff.contains("a/plan.approved.md"));
+    assert!(diff.contains("b/plan.md"));
+    assert!(!diff.contains(repo.to_str().unwrap()));
+}
+
 #[test]
 fn amend_then_approve_amend_goes_green() {
     let repo = make_repo(&[]);

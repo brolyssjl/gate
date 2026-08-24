@@ -175,7 +175,13 @@ re-baselined.
 
 The reviewer signs off by filling in `reviewer:` in `review.md` - identity is
 claimed at sign-off, not at packet time, and the gate rejects an anonymous
-review and a reviewer equal to the implementer's session id.
+review and a reviewer equal to the implementer's session id, *when a session
+id was recorded for the run*. Most CLI-driven flows never set one (it only
+exists if the calling harness passed `gate start --session`/
+`GATE_SESSION_ID`), so in practice this check is advisory: `review.reviewer`
+still passes, but with a distinct warning marker and an "independence
+unverified" detail rather than the plain checkmark a genuinely confirmed
+pass gets.
 
 Fixes made during review change the code *after* IMPLEMENT/TEST certified it,
 so when the tree no longer matches the fingerprint recorded at the last gate
@@ -402,6 +408,19 @@ reviewed and a retry is warranted.
   key is *not* part of the TOFU commands-block trust hash (see "Command
   trust (TOFU)") - it doesn't change what gets executed, only how many
   times Gate will look.
+- **Every real failure is persisted, not just scrollback** - `gate check`
+  and `gate next` both record a `Failed` history event (which checks
+  failed, when) and bump a permanent per-phase failure count in `run.json`
+  the moment an evaluation fails, whether or not it also moves the streak
+  (a trust-blocked failure doesn't count toward the streak but is still
+  recorded, matching every other real failure). `gate report` reads the
+  permanent count for its per-phase failure totals - `run.json`'s `history`
+  itself only keeps the most recent 20 `Failed` events (oldest pruned first)
+  so a long, troubled run's file doesn't grow without bound, but the count
+  `gate report` shows stays exact regardless. `gate streak` (no subcommand)
+  also works after a run reaches DONE - it reports the finished run's final
+  streak state instead of erroring just because the branch's "current run"
+  pointer was cleared.
 
 Like every override in Gate, `gate streak reset` is honest about what it
 is: a CLI cannot stop an agent in the same shell from running it, the same

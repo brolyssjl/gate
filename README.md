@@ -76,7 +76,7 @@ switching agents mid-task.
 ## Walkthrough
 
 ```bash
-gate init                     # scaffold .gate/, infer build/test/lint commands
+gate init                     # scaffold .gate/, infer commands, install CLAUDE.md/AGENTS.md pointers
 gate trust                    # review .gate/config.yml, then approve its commands (TOFU)
 gate start "add password reset"    # optional: --profile feature|bugfix|refactor|docs
 #   → enters PLAN, scaffolds .gate/runs/<id>/plan.md, prints the plan playbook
@@ -232,13 +232,49 @@ must be listed under plan.md's `acknowledgments:` before PLAN passes. No
 report on disk yet is advisory-only - Gate never runs `agnosgram advise`
 itself.
 
-## SDD spec citation
+## SDD composition
 
-With an SDD directory detected (`openspec/`, `.specify/`, `_bmad/`/`.bmad/`)
-and `integrations.sdd` not `off`, the PLAN gate requires plan.md's `spec:`
-field to cite a path that exists under that directory, instead of restating
-the spec. No SDD directory present: the check doesn't run at all - same
-behavior as before this existed.
+Gate is the agnostic loop enforcer; a Spec-Driven-Development framework
+(SDD) supplies the *content* of some phases. With an SDD directory detected
+(`openspec/`, `.specify/`, `_bmad/`/`.bmad/`) and `integrations.sdd` not
+`off`, Gate composes instead of competing: it maps its own phases against
+that framework's own steps - which SDD step **fulfills** a gate phase, which
+phases are **gate-only** (no SDD equivalent - TEST/REVIEW/RETRO, typically),
+and which SDD step **closes the loop** after DONE. For openspec:
+
+| Gate phase | Fulfilled by |
+|---|---|
+| PLAN | openspec's `propose` step; approval is always `gate approve`, not openspec's own sign-off |
+| IMPLEMENT | openspec's `apply` step |
+| TEST / REVIEW / RETRO | gate-only - openspec has no equivalent; the playbook says what and how |
+| *(after DONE)* | `openspec archive <change>` closes openspec's own record - Gate doesn't run it |
+
+This composed story shows up everywhere an agent looks: the adapter pointer
+blocks (`gate adapt`/`init`), `gate playbook`'s per-phase hint line, and a
+one-line reminder printed when a run reaches DONE. Sensible built-in
+mappings exist for spec-kit and BMAD too. The PLAN gate's own check is the
+read side of the same integration: it requires plan.md's `spec:` field to
+cite a path that exists under the detected SDD directory instead of
+restating the spec. No SDD directory present, or `integrations.sdd: off`:
+none of this runs - the generic pointer body and no spec-citation
+requirement, same as before this existed.
+
+A framework Gate doesn't recognize by name (or a built-in mapping you want
+to correct) can still declare its own equivalences:
+
+```yaml
+integrations:
+  sdd_mapping:
+    plan: draft            # SDD step that fulfills PLAN
+    implement: build        # SDD step that fulfills IMPLEMENT
+    closing_step: close     # SDD step that closes the loop after DONE
+    closing_command: "myddl close <change>"
+```
+
+Every key is optional and independently overridable; an empty string
+(`test: ""`) explicitly marks a phase gate-only rather than leaving a
+built-in mapping's default in place. This is advisory content only (it
+never changes what a gate checks) - deliberately outside the trust hash.
 
 ## Targets (multi-stack repos)
 
@@ -303,10 +339,13 @@ normal `gate trust` is required, exactly like changing a command.
 
 `gate adapt [adapter...]` writes (or refreshes) a pointer block into each
 agent's config file - the same ~12-line loop (status → playbook → work →
-next) in every target, managed between `<!-- gate:start -->` /
+next), composed with the detected SDD when one is present (see "SDD
+composition" above), managed between `<!-- gate:start -->` /
 `<!-- gate:end -->` markers so your own content around it is untouched.
 With no arguments it writes every adapter; idempotent - running it again with
-nothing changed reports `unchanged` and doesn't touch the file.
+nothing changed reports `unchanged` and doesn't touch the file. `gate init`
+installs `claude` + `agents` by default (see "Install" above and `gate init
+--help`); `gate adapt` is how you add the rest, any time.
 
 | Adapter | Target file |
 |---|---|
@@ -319,6 +358,48 @@ nothing changed reports `unchanged` and doesn't touch the file.
 
 These are ergonomics only - the contract is always the CLI; every adapter
 just tells the agent to run it.
+
+## `gate doctor` and `gate update`
+
+An installed-but-untended gate leaves no trace an agent will find: adapter
+blocks go stale as `gate` itself is upgraded, playbook copies under
+`.gate/playbooks/` drift from the bundled defaults, and a repo with an SDD
+now present might still be carrying the pre-composition generic pointer
+body. `gate doctor` diagnoses all of it, read-only:
+
+```bash
+gate doctor          # human-readable findings, [info] vs [action] severity
+gate doctor --json    # same findings, structured
+```
+
+It checks: which agent files are missing gate's managed block or carry a
+stale one; whether each playbook copy under `.gate/playbooks/` is current,
+pristine-but-outdated (bundled content moved on, safe to auto-refresh),
+user-edited (never touched without asking), or of unknown provenance (no
+manifest entry - a pre-manifest project, or a hand-deleted one); trust
+status; and whether `.gate/config.yml` exists and parses. Exit code 0 when
+nothing actionable was found, 1 otherwise - script against it like `gate
+trust --check`.
+
+`gate update` applies what `doctor` diagnosed - the upgrade story:
+
+```bash
+gate update                       # refresh what doctor flagged; never touches a user-edited playbook
+gate update --adapt cursor,cline  # also install adapter targets not covered by default
+gate update --force-playbooks     # replace user-edited/unknown-provenance playbooks too
+```
+
+Managed adapter blocks are gate-owned by contract, so they're always safe to
+regenerate. A playbook a human edited is never silently replaced -
+`--force-playbooks` is the explicit override, and forcing one is reported
+alongside a reminder to re-run `gate trust` (playbook overrides ride in the
+same trust hash as `commands:` - see "Command trust (TOFU)" below). Every
+copy `gate init`/`gate update` materializes gets a version-stamped manifest
+entry (`.gate/playbooks.lock`) so a later `doctor`/`update` - on this machine
+or a teammate's - can tell "unchanged since materialized" apart from
+"hand-edited"; like `config.yml` and `trust.json`, it stays tracked so CI and
+every clone see the same picture. Both commands are idempotent: run either
+twice right after itself and the second run reports nothing to do.
 
 ## Pruning runs
 
@@ -545,8 +626,8 @@ TOON is worse on small objects.
 ## Deliberately not yet
 
 A Go port was once the startup-latency escape hatch; superseded by the
-Milestone 6 Rust port (landed). What remains: 1.0.0 rollout gate (soak period,
-upgrade story, docs site). See `ROADMAP.md` for the full plan.
+Milestone 6 Rust port (landed). What remains: 1.0.0 rollout gate (soak
+period, docs site). See `ROADMAP.md` for the full plan.
 
 ## Development
 

@@ -11,8 +11,11 @@
 
 use std::path::Path;
 
+use crate::core::config::GateConfig;
+
 pub mod advise;
 pub mod agnosgram_write;
+pub mod sdd_mapping;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Sdd {
@@ -73,6 +76,19 @@ pub fn sdd_dir(root: &Path) -> Option<&'static str> {
 
 /// Hint lines appended to the PLAN playbook output when integrations are
 /// present.
+/// Whether `integrations.sdd` is explicitly `off` in `config.yml` - the same
+/// presence-plus-opt-out gate `gates::plan::spec_check` applies, reused here
+/// so the composed pointer body/phase hints and the PLAN gate agree on
+/// whether the SDD integration is live.
+pub fn sdd_integration_enabled(config: &GateConfig) -> bool {
+    config
+        .integrations
+        .iter()
+        .find(|(k, _)| k == "sdd")
+        .map(|(_, v)| v.as_str())
+        != Some("off")
+}
+
 pub fn plan_hints(det: Detection) -> Vec<String> {
     let mut hints = Vec::new();
     if det.agnosgram {
@@ -150,6 +166,16 @@ mod tests {
         assert_eq!(hints.len(), 2);
         assert!(hints[0].contains("Agnosgram"));
         assert!(hints[1].contains("openspec"));
+    }
+
+    #[test]
+    fn sdd_integration_enabled_defaults_true_and_honors_explicit_off() {
+        let mut config = crate::core::config::GateConfig::default();
+        assert!(sdd_integration_enabled(&config));
+        config
+            .integrations
+            .push(("sdd".to_string(), "off".to_string()));
+        assert!(!sdd_integration_enabled(&config));
     }
 
     #[test]

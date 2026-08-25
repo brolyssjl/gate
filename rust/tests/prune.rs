@@ -34,7 +34,7 @@ fn sorted_strings(value: &common::json::Value) -> Vec<String> {
 #[test]
 fn keeps_the_newest_keep_runs_and_prunes_the_rest_archiving_summaries() {
     let repo = make_repo(&[]);
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
     for i in 0..5 {
         seed_run(&repo, &format!("run-{i}"), &iso8601_days_ago(i), "done");
     }
@@ -83,7 +83,7 @@ fn keeps_the_newest_keep_runs_and_prunes_the_rest_archiving_summaries() {
 #[test]
 fn never_prunes_the_active_run_even_if_its_the_oldest() {
     let repo = make_repo(&[]);
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
     gate(&repo, &["start", "active one", "--profile", "docs"]);
     let active_id = gate(&repo, &["status", "--json"])
         .json()
@@ -115,7 +115,7 @@ fn never_prunes_the_active_run_even_if_its_the_oldest() {
 fn protects_every_run_current_json_maps_to_even_a_done_run_mapped_under_a_branch_other_than_the_one_checked_out(
 ) {
     let repo = make_repo(&[]);
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
     // A done-but-still-mapped run (the failure mode a migration/advance bug
     // could produce): status is "done", so nothing about its own record
     // marks it active, but current.json still points a branch at it.
@@ -138,7 +138,7 @@ fn protects_every_run_current_json_maps_to_even_a_done_run_mapped_under_a_branch
 #[test]
 fn days_additionally_requires_a_candidate_to_be_older_than_n_days() {
     let repo = make_repo(&[]);
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
     seed_run(&repo, "recent", &iso8601_days_ago(1), "done");
     seed_run(&repo, "old", &iso8601_days_ago(40), "done");
 
@@ -154,7 +154,7 @@ fn days_additionally_requires_a_candidate_to_be_older_than_n_days() {
 #[test]
 fn gate_report_falls_back_to_the_archived_summary_after_a_run_is_pruned() {
     let repo = make_repo(&[]);
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
     seed_run(&repo, "archived-run", &iso8601_days_ago(10), "done");
     gate(&repo, &["prune", "--keep", "0"]);
     assert!(!repo.join(".gate/runs/archived-run").exists());
@@ -173,7 +173,7 @@ fn gate_report_falls_back_to_the_archived_summary_after_a_run_is_pruned() {
 #[test]
 fn gate_report_with_no_run_id_falls_back_to_the_newest_archived_summary_after_a_full_prune() {
     let repo = make_repo(&[]);
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
     seed_run(&repo, "older-run", &iso8601_days_ago(20), "done");
     seed_run(&repo, "newer-run", &iso8601_days_ago(2), "done");
     // Prune both, oldest archived first so mtime recency actually distinguishes them.

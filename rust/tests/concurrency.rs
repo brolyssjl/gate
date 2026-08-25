@@ -44,7 +44,7 @@ fn path_exists(repo: &Path, rel: &str) -> bool {
 fn keys_runs_by_branch_independent_runs_on_separate_branches_status_shows_the_current_one_plus_others_in_flight(
 ) {
     let repo = make_repo(&package_json_files());
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
     gate(&repo, &["trust"]);
     let main_branch = git_out(&repo, &["branch", "--show-current"]);
 
@@ -92,7 +92,7 @@ fn keys_runs_by_branch_independent_runs_on_separate_branches_status_shows_the_cu
 #[test]
 fn gate_start_resumes_a_branchs_existing_active_run_instead_of_erroring() {
     let repo = make_repo(&[]);
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
     let first = gate(
         &repo,
         &["start", "first title", "--profile", "docs", "--json"],
@@ -114,7 +114,7 @@ fn gate_start_resumes_a_branchs_existing_active_run_instead_of_erroring() {
 fn gate_start_refuses_to_resume_on_an_explicit_profile_conflict_instead_of_silently_discarding_it()
 {
     let repo = make_repo(&[]);
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
     gate(&repo, &["start", "first title", "--profile", "docs"]);
 
     let res = gate(&repo, &["start", "second title", "--profile", "bugfix"]);
@@ -126,7 +126,7 @@ fn gate_start_refuses_to_resume_on_an_explicit_profile_conflict_instead_of_silen
 #[test]
 fn gate_start_refuses_to_resume_on_an_explicit_target_conflict_instead_of_silently_discarding_it() {
     let repo = make_repo(&[]);
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
     let config_path = ".gate/config.yml";
     let existing = read_file(&repo, config_path);
     write_file(
@@ -166,7 +166,7 @@ fn gate_start_refuses_to_resume_on_an_explicit_target_conflict_instead_of_silent
 fn gate_start_warns_instead_of_silently_discarding_a_title_mismatch_when_resuming_title_alone_never_blocks(
 ) {
     let repo = make_repo(&[]);
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
     let first = gate(
         &repo,
         &["start", "original title", "--profile", "docs", "--json"],
@@ -201,7 +201,7 @@ fn gate_start_warns_instead_of_silently_discarding_a_title_mismatch_when_resumin
 #[test]
 fn gate_start_refuses_to_resume_when_the_plan_changed_since_approval() {
     let repo = make_repo(&package_json_files());
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
     gate(&repo, &["trust"]);
     let started = gate(&repo, &["start", "needs a plan", "--json"]).json();
     let plan_path = started.str("plan").unwrap().to_string();
@@ -233,7 +233,7 @@ fn gate_start_refuses_to_resume_when_the_plan_changed_since_approval() {
 #[test]
 fn refuses_to_start_on_a_detached_head_no_branch_to_key_the_run_by() {
     let repo = make_repo(&[]);
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
     let sha = git_out(&repo, &["rev-parse", "HEAD"]);
     git_out(&repo, &["checkout", &sha]);
 
@@ -245,7 +245,7 @@ fn refuses_to_start_on_a_detached_head_no_branch_to_key_the_run_by() {
 #[test]
 fn detached_head_gate_status_reports_it_without_throwing_phase_commands_require_run() {
     let repo = make_repo(&package_json_files());
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
     gate(&repo, &["trust"]);
     let started = gate(&repo, &["start", "run before detaching", "--json"]).json();
     let run_id = started.str("id").unwrap().to_string();
@@ -269,7 +269,7 @@ fn detached_head_gate_status_reports_it_without_throwing_phase_commands_require_
 fn detached_head_gate_report_with_no_run_id_refuses_instead_of_silently_describing_another_branchs_run(
 ) {
     let repo = make_repo(&[]);
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
     gate(
         &repo,
         &["start", "run before detaching", "--profile", "docs"],
@@ -306,7 +306,7 @@ fn detached_head_gate_report_with_no_run_id_refuses_instead_of_silently_describi
 #[test]
 fn run_refuses_a_non_active_done_abandoned_run_instead_of_letting_phase_gates_pass_vacuously() {
     let repo = make_repo(&[]);
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
     // schema 2, status: active by default - override to "done" below.
     write_file(
         &repo,
@@ -323,7 +323,7 @@ fn run_refuses_a_non_active_done_abandoned_run_instead_of_letting_phase_gates_pa
 fn run_refuses_a_run_whose_recorded_branch_doesnt_match_the_checked_out_branch_would_otherwise_diff_against_the_wrong_tree(
 ) {
     let repo = make_repo(&package_json_files());
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
     gate(&repo, &["trust"]);
     let main_branch = git_out(&repo, &["branch", "--show-current"]);
     let started = gate(
@@ -348,7 +348,7 @@ fn run_refuses_a_run_whose_recorded_branch_doesnt_match_the_checked_out_branch_w
 #[test]
 fn migrates_the_legacy_single_run_gate_current_pointer_into_per_branch_current_json() {
     let repo = make_repo(&[]);
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
     seed_legacy_run(&repo, "legacy-run");
     let branch = git_out(&repo, &["branch", "--show-current"]);
     write_file(&repo, ".gate/current", "legacy-run\n");
@@ -367,7 +367,7 @@ fn migrates_the_legacy_single_run_gate_current_pointer_into_per_branch_current_j
 fn finishing_a_migrated_legacy_run_backfills_its_branch_and_clears_its_current_json_mapping_on_done(
 ) {
     let repo = make_repo(&[]);
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
     seed_legacy_run(&repo, "legacy-run"); // schema 2, profile docs, phase PLAN
     let branch = git_out(&repo, &["branch", "--show-current"]);
     write_file(&repo, ".gate/current", "legacy-run\n");
@@ -418,7 +418,7 @@ fn resolves_the_branch_name_on_an_unborn_branch_git_init_zero_commits_yet_distin
     // name.
     let repo = make_temp_dir("gate-unborn");
     git_out(&repo, &["init", "-q"]);
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
 
     let started = gate(&repo, &["start", "first run ever", "--json"]);
     assert_eq!(started.code, 0);
@@ -439,7 +439,7 @@ fn works_with_no_git_repo_at_all_a_single_implicit_key_no_branch_ambiguity() {
     // Not make_repo() - a plain directory with no `git init`, exercising the
     // NO_GIT_BRANCH_KEY path (distinct from detached HEAD, which *is* a repo).
     let repo = make_temp_dir("gate-no-git");
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
 
     let started = gate(
         &repo,
@@ -467,7 +467,7 @@ fn works_with_no_git_repo_at_all_a_single_implicit_key_no_branch_ambiguity() {
 #[test]
 fn fails_closed_on_a_corrupt_current_json_instead_of_silently_discarding_every_branchs_mapping() {
     let repo = make_repo(&[]);
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
     gate(&repo, &["start", "will be corrupted", "--profile", "docs"]);
     write_file(&repo, ".gate/current.json", "{ not: valid json");
 
@@ -484,7 +484,7 @@ fn fails_closed_on_a_corrupt_current_json_instead_of_silently_discarding_every_b
 fn serializes_concurrent_gate_start_on_the_same_branch_exactly_one_run_wins_current_json_never_corrupts(
 ) {
     let repo = make_repo(&[]);
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
     let branch = git_out(&repo, &["branch", "--show-current"]);
 
     const N: usize = 8;
@@ -525,7 +525,7 @@ fn serializes_concurrent_gate_start_on_the_same_branch_exactly_one_run_wins_curr
 fn gate_status_degrades_gracefully_and_self_heals_on_a_dangling_mapping_instead_of_crashing_with_run_not_found(
 ) {
     let repo = make_repo(&[]);
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
     let started = gate(
         &repo,
         &["start", "will vanish", "--profile", "docs", "--json"],

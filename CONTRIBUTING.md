@@ -68,8 +68,9 @@ Rust is the only implementation, but the CLI surface is still frozen
 (`docs/decisions/0001-surface-freeze.md`), and `rust/tests/` - a black-box
 conformance suite - is the normative definition of correct behavior for that
 frozen surface. The suite (`rust/tests/cli_e2e.rs`, `concurrency.rs`,
-`human_review.rs`, `prune.rs`, `guard.rs`, `amend.rs`, plus the shared
-harness in `rust/tests/common/`) never imports Gate's internals - it only
+`human_review.rs`, `prune.rs`, `guard.rs`, `amend.rs`, `streak.rs`,
+`doctor_update.rs`, plus the shared harness in `rust/tests/common/`) never
+imports Gate's internals - it only
 spawns the `gate` binary and asserts on its stdout/stderr/exit code and the
 state it writes under `.gate/`. That's the black-box contract: argv in, exit
 code + stdout/stderr + `.gate/` state out. `rust/tests/CONFORMANCE_MAP.md`
@@ -88,7 +89,7 @@ cargo build --release --manifest-path rust/Cargo.toml
 GATE_BIN="$PWD/rust/target/release/gate" cargo test --manifest-path rust/Cargo.toml
 ```
 
-`cargo test` with no `$GATE_BIN` set runs both the crate's ~439 unit tests
+`cargo test` with no `$GATE_BIN` set runs both the crate's ~530 unit tests
 and this conformance suite against a freshly built debug binary in one pass.
 
 ### Test hermeticity

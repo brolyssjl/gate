@@ -4,7 +4,7 @@
 use std::fs;
 use std::path::Path;
 
-use crate::adapters::{adapter_keys, build_pointer_body, get_adapter, Adapter};
+use crate::adapters::{adapter_keys, get_adapter, resolve_pointer_body, Adapter};
 use crate::cli::args::{parse_args, ParsedArgs};
 use crate::cli::context::require_root;
 use crate::cli::output::{emit, UserError};
@@ -36,9 +36,15 @@ pub struct AdaptResult {
 
 /// Inject or refresh one adapter's managed block. Idempotent: a second call
 /// with nothing changed reports "unchanged" and does not touch the file.
-pub fn apply_adapter(root: &Path, adapter: &'static Adapter) -> Result<AdaptResult, UserError> {
+/// `body` is the caller's job to compute (`adapters::resolve_pointer_body`) -
+/// shared across a whole `gate adapt`/`init`/`update` run so every target
+/// gets byte-identical content without recomputing SDD detection per file.
+pub fn apply_adapter(
+    root: &Path,
+    adapter: &'static Adapter,
+    body: &str,
+) -> Result<AdaptResult, UserError> {
     let target = root.join(adapter.target_path);
-    let body = build_pointer_body();
 
     let existed_before = target.exists();
     let existing = if existed_before {
@@ -49,7 +55,7 @@ pub fn apply_adapter(root: &Path, adapter: &'static Adapter) -> Result<AdaptResu
         String::new()
     };
 
-    let next = upsert_managed_block(&existing, &body);
+    let next = upsert_managed_block(&existing, body);
 
     if existed_before && next == existing {
         return Ok(AdaptResult {
@@ -114,9 +120,10 @@ fn execute(root: &std::path::Path, args: &ParsedArgs) -> Result<(), UserError> {
             .collect()
     };
 
+    let body = resolve_pointer_body(root);
     let mut results = Vec::with_capacity(targets.len());
     for adapter in targets {
-        results.push(apply_adapter(root, adapter)?);
+        results.push(apply_adapter(root, adapter, &body)?);
     }
 
     let human = results
@@ -167,7 +174,8 @@ mod tests {
     fn creates_a_shared_file_with_a_managed_block() {
         let root = tmp_dir("create-shared");
         let adapter = get_adapter("claude").unwrap();
-        let result = apply_adapter(&root, adapter).unwrap();
+        let body = resolve_pointer_body(&root);
+        let result = apply_adapter(&root, adapter, &body).unwrap();
         assert_eq!(result.action, AdaptAction::Created);
         let content = fs::read_to_string(root.join("CLAUDE.md")).unwrap();
         assert!(content.contains("Gate quality flow"));
@@ -178,7 +186,8 @@ mod tests {
     fn creates_a_dedicated_file_with_its_preamble() {
         let root = tmp_dir("create-dedicated");
         let adapter = get_adapter("cursor").unwrap();
-        apply_adapter(&root, adapter).unwrap();
+        let body = resolve_pointer_body(&root);
+        apply_adapter(&root, adapter, &body).unwrap();
         let content = fs::read_to_string(root.join(".cursor/rules/gate.mdc")).unwrap();
         assert!(content.starts_with("---\ndescription: Gate quality-flow protocol"));
         fs::remove_dir_all(&root).unwrap();
@@ -188,8 +197,9 @@ mod tests {
     fn second_call_with_nothing_changed_reports_unchanged_and_does_not_touch_the_file() {
         let root = tmp_dir("idempotent");
         let adapter = get_adapter("claude").unwrap();
-        apply_adapter(&root, adapter).unwrap();
-        let result = apply_adapter(&root, adapter).unwrap();
+        let body = resolve_pointer_body(&root);
+        apply_adapter(&root, adapter, &body).unwrap();
+        let result = apply_adapter(&root, adapter, &body).unwrap();
         assert_eq!(result.action, AdaptAction::Unchanged);
         fs::remove_dir_all(&root).unwrap();
     }

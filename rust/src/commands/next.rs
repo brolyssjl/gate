@@ -18,6 +18,8 @@ use crate::core::state_machine::is_terminal;
 use crate::core::targets::resolve_display_targets;
 use crate::gates::run_gate;
 use crate::gates::types::GateContext;
+use crate::integrations::sdd_mapping::{closing_hint, resolve as resolve_sdd_mapping};
+use crate::integrations::{detect, sdd_integration_enabled};
 
 /// `args.flags.json !== true && args.flags.format === undefined`: whether
 /// the extra human-only informational line (DONE banner / entered-phase
@@ -106,6 +108,15 @@ pub fn run(argv: Vec<String>) -> Result<(), UserError> {
         )?;
         if wants_human_extra(&args) {
             print!("\nRun \"{}\" reached DONE. \u{1F389}\n", run.id);
+            let det = detect(&root);
+            if let Some(sdd) = det.sdd {
+                if sdd_integration_enabled(&config) {
+                    let mapping = resolve_sdd_mapping(sdd, &config.sdd_mapping_override);
+                    if let Some(hint) = closing_hint(sdd, &mapping) {
+                        println!("{hint}");
+                    }
+                }
+            }
         }
         return Ok(());
     }

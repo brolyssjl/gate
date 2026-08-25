@@ -111,6 +111,18 @@ pub fn has_managed_block(existing: &str) -> bool {
     !find_blocks(existing).is_empty()
 }
 
+/// Whether the first managed block in `existing` already carries `body` -
+/// i.e. a `gate adapt`/`update` run with this same body would report
+/// "unchanged". `false` when there is no complete block at all (use
+/// `has_managed_block` to tell that apart from "present but stale", the
+/// distinction `core::doctor` reports separately).
+pub fn managed_block_matches(existing: &str, body: &str) -> bool {
+    match find_blocks(existing).first() {
+        Some(&(start, end)) => existing[start..end] == wrap_managed_block(body),
+        None => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -153,6 +165,14 @@ mod tests {
         assert_eq!(count, 1);
         assert!(out.contains('a'));
         assert!(out.contains('b'));
+    }
+
+    #[test]
+    fn managed_block_matches_is_true_only_when_the_first_block_carries_that_exact_body() {
+        let existing = upsert_managed_block("top\n", "BODY v1");
+        assert!(managed_block_matches(&existing, "BODY v1"));
+        assert!(!managed_block_matches(&existing, "BODY v2"));
+        assert!(!managed_block_matches("no block here", "BODY v1"));
     }
 
     #[test]

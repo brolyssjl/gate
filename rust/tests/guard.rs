@@ -41,7 +41,7 @@ fn path_with_gate_on_it() -> String {
 /// guard checks under test (active run / phase / declared scope) don't
 /// depend on which profile a run walks.
 fn start_active_run(repo: &Path, files: &[&str]) -> String {
-    gate(repo, &["init"]);
+    gate(repo, &["init", "--no-adapt"]);
     gate(repo, &["trust"]);
     let started = gate(repo, &["start", "guarded work", "--json"]);
     let json = started.json();
@@ -69,7 +69,7 @@ fn backup_path(repo: &Path) -> PathBuf {
 #[test]
 fn install_writes_an_executable_pre_commit_hook_carrying_the_gate_guard_marker() {
     let repo = make_repo(&[]);
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
     let res = gate(&repo, &["guard", "install", "--json"]);
     assert_eq!(res.code, 0);
     assert_eq!(res.json().bool_at("installed"), Some(true));
@@ -84,7 +84,7 @@ fn install_writes_an_executable_pre_commit_hook_carrying_the_gate_guard_marker()
 #[test]
 fn install_is_idempotent_a_second_install_reports_already_installed_instead_of_re_wrapping() {
     let repo = make_repo(&[]);
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
     gate(&repo, &["guard", "install"]);
     let again = gate(&repo, &["guard", "install", "--json"]);
     assert_eq!(again.json().bool_at("alreadyInstalled"), Some(true));
@@ -93,7 +93,7 @@ fn install_is_idempotent_a_second_install_reports_already_installed_instead_of_r
 #[test]
 fn install_backs_up_and_chains_a_pre_existing_foreign_hook() {
     let repo = make_repo(&[]);
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
     let hook = hook_path(&repo);
     std::fs::create_dir_all(hook.parent().unwrap()).unwrap();
     std::fs::write(&hook, "#!/bin/sh\necho original-hook-ran\nexit 0\n").unwrap();
@@ -113,7 +113,7 @@ fn install_backs_up_and_chains_a_pre_existing_foreign_hook() {
 #[test]
 fn uninstall_restores_a_backed_up_foreign_hook() {
     let repo = make_repo(&[]);
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
     let hook = hook_path(&repo);
     std::fs::create_dir_all(hook.parent().unwrap()).unwrap();
     std::fs::write(&hook, "#!/bin/sh\necho original-hook-ran\nexit 0\n").unwrap();
@@ -128,7 +128,7 @@ fn uninstall_restores_a_backed_up_foreign_hook() {
 #[test]
 fn uninstall_removes_a_hook_it_installed_with_nothing_to_restore() {
     let repo = make_repo(&[]);
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
     gate(&repo, &["guard", "install"]);
     let hook = hook_path(&repo);
     assert!(hook.exists());
@@ -140,7 +140,7 @@ fn uninstall_removes_a_hook_it_installed_with_nothing_to_restore() {
 #[test]
 fn uninstall_refuses_to_touch_a_pre_commit_hook_gate_didnt_install() {
     let repo = make_repo(&[]);
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
     let hook = hook_path(&repo);
     std::fs::create_dir_all(hook.parent().unwrap()).unwrap();
     std::fs::write(&hook, "#!/bin/sh\necho someone-elses-hook\nexit 0\n").unwrap();
@@ -154,7 +154,7 @@ fn uninstall_refuses_to_touch_a_pre_commit_hook_gate_didnt_install() {
 #[test]
 fn guard_run_blocks_with_no_active_run_on_the_branch() {
     let repo = make_repo(&[]);
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
     let res = gate(&repo, &["guard", "run", "--json"]);
     assert_eq!(res.code, 1);
     let data = res.json();
@@ -174,7 +174,7 @@ fn guard_run_blocks_with_no_active_run_on_the_branch() {
 fn guard_run_informs_rather_than_misleadingly_blocks_on_an_unparseable_missing_plan_md() {
     // e.g. after `gate skip PLAN`.
     let repo = make_repo(&[]);
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
     gate(&repo, &["trust"]);
     gate(&repo, &["start", "skip planning", "--profile", "docs"]); // plan.md left as the untouched scaffold
     assert_eq!(

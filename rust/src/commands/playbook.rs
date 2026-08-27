@@ -14,7 +14,8 @@ use crate::core::playbooks::resolve_playbook_with_overlays;
 use crate::core::run::{read_run, Run};
 use crate::core::state_machine::Phase;
 use crate::core::targets::resolve_display_targets;
-use crate::integrations::{detect, plan_hints};
+use crate::integrations::sdd_mapping::{phase_composition_hint, resolve as resolve_sdd_mapping};
+use crate::integrations::{detect, plan_hints, sdd_integration_enabled};
 
 fn safe_read_run(root: &Path, id: &str) -> Option<Run> {
     read_run(root, id).ok()
@@ -92,11 +93,20 @@ fn finish(
         return Err(UserError::new(format!("no playbook for phase {phase}")));
     };
 
-    let hints: Vec<String> = if phase == Phase::Plan {
-        plan_hints(detect(root))
+    let det = detect(root);
+    let mut hints: Vec<String> = if phase == Phase::Plan {
+        plan_hints(det)
     } else {
         Vec::new()
     };
+    if let Some(sdd) = det.sdd {
+        if sdd_integration_enabled(config) {
+            let mapping = resolve_sdd_mapping(sdd, &config.sdd_mapping_override);
+            if let Some(hint) = phase_composition_hint(phase, sdd, &mapping) {
+                hints.push(hint);
+            }
+        }
+    }
     let human = if hints.is_empty() {
         playbook.clone()
     } else {
@@ -157,6 +167,24 @@ mod tests {
         let root = tmp_dir("plan-hints");
         fs::create_dir_all(root.join(".agnosgram")).unwrap();
         execute_explicit_phase(&root, "plan", &args(&["plan", "--json"])).unwrap();
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn appends_an_sdd_composition_hint_at_implement_when_a_framework_is_detected() {
+        let root = tmp_dir("sdd-composition-hint");
+        fs::create_dir_all(root.join("openspec")).unwrap();
+        execute_explicit_phase(&root, "implement", &args(&["implement", "--json"])).unwrap();
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn composition_hint_is_absent_when_integrations_sdd_is_off() {
+        let root = tmp_dir("sdd-composition-hint-off");
+        fs::create_dir_all(root.join("openspec")).unwrap();
+        fs::write(root.join(".gate/config.yml"), "integrations:\n  sdd: off\n").unwrap();
+        let config = load_config(&root).unwrap();
+        assert!(finish(&root, Phase::Implement, &config, &[], &args(&["implement"])).is_ok());
         fs::remove_dir_all(&root).unwrap();
     }
 

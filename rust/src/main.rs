@@ -44,7 +44,11 @@ Usage: gate <command> [options]
 Commands:
   adapt [adapter...]      Write/refresh agent config pointer blocks (default:
                           all of claude, claude-skill, cursor, cline, windsurf, agents)
-  init [--refresh]        Scaffold .gate/, infer commands, detect integrations
+  init [--refresh]        Scaffold .gate/, infer commands, detect integrations,
+                          install the claude + agents adapter blocks
+    [--no-adapt]            Skip installing any adapter block
+    [--adapt <a,b>]         Install a specific set of adapters instead of
+                          the claude + agents default
   trust [--check] [--by]  Approve the config commands block (TOFU); required
                           before gates will execute build/test/lint
   start "<title>"         Create a run, enter PLAN, print the plan playbook.
@@ -94,6 +98,16 @@ Commands:
                           in plan scope, not still in PLAN) - never installed
                           by `init`, never load-bearing. Bypass per commit
                           with --no-verify, or always with GATE_GUARD=0
+  doctor                  Diagnose the project's gate installation: adapter
+                          blocks, playbook copies under .gate/playbooks/,
+                          trust, and config sanity. Read-only; exit 0 when
+                          nothing actionable was found, 1 otherwise
+  update [--adapt <a,b>] [--force-playbooks]  Apply what `doctor` diagnoses:
+                          refresh stale/missing default adapter blocks, top
+                          up or refresh playbook copies, and (with --adapt)
+                          add new adapter targets. Never replaces a user-
+                          edited playbook without --force-playbooks.
+                          Idempotent - a second run reports nothing to do
 
 Global options:
   --json                  Machine-readable JSON output
@@ -116,7 +130,9 @@ The agent loop is two commands: `gate playbook` (what do I do?) → `gate next`
 fn command_usage(command: &str) -> Option<&'static str> {
     Some(match command {
         "adapt" => "Usage: gate adapt [adapter...]\n\nWrite/refresh agent config pointer blocks (default:\nall of claude, claude-skill, cursor, cline, windsurf, agents)",
-        "init" => "Usage: gate init [--refresh]\n\nScaffold .gate/, infer commands, detect integrations",
+        "init" => "Usage: gate init [--refresh] [--no-adapt] [--adapt <a,b>]\n\nScaffold .gate/, infer commands, detect integrations,\ninstall the claude + agents adapter blocks\n\n  --no-adapt        Skip installing any adapter block\n  --adapt <a,b>     Install a specific set of adapters instead of\n                    the claude + agents default",
+        "doctor" => "Usage: gate doctor\n\nDiagnose the project's gate installation: adapter\nblocks, playbook copies under .gate/playbooks/,\ntrust, and config sanity. Read-only; exit 0 when\nnothing actionable was found, 1 otherwise",
+        "update" => "Usage: gate update [--adapt <a,b>] [--force-playbooks]\n\nApply what `doctor` diagnoses: refresh stale/missing\ndefault adapter blocks, top up or refresh playbook\ncopies, and (with --adapt) add new adapter targets.\nNever replaces a user-edited playbook without\n--force-playbooks. Idempotent - a second run reports\nnothing to do",
         "trust" => "Usage: gate trust [--check] [--by]\n\nApprove the config commands block (TOFU); required\nbefore gates will execute build/test/lint",
         "start" => "Usage: gate start \"<title>\" [--profile <p>] [--target <a,b>]\n\nCreate a run, enter PLAN, print the plan playbook.\nOne active run per branch: a branch with a run\nalready in flight is resumed, not restarted\n\n  --profile <p>   Phases to run: feature|bugfix|refactor|docs (default feature)\n  --target <a,b>  Override target resolution (comma-separated names);\n                  wins over file-based resolution for this run",
         "approve" => "Usage: gate approve [--by] [--reason] [--run <id>] [--amend]\n\nRecord PLAN sign-off, bound to the plan's content\n\n  --amend  Re-approve a plan that drifted after approval,\n           recording a new hash for the delta `gate amend`\n           showed (requires `gate amend` to have run first)",
@@ -159,6 +175,8 @@ fn dispatch(command: &str) -> Option<CommandFn> {
         "playbook" => commands::playbook::run,
         "guard" => commands::guard::run,
         "streak" => commands::streak::run,
+        "doctor" => commands::doctor::run,
+        "update" => commands::update::run,
         _ => return None,
     })
 }

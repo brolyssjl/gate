@@ -17,6 +17,7 @@ pub mod glob;
 pub mod json;
 pub mod markers;
 pub mod paths;
+pub mod playbook_manifest;
 pub mod playbooks;
 pub mod run;
 pub mod sha256;

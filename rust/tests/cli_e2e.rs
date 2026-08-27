@@ -25,7 +25,7 @@ fn walks_a_run_from_plan_to_done_refusing_every_hollow_gate() {
         r#"{"name":"fx","scripts":{"test":"node test.js"}}"#,
     )]);
 
-    assert_eq!(gate(&repo, &["init"]).code, 0);
+    assert_eq!(gate(&repo, &["init", "--no-adapt"]).code, 0);
     assert_eq!(gate(&repo, &["trust"]).code, 0); // approve the inferred commands
     assert_eq!(gate(&repo, &["start", "add greet"]).code, 0);
 
@@ -116,7 +116,7 @@ fn walks_a_run_from_plan_to_done_refusing_every_hollow_gate() {
 #[test]
 fn emits_a_stable_json_schema_for_check() {
     let repo = make_repo(&[]);
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
     gate(&repo, &["start", "schema snap"]);
     let res = gate(&repo, &["check", "--json"]);
     let parsed = res.json();
@@ -161,7 +161,7 @@ fn subcommand_help_prints_its_own_usage_not_the_full_help() {
 #[test]
 fn gate_approve_names_the_actual_next_phase_for_a_non_feature_profile() {
     let repo = make_repo(&[]);
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
     gate(&repo, &["start", "fix login", "--profile", "bugfix"]);
     let run_id = gate(&repo, &["status", "--json"])
         .json()
@@ -182,7 +182,7 @@ fn gate_approve_names_the_actual_next_phase_for_a_non_feature_profile() {
 #[test]
 fn records_a_human_authorized_skip_and_advances() {
     let repo = make_repo(&[]);
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
     gate(&repo, &["start", "skip demo"]);
 
     assert_eq!(gate(&repo, &["skip", "PLAN"]).code, 2); // --reason required
@@ -238,7 +238,7 @@ fn collapse_dashes(s: &str) -> String {
 #[test]
 fn registers_an_artifact_with_gate_log() {
     let repo = make_repo(&[]);
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
     gate(&repo, &["start", "log demo"]);
     write_file(&repo, "notes.txt", "hello\n");
     assert_eq!(gate(&repo, &["log", "notes.txt"]).code, 0);
@@ -250,7 +250,7 @@ fn registers_an_artifact_with_gate_log() {
 #[test]
 fn selects_the_phase_set_from_the_profile_flag() {
     let repo = make_repo(&[]);
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
 
     // bugfix routes through DEBUG (and skips IMPLEMENT); it scaffolds debug-log.md.
     assert_eq!(
@@ -284,14 +284,14 @@ fn selects_the_phase_set_from_the_profile_flag() {
 #[test]
 fn rejects_an_unknown_profile() {
     let repo = make_repo(&[]);
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
     assert_eq!(gate(&repo, &["start", "x", "--profile", "bogus"]).code, 2);
 }
 
 #[test]
 fn targets_target_override_wins_and_playbook_overlays_surface_for_affected_targets() {
     let repo = make_repo(&[]);
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
     write_file(
         &repo,
         ".gate/playbooks/test.web.md",
@@ -318,7 +318,7 @@ fn targets_target_override_wins_and_playbook_overlays_surface_for_affected_targe
 #[test]
 fn playbook_run_honors_the_named_runs_targets_not_the_current_branchs_own_run() {
     let repo = make_repo(&[]);
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
     write_file(
         &repo,
         ".gate/playbooks/test.web.md",
@@ -379,7 +379,7 @@ fn playbook_run_honors_the_named_runs_targets_not_the_current_branchs_own_run() 
 #[test]
 fn rejects_gate_start_target_with_an_unknown_target_name() {
     let repo = make_repo(&[]);
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
     write_file(
         &repo,
         ".gate/config.yml",
@@ -396,7 +396,7 @@ fn rejects_gate_start_target_with_an_unknown_target_name() {
 #[test]
 fn target_playbook_overlays_surface_inline_at_gate_start_not_just_the_standalone_gate_playbook() {
     let repo = make_repo(&[]);
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
     write_file(
         &repo,
         ".gate/playbooks/plan.api.md",
@@ -419,7 +419,7 @@ fn target_playbook_overlays_surface_inline_at_gate_start_not_just_the_standalone
 #[test]
 fn target_playbook_overlays_surface_inline_at_gate_nexts_phase_entry_print() {
     let repo = make_repo(&[]);
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
     write_file(
         &repo,
         ".gate/playbooks/test.api.md",
@@ -455,7 +455,7 @@ fn target_playbook_overlays_surface_inline_at_gate_nexts_phase_entry_print() {
 #[test]
 fn target_playbook_overlays_surface_inline_in_gate_reviews_emitted_rubric() {
     let repo = make_repo(&[]);
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
     write_file(
         &repo,
         ".gate/playbooks/review.api.md",
@@ -487,7 +487,7 @@ fn target_playbook_overlays_surface_inline_in_gate_reviews_emitted_rubric() {
 #[test]
 fn untrusted_target_playbook_overlay_is_refused_until_gate_trust_runs() {
     let repo = make_repo(&[]);
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
     write_file(
         &repo,
         ".gate/playbooks/plan.api.md",
@@ -529,7 +529,7 @@ fn untrusted_target_playbook_overlay_is_refused_until_gate_trust_runs() {
 #[test]
 fn untrusted_dot_gate_playbooks_override_is_refused_until_gate_trust_runs() {
     let repo = make_repo(&[]);
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
     write_file(&repo, ".gate/playbooks/plan.md", "# CUSTOM_PLAN_MARKER\n");
 
     let refused = gate(&repo, &["playbook", "PLAN", "--json"]).json();
@@ -558,7 +558,7 @@ fn untrusted_dot_gate_playbooks_override_is_refused_until_gate_trust_runs() {
 #[test]
 fn trust_check_distinguishes_coverage_expansion_from_a_real_change() {
     let repo = make_repo(&[]);
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
 
     // Capture the coverage-version-1 (pre-SEC-01) hash: the commands block
     // as `gate init` scaffolded it, with no playbook overrides present -
@@ -623,7 +623,7 @@ fn refuses_to_reach_done_when_a_review_fix_breaks_the_code_staleness_guard() {
             "const ok = require('./greet')('Sam') === 'Hello, Sam';\nconsole.log(JSON.stringify({tests:[{name:'greets by name',status:ok?'passed':'failed'}]}));\nprocess.exit(ok ? 0 : 1)\n",
         ),
     ]);
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
     gate(&repo, &["trust"]);
     gate(&repo, &["start", "demo"]);
     let run_id = gate(&repo, &["status", "--json"])
@@ -730,7 +730,7 @@ fn gate_retro_syncs_the_journal_fallback_path_hermetic_and_is_idempotent() {
         "GATE_AGNOSGRAM_BIN",
         "/nonexistent/gate-agnosgram-test-stub",
     )];
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
     gate(&repo, &["start", "retro sync demo"]);
     let run_id = gate(&repo, &["status", "--json"])
         .json()
@@ -810,7 +810,7 @@ fn gate_retro_syncs_the_journal_fallback_path_hermetic_and_is_idempotent() {
 #[test]
 fn gate_adapt_writes_every_adapter_by_default_and_is_idempotent_across_the_cli() {
     let repo = make_repo(&[]);
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
 
     let first = gate(&repo, &["adapt", "--json"]);
     assert_eq!(first.code, 0);
@@ -836,7 +836,7 @@ fn gate_adapt_writes_every_adapter_by_default_and_is_idempotent_across_the_cli()
 #[test]
 fn reports_per_run_durations_gate_failures_and_findings() {
     let repo = make_repo(&[]);
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
     gate(&repo, &["start", "report demo"]);
     // One failed advancement attempt (empty plan) is recorded for the report.
     assert_eq!(gate(&repo, &["next"]).code, 1);
@@ -857,7 +857,7 @@ fn reports_per_run_durations_gate_failures_and_findings() {
 #[test]
 fn gate_check_failures_are_persisted_and_show_up_in_gate_report() {
     let repo = make_repo(&[]);
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
     gate(&repo, &["start", "check-failure demo"]);
 
     assert_eq!(gate(&repo, &["check"]).code, 1);
@@ -880,7 +880,7 @@ fn gate_check_failures_are_persisted_and_show_up_in_gate_report() {
 #[test]
 fn gate_report_failure_count_stays_accurate_past_the_bounded_history_window() {
     let repo = make_repo(&[]);
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
     common::write_file(
         &repo,
         ".gate/config.yml",
@@ -913,7 +913,7 @@ fn f1_regression_widening_gitignore_to_hide_an_undeclared_file_cannot_pass_the_s
     // other edit (this one included) must itself show up as touched and
     // undeclared, failing the gate closed exactly as it does on main.
     let repo = make_repo(&[("package.json", r#"{"name":"fx"}"#)]);
-    assert_eq!(gate(&repo, &["init"]).code, 0);
+    assert_eq!(gate(&repo, &["init", "--no-adapt"]).code, 0);
     assert_eq!(gate(&repo, &["trust"]).code, 0);
     let started = gate(&repo, &["start", "attack demo", "--json"]).json();
     let plan_path = started.str("plan").unwrap().to_string();
@@ -964,12 +964,15 @@ fn json_schema_init_start_status_expose_stable_top_level_keys() {
         "package.json",
         r#"{"name":"fx","scripts":{"test":"node -e 0"}}"#,
     )]);
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
     gate(&repo, &["trust"]);
 
     assert_eq!(
-        gate(&repo, &["init", "--json"]).json().sorted_keys(),
+        gate(&repo, &["init", "--json", "--no-adapt"])
+            .json()
+            .sorted_keys(),
         vec![
+            "adapters",
             "detected",
             "gitignoreUpdated",
             "initialized",
@@ -1009,7 +1012,7 @@ fn json_schema_check_report_playbook_expose_stable_top_level_keys() {
         "package.json",
         r#"{"name":"fx","scripts":{"test":"node -e 0"}}"#,
     )]);
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
     gate(&repo, &["trust"]);
     gate(&repo, &["start", "schema demo"]);
 
@@ -1047,7 +1050,7 @@ fn json_schema_check_report_playbook_expose_stable_top_level_keys() {
 #[test]
 fn gate_report_rejects_a_path_traversal_run_id() {
     let repo = make_repo(&[]);
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
 
     for bad in ["../../etc/passwd", "..", "a/../../b", "a/b", "/etc/passwd"] {
         let res = gate(&repo, &["report", bad]);
@@ -1076,7 +1079,7 @@ fn gate_report_rejects_a_path_traversal_run_id() {
 #[test]
 fn gate_run_flag_rejects_a_path_traversal_run_id() {
     let repo = make_repo(&[]);
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
     gate(&repo, &["start", "run flag demo", "--profile", "docs"]);
 
     for bad in ["../../etc/passwd", "..", "a/b"] {
@@ -1093,7 +1096,7 @@ fn gate_run_flag_rejects_a_path_traversal_run_id() {
 #[test]
 fn gate_playbook_run_flag_rejects_a_path_traversal_run_id() {
     let repo = make_repo(&[]);
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
 
     let res = gate(&repo, &["playbook", "PLAN", "--run", "../../etc/passwd"]);
     assert_eq!(res.code, 2);

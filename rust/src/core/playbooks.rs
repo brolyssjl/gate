@@ -23,7 +23,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::core::config::GateConfig;
-use crate::core::embedded_playbooks::embedded_playbook;
+use crate::core::embedded_playbooks::{embedded_playbook, EMBEDDED_PLAYBOOKS};
 use crate::core::paths::gate_paths;
 use crate::core::state_machine::Phase;
 use crate::core::trust::is_commands_trusted;
@@ -56,6 +56,51 @@ pub fn bundled_playbooks_dir() -> Result<PathBuf, String> {
 
 pub fn bundled_playbook_path(phase: Phase) -> Result<PathBuf, String> {
     Ok(bundled_playbooks_dir()?.join(format!("{}.md", phase.as_str().to_lowercase())))
+}
+
+/// Every bundled playbook file as `gate init`/`doctor`/`update` currently see
+/// it: prefer the real `playbooks/` directory on disk (dev-from-source - a
+/// playbook edit is live immediately), falling back to the copy compiled
+/// into the binary at build time for an installed single-file release.
+/// `(filename, content)` pairs, one per phase that has a playbook
+/// (`core::embedded_playbooks::EMBEDDED_PLAYBOOKS`'s phase list). A real
+/// `playbooks/` dir that exists but has an unreadable file surfaces on
+/// stderr rather than going unmentioned; the embedded fallback (a fully
+/// materialized crate-compiled copy) always succeeds, so this never fails
+/// outright - "no bundled playbooks" isn't a state gate ever needs to
+/// represent as an error.
+pub fn current_bundled_playbooks() -> Vec<(String, String)> {
+    match try_read_bundled_playbook_files() {
+        Ok(files) => files,
+        Err(e) => {
+            let expected = e == "bundled playbooks directory not found";
+            if !expected {
+                eprintln!(
+                    "gate: warning: could not read bundled playbooks ({e}) - using the built-in copy"
+                );
+            }
+            EMBEDDED_PLAYBOOKS
+                .iter()
+                .map(|(phase, content)| (format!("{phase}.md"), (*content).to_string()))
+                .collect()
+        }
+    }
+}
+
+fn try_read_bundled_playbook_files() -> Result<Vec<(String, String)>, String> {
+    let bundled = bundled_playbooks_dir()?;
+    let names: Vec<String> = fs::read_dir(&bundled)
+        .map_err(|e| e.to_string())?
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .filter(|f| f.ends_with(".md"))
+        .collect();
+    let mut out = Vec::with_capacity(names.len());
+    for name in names {
+        let content = fs::read_to_string(bundled.join(&name)).map_err(|e| e.to_string())?;
+        out.push((name, content));
+    }
+    Ok(out)
 }
 
 fn bundled_or_embedded(name: &str, phase: Phase) -> Option<String> {
@@ -240,6 +285,18 @@ mod tests {
         assert!(result.contains("UNTRUSTED PLAYBOOK IGNORED"));
         assert!(!result.contains("tampered"));
         stdfs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn current_bundled_playbooks_covers_every_embedded_phase() {
+        let files = current_bundled_playbooks();
+        let names: Vec<&str> = files.iter().map(|(n, _)| n.as_str()).collect();
+        for phase in ["plan", "debug", "implement", "test", "review", "retro"] {
+            assert!(
+                names.contains(&format!("{phase}.md").as_str()),
+                "missing {phase}.md in {names:?}"
+            );
+        }
     }
 
     #[test]

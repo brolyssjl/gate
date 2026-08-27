@@ -29,7 +29,7 @@ fn setup_review_run(repo: &Path) -> String {
         .current_dir(repo)
         .status()
         .unwrap();
-    gate(repo, &["init"]);
+    gate(repo, &["init", "--no-adapt"]);
     let config_path = repo.join(".gate").join("config.yml");
     let config = std::fs::read_to_string(&config_path).unwrap();
     std::fs::write(

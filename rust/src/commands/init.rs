@@ -1,22 +1,35 @@
 //! Port of `src/commands/init.ts`: `gate init` - scaffold `.gate/`, infer
 //! build/test/lint commands from the stack, detect advisory integrations,
-//! and copy default playbooks. Idempotent: `--refresh` re-detects
-//! integrations and rewrites the managed hint block without clobbering user
-//! edits to config or playbooks.
+//! copy default playbooks (each materialized copy gets a manifest entry -
+//! `core::playbook_manifest`), and install the default adapter set
+//! (`claude` + `agents`, `--no-adapt`/`--adapt <keys>` to change that).
+//! Idempotent: `--refresh` re-detects integrations and rewrites the managed
+//! hint block without clobbering user edits to config or playbooks; a
+//! second run's adapter/playbook writes report `unchanged` rather than
+//! rewriting anything already current.
 
 use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 
+use crate::adapters::{adapter_keys, get_adapter, resolve_pointer_body, Adapter};
 use crate::cli::args::{parse_args, ParsedArgs};
 use crate::cli::output::{emit, UserError};
+use crate::commands::adapt::{apply_adapter, AdaptResult};
 use crate::commands::infer_stack::{infer_commands, infer_scope_ignore};
-use crate::core::embedded_playbooks::EMBEDDED_PLAYBOOKS;
 use crate::core::gitignore_state::record_gitignore_state;
 use crate::core::json::{stringify_compact, Value};
 use crate::core::paths::gate_paths;
-use crate::core::playbooks::bundled_playbooks_dir;
+use crate::core::playbook_manifest::record_entry;
+use crate::core::playbooks::current_bundled_playbooks;
 use crate::integrations::{detect, Detection};
+
+/// The default adapter set `gate init` installs when neither `--no-adapt`
+/// nor `--adapt` is given - mirrors agnosgram's init ergonomics, scoped down
+/// to the two shared-file adapters (every project has *a* CLAUDE.md or
+/// AGENTS.md convention; the dedicated-file adapters are opt-in via
+/// `--adapt` or a later `gate adapt <key>`).
+const DEFAULT_INIT_ADAPTERS: [&str; 2] = ["claude", "agents"];
 
 pub fn run(argv: Vec<String>) -> Result<(), UserError> {
     let mut full = vec!["init".to_string()];
@@ -43,13 +56,18 @@ fn execute(root: &Path, args: &ParsedArgs) -> Result<(), UserError> {
     // Copy default playbooks that the user hasn't already customized. Prefer
     // the real directory (running from a checkout of this repo); an
     // installed single-file binary has none, so fall back to the copy
-    // compiled in at build time.
-    for (file, content) in read_bundled_playbook_files() {
+    // compiled in at build time. Every copy materialized here (not
+    // pre-existing) gets a manifest entry so `gate doctor`/`update` can tell
+    // a pristine-but-outdated copy from a user edit later.
+    for (file, content) in current_bundled_playbooks() {
         let dest = paths.playbooks.join(&file);
         if !dest.exists() {
             fs::write(&dest, &content).map_err(|e| UserError::new(e.to_string()))?;
+            record_entry(root, &file, &content).map_err(|e| UserError::new(e.to_string()))?;
         }
     }
+
+    let adapt_results = install_adapters(root, args)?;
 
     let det = detect(root);
 
@@ -88,15 +106,45 @@ fn execute(root: &Path, args: &ParsedArgs) -> Result<(), UserError> {
                 .to_string(),
         );
     }
+    lines.push(if adapt_results.is_empty() {
+        "  adapters:  none installed (--no-adapt)".to_string()
+    } else {
+        format!(
+            "  adapters:  {}",
+            adapt_results
+                .iter()
+                .map(|r| r.path)
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    });
     lines.push(String::new());
     lines.push(
         "Review .gate/config.yml, then run `gate trust` to approve its commands.".to_string(),
     );
+    lines.push(
+        "Playbook overrides under .gate/playbooks/ are the per-project way to define phase"
+            .to_string(),
+    );
+    lines.push(
+        "details (what/how to test, etc.) - edit them directly; `gate doctor`/`gate update`"
+            .to_string(),
+    );
+    lines.push("track drift against the bundled defaults.".to_string());
     lines.push("Next: gate start \"<title>\"".to_string());
     let human = lines.join("\n");
 
     let mut data = Value::object();
     data.insert("root", root.display().to_string());
+    let mut adapters_json = Value::array();
+    for r in &adapt_results {
+        let mut entry = Value::object();
+        entry.insert("adapter", r.adapter);
+        entry.insert("path", r.path);
+        entry.insert("action", r.action.as_str());
+        adapters_json.push(entry);
+    }
+    data.insert("adapters", adapters_json);
     data.insert("initialized", true);
     data.insert("refreshed", refresh);
     data.insert("detected", detected);
@@ -154,47 +202,44 @@ fn ensure_gitignore(root: &Path) -> Result<bool, UserError> {
     Ok(true)
 }
 
-/// Prefer the real `playbooks/` directory on disk; fall back to the copy
-/// compiled into the binary at build time (`core::embedded_playbooks`).
-/// `bundled_playbooks_dir()` returns the plain "not found" error for the
-/// *expected* case - a single-file binary with no sibling `playbooks/`
-/// directory to walk to - and that's the only failure this should swallow
-/// silently. Any other failure (e.g. the directory exists but a file in it
-/// can't be read) is surfaced on stderr instead of going unmentioned; init
-/// still completes on the embedded fallback (playbooks aren't load-bearing
-/// for `.gate/` to exist).
-fn read_bundled_playbook_files() -> Vec<(String, String)> {
-    match try_read_bundled_playbook_files() {
-        Ok(files) => files,
-        Err(e) => {
-            let expected = e == "bundled playbooks directory not found";
-            if !expected {
-                eprintln!(
-                    "gate: warning: could not read bundled playbooks ({e}) - using the built-in copy"
-                );
+/// Which adapters to install and write their managed blocks - `--no-adapt`
+/// wins outright (installs nothing); `--adapt <a,b>` names an explicit set;
+/// otherwise `DEFAULT_INIT_ADAPTERS`. Mirrors agnosgram's init ergonomics.
+/// Idempotent the same way `gate adapt` is: re-running `gate init` (e.g.
+/// `--refresh`) reports `unchanged` for anything already current rather than
+/// rewriting it.
+fn install_adapters(root: &Path, args: &ParsedArgs) -> Result<Vec<AdaptResult>, UserError> {
+    if args.flags.is_true("no-adapt") {
+        return Ok(Vec::new());
+    }
+    let targets: Vec<&'static Adapter> = match args.flags.str("adapt") {
+        Some(raw) => {
+            let mut out = Vec::new();
+            for token in raw.split(',') {
+                let key = token.trim().to_lowercase();
+                if key.is_empty() {
+                    continue;
+                }
+                let Some(adapter) = get_adapter(&key) else {
+                    return Err(UserError::usage(format!(
+                        "unknown adapter \"{key}\" in --adapt (known: {})",
+                        adapter_keys().join(", ")
+                    )));
+                };
+                out.push(adapter);
             }
-            EMBEDDED_PLAYBOOKS
-                .iter()
-                .map(|(phase, content)| (format!("{phase}.md"), (*content).to_string()))
-                .collect()
+            out
         }
-    }
-}
-
-fn try_read_bundled_playbook_files() -> Result<Vec<(String, String)>, String> {
-    let bundled = bundled_playbooks_dir()?;
-    let names: Vec<String> = fs::read_dir(&bundled)
-        .map_err(|e| e.to_string())?
-        .filter_map(|entry| entry.ok())
-        .map(|entry| entry.file_name().to_string_lossy().into_owned())
-        .filter(|f| f.ends_with(".md"))
-        .collect();
-    let mut out = Vec::with_capacity(names.len());
-    for name in names {
-        let content = fs::read_to_string(bundled.join(&name)).map_err(|e| e.to_string())?;
-        out.push((name, content));
-    }
-    Ok(out)
+        None => DEFAULT_INIT_ADAPTERS
+            .iter()
+            .map(|key| get_adapter(key).expect("DEFAULT_INIT_ADAPTERS names known keys"))
+            .collect(),
+    };
+    let body = resolve_pointer_body(root);
+    targets
+        .into_iter()
+        .map(|adapter| apply_adapter(root, adapter, &body))
+        .collect()
 }
 
 fn quote(s: &str) -> String {
@@ -280,6 +325,77 @@ mod tests {
         assert!(root.join(".gate/runs").is_dir());
         let gitignore = fs::read_to_string(root.join(".gitignore")).unwrap();
         assert!(gitignore.contains(".gate/runs/"));
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn installs_the_claude_and_agents_adapters_by_default() {
+        let root = tmp_dir("default-adapters");
+        execute(&root, &args(&[])).unwrap();
+
+        assert!(root.join("CLAUDE.md").exists());
+        assert!(fs::read_to_string(root.join("CLAUDE.md"))
+            .unwrap()
+            .contains("Gate quality flow"));
+        assert!(root.join("AGENTS.md").exists());
+        // Not installed by default.
+        assert!(!root.join(".cursor/rules/gate.mdc").exists());
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn no_adapt_skips_every_adapter() {
+        let root = tmp_dir("no-adapt");
+        execute(&root, &args(&["--no-adapt"])).unwrap();
+
+        assert!(!root.join("CLAUDE.md").exists());
+        assert!(!root.join("AGENTS.md").exists());
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn adapt_flag_installs_a_custom_set_instead_of_the_default() {
+        let root = tmp_dir("adapt-custom");
+        execute(&root, &args(&["--adapt", "cursor"])).unwrap();
+
+        assert!(root.join(".cursor/rules/gate.mdc").exists());
+        assert!(!root.join("CLAUDE.md").exists());
+        assert!(!root.join("AGENTS.md").exists());
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn adapt_flag_rejects_an_unknown_adapter() {
+        let root = tmp_dir("adapt-unknown");
+        let err = execute(&root, &args(&["--adapt", "nope"])).unwrap_err();
+        assert_eq!(err.exit_code(), 2);
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn re_running_init_reports_adapters_unchanged_not_rewritten() {
+        let root = tmp_dir("adapters-idempotent");
+        execute(&root, &args(&[])).unwrap();
+        let before = fs::read_to_string(root.join("CLAUDE.md")).unwrap();
+        execute(&root, &args(&["--refresh"])).unwrap();
+        let after = fs::read_to_string(root.join("CLAUDE.md")).unwrap();
+        assert_eq!(before, after);
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn writes_a_playbook_manifest_entry_for_every_copy_it_materializes() {
+        let root = tmp_dir("playbook-manifest");
+        execute(&root, &args(&[])).unwrap();
+
+        assert!(root.join(".gate/playbooks.lock").exists());
+        let manifest = crate::core::playbook_manifest::read_manifest(&root);
+        for phase in ["plan", "debug", "implement", "test", "review", "retro"] {
+            assert!(
+                manifest.contains_key(&format!("{phase}.md")),
+                "missing manifest entry for {phase}.md"
+            );
+        }
         fs::remove_dir_all(&root).unwrap();
     }
 

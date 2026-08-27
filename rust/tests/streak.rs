@@ -13,7 +13,7 @@ mod common;
 use common::{gate, make_repo};
 
 fn start_run(repo: &std::path::Path) {
-    gate(repo, &["init"]);
+    gate(repo, &["init", "--no-adapt"]);
     gate(repo, &["start", "streak demo"]);
 }
 
@@ -104,7 +104,7 @@ fn streak_reset_requires_a_reason() {
 #[test]
 fn a_passing_gate_never_blocks_no_matter_how_many_times_it_is_checked() {
     let repo = make_repo(&[]);
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
     let started = gate(&repo, &["start", "always green", "--json"]);
     let plan_path = started.json().str("plan").unwrap().to_string();
     common::write_file(
@@ -122,7 +122,7 @@ fn a_passing_gate_never_blocks_no_matter_how_many_times_it_is_checked() {
 #[test]
 fn config_zero_disables_the_cap_entirely() {
     let repo = make_repo(&[]);
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
     common::write_file(
         &repo,
         ".gate/config.yml",
@@ -138,7 +138,7 @@ fn config_zero_disables_the_cap_entirely() {
 #[test]
 fn config_supports_a_custom_limit() {
     let repo = make_repo(&[]);
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
     common::write_file(
         &repo,
         ".gate/config.yml",
@@ -178,7 +178,7 @@ fn streak_show_reports_the_current_state_as_json() {
 #[test]
 fn streak_show_reports_a_finished_runs_final_state_instead_of_nothing() {
     let repo = make_repo(&[]);
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
     let started = gate(
         &repo,
         &["start", "docs demo", "--profile", "docs", "--json"],

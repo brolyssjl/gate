@@ -112,6 +112,27 @@ pub struct RetentionConfig {
 /// when the key is absent from `config.yml`.
 pub const DEFAULT_FAILURE_STREAK_LIMIT: i64 = 3;
 
+/// `integrations.sdd_mapping:` overrides - per-field replacement of the
+/// built-in phase-equivalence mapping (`integrations::sdd_mapping`) for
+/// whichever SDD is actually detected (there is only ever one per repo).
+/// `None` means the key was absent, so the built-in value stands; `Some("")`
+/// is an explicit override to "gate-only"/"none"; any other `Some(s)`
+/// replaces the built-in value outright. Advisory content only (it changes
+/// hint text, never gate pass/fail), so - like the rest of `integrations:` -
+/// it is deliberately outside the trust hash.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SddMappingOverride {
+    pub plan: Option<String>,
+    pub debug: Option<String>,
+    pub implement: Option<String>,
+    pub test: Option<String>,
+    pub review: Option<String>,
+    pub retro: Option<String>,
+    pub plan_approval: Option<String>,
+    pub closing_step: Option<String>,
+    pub closing_command: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct GateConfig {
     pub commands: Commands,
@@ -137,6 +158,8 @@ pub struct GateConfig {
     /// run's phase, not of any one target, so a per-target value would
     /// silently do nothing.
     pub failure_streak_limit: Option<i64>,
+    /// `integrations.sdd_mapping:` overrides - see `SddMappingOverride`.
+    pub sdd_mapping_override: SddMappingOverride,
 }
 
 impl GateConfig {
@@ -172,6 +195,7 @@ impl Default for GateConfig {
             retention: RetentionConfig::default(),
             scope_ignore: Vec::new(),
             failure_streak_limit: None,
+            sdd_mapping_override: SddMappingOverride::default(),
         }
     }
 }
@@ -380,6 +404,7 @@ pub fn load_config(root: &Path) -> Result<GateConfig, UserError> {
     };
 
     let failure_streak_limit = extract_failure_streak_limit(raw.get("thresholds"))?;
+    let sdd_mapping_override = extract_sdd_mapping_override(raw.get("integrations"));
 
     Ok(GateConfig {
         commands: extract_commands(raw.get("commands")),
@@ -391,7 +416,33 @@ pub fn load_config(root: &Path) -> Result<GateConfig, UserError> {
         retention: extract_retention(raw.get("retention")),
         scope_ignore,
         failure_streak_limit,
+        sdd_mapping_override,
     })
+}
+
+/// `integrations.sdd_mapping:` - every field optional; an absent or
+/// non-mapping `integrations:`/`sdd_mapping:` block yields every field
+/// `None` (no overrides), the same "just use the built-in mapping" default
+/// as a repo that predates this key entirely.
+fn extract_sdd_mapping_override(integrations: Option<&YamlValue>) -> SddMappingOverride {
+    let get = |key: &str| -> Option<String> {
+        integrations?
+            .get("sdd_mapping")?
+            .get(key)?
+            .as_str()
+            .map(String::from)
+    };
+    SddMappingOverride {
+        plan: get("plan"),
+        debug: get("debug"),
+        implement: get("implement"),
+        test: get("test"),
+        review: get("review"),
+        retro: get("retro"),
+        plan_approval: get("plan_approval"),
+        closing_step: get("closing_step"),
+        closing_command: get("closing_command"),
+    }
 }
 
 /// `thresholds.failure_streak_limit` must be a non-negative integer when
@@ -757,6 +808,36 @@ mod tests {
         let root = tmp_dir("streak-limit-non-integer");
         write_config(&root, "thresholds:\n  failure_streak_limit: \"soon\"\n");
         assert!(load_config(&root).is_err());
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn sdd_mapping_override_defaults_to_no_overrides() {
+        let root = tmp_dir("sdd-mapping-default");
+        write_config(&root, "commands: {}\n");
+        assert_eq!(
+            load_config(&root).unwrap().sdd_mapping_override,
+            SddMappingOverride::default()
+        );
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn sdd_mapping_override_loads_declared_fields_only() {
+        let root = tmp_dir("sdd-mapping-loaded");
+        write_config(
+            &root,
+            "integrations:\n  sdd_mapping:\n    plan: draft\n    test: \"\"\n    closing_command: \"myddl close <change>\"\n",
+        );
+        let overrides = load_config(&root).unwrap().sdd_mapping_override;
+        assert_eq!(overrides.plan.as_deref(), Some("draft"));
+        assert_eq!(overrides.test.as_deref(), Some(""));
+        assert_eq!(
+            overrides.closing_command.as_deref(),
+            Some("myddl close <change>")
+        );
+        assert_eq!(overrides.implement, None);
+        assert_eq!(overrides.closing_step, None);
         fs::remove_dir_all(&root).unwrap();
     }
 

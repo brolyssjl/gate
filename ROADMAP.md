@@ -169,8 +169,34 @@ carries over unchanged._
       (`package.json`, `tsconfig.json`, `vitest.config.ts`) removed;
       conformance suite ported 1:1 to `rust/tests/`; CI and release workflows
       are cargo-only
-- [ ] Upgrade story: version-stamped playbook copies + drift warning +
-      `--refresh` with diff
+- [x] Upgrade story: shipped as `gate doctor` (read-only diagnosis) +
+      `gate update` (the healer) rather than a `--refresh`-with-diff flag on
+      `init` - a repo needs the same repair after any gate upgrade, not just
+      right after init, so it earned its own pair of commands. Landed
+      alongside the SDD-aware adapter composition work below (real data from
+      two monitored agent-session rounds: agnosgram was followed 9/9 because
+      its managed block lives in an agent-facing file; gate was followed
+      0/9 because `gate init` left no trace anywhere an agent looks, and the
+      projects' own SDD workflow competed with gate's generic pointer body
+      rather than composing with it) - both problems needed the same fix:
+      gate has to install, diagnose, and repair its own project presence.
+    - SDD-aware pointer body: `build_pointer_body` composes one workflow
+      narrating which SDD step fulfills which gate phase (data-driven per
+      framework, `integrations.sdd_mapping:` overrides for the rest) instead
+      of emitting the generic body next to a competing SDD flow. Surfaces at
+      `gate adapt`/`init`/`update`, one-line hints at IMPLEMENT/TEST/DONE
+      (`gate playbook`/`gate next`), same as PLAN's existing spec-citation
+      hint always did
+    - `gate doctor`: adapter blocks missing/stale, playbook drift matrix
+      (current / pristine-outdated / user-edited / no-manifest, via a new
+      `.gate/playbooks.lock` provenance manifest), trust, config sanity;
+      `--json`, exit 0/1
+    - `gate update`: applies what doctor diagnoses; never replaces a
+      user-edited playbook without `--force-playbooks`; idempotent
+    - `gate init` installs `claude` + `agents` by default now (`--no-adapt`/
+      `--adapt <keys>` to change that), writes the playbook manifest for
+      what it materializes, and all four entry points
+      (`adapt`/`init`/`doctor`/`update`) compute the pointer body identically
 - [ ] Real-project soak on the Rust binaries, extended to include one
       gate→agnosgram RETRO-sync exercise run with both Rust binaries
       together - the one integration point neither repo's own conformance

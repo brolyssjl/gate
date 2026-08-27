@@ -17,7 +17,7 @@ fn plan_with_files(files: &[&str]) -> String {
 /// Start a run, write and approve a plan declaring `files`. Returns the run
 /// id and the plan's path relative to the repo root.
 fn setup_approved_run(repo: &std::path::Path, files: &[&str]) -> (String, String) {
-    gate(repo, &["init"]);
+    gate(repo, &["init", "--no-adapt"]);
     let started = gate(repo, &["start", "drift demo", "--json"]);
     let json = started.json();
     let run_id = json.str("id").unwrap().to_string();
@@ -47,7 +47,7 @@ fn post_plan_scope_widening_fails_closed_until_amended() {
 #[test]
 fn amend_refuses_without_prior_approval_and_refuses_when_nothing_drifted() {
     let repo = make_repo(&[]);
-    gate(&repo, &["init"]);
+    gate(&repo, &["init", "--no-adapt"]);
     let started = gate(&repo, &["start", "no approval yet", "--json"]);
     let plan_path = started.json().str("plan").unwrap().to_string();
     write_file(&repo, &plan_path, &plan_with_files(&["a.txt"]));

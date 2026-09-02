@@ -120,6 +120,23 @@ pub const DEFAULT_FAILURE_STREAK_LIMIT: i64 = 3;
 /// replaces the built-in value outright. Advisory content only (it changes
 /// hint text, never gate pass/fail), so - like the rest of `integrations:` -
 /// it is deliberately outside the trust hash.
+/// `identity:` - see issue #29's "Identity hardening". Deliberately
+/// outside the trust hash (`commands_block_hash_source`), same reasoning as
+/// `retention:`: it changes whether `gate trust`/`gate approve`/`gate
+/// streak reset` refuse to run at all when no identity resolves, never what
+/// gets executed.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct IdentityConfig {
+    /// Opt-in (default `false`). When `true`, `gate trust`/`gate
+    /// approve`/`gate streak reset` fail (exit 1) if no identity resolves
+    /// from any of `--by`, `GATE_SESSION_ID`, or `git config user.name` -
+    /// see `core::identity`. Does not check *which* identity resolved
+    /// (e.g. non-implementer/distinct-identity enforcement) - that's
+    /// deferred to real session identity (ROADMAP.md's "Reviewer identity
+    /// threading").
+    pub require_identity: bool,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SddMappingOverride {
     pub plan: Option<String>,
@@ -160,6 +177,8 @@ pub struct GateConfig {
     pub failure_streak_limit: Option<i64>,
     /// `integrations.sdd_mapping:` overrides - see `SddMappingOverride`.
     pub sdd_mapping_override: SddMappingOverride,
+    /// `identity:` - see `IdentityConfig`.
+    pub identity: IdentityConfig,
 }
 
 impl GateConfig {
@@ -196,6 +215,7 @@ impl Default for GateConfig {
             scope_ignore: Vec::new(),
             failure_streak_limit: None,
             sdd_mapping_override: SddMappingOverride::default(),
+            identity: IdentityConfig::default(),
         }
     }
 }
@@ -405,6 +425,7 @@ pub fn load_config(root: &Path) -> Result<GateConfig, UserError> {
 
     let failure_streak_limit = extract_failure_streak_limit(raw.get("thresholds"))?;
     let sdd_mapping_override = extract_sdd_mapping_override(raw.get("integrations"));
+    let identity = extract_identity(raw.get("identity"))?;
 
     Ok(GateConfig {
         commands: extract_commands(raw.get("commands")),
@@ -417,6 +438,7 @@ pub fn load_config(root: &Path) -> Result<GateConfig, UserError> {
         scope_ignore,
         failure_streak_limit,
         sdd_mapping_override,
+        identity,
     })
 }
 
@@ -460,6 +482,23 @@ fn extract_failure_streak_limit(value: Option<&YamlValue>) -> Result<Option<i64>
         Some(n) if n >= 0 => Ok(Some(n)),
         _ => Err(UserError::new(
             ".gate/config.yml: thresholds.failure_streak_limit must be a non-negative integer (0 disables the cap)",
+        )),
+    }
+}
+
+/// `identity.require_identity` must be a boolean when present - same
+/// fail-fast-and-name-the-fix treatment as `thresholds.failure_streak_limit`.
+fn extract_identity(value: Option<&YamlValue>) -> Result<IdentityConfig, UserError> {
+    let Some(YamlValue::Map(entries)) = value else {
+        return Ok(IdentityConfig::default());
+    };
+    let Some((_, raw)) = entries.iter().find(|(k, _)| k == "require_identity") else {
+        return Ok(IdentityConfig::default());
+    };
+    match raw.as_bool() {
+        Some(require_identity) => Ok(IdentityConfig { require_identity }),
+        None => Err(UserError::new(
+            ".gate/config.yml: identity.require_identity must be a boolean",
         )),
     }
 }
@@ -991,6 +1030,44 @@ mod tests {
                 "overlay.md".to_string()
             ]
         );
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn require_identity_defaults_to_false() {
+        let root = tmp_dir("require-identity-default");
+        write_config(&root, "commands: {}\n");
+        assert!(!load_config(&root).unwrap().identity.require_identity);
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn require_identity_loads_an_explicit_true() {
+        let root = tmp_dir("require-identity-true");
+        write_config(&root, "identity:\n  require_identity: true\n");
+        assert!(load_config(&root).unwrap().identity.require_identity);
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn require_identity_rejects_a_non_boolean_value() {
+        let root = tmp_dir("require-identity-non-bool");
+        write_config(&root, "identity:\n  require_identity: \"yes\"\n");
+        assert!(load_config(&root).is_err());
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn identity_config_is_outside_the_trust_hash() {
+        let root = tmp_dir("identity-outside-trust-hash");
+        write_config(&root, "commands:\n  test: echo hi\n");
+        let before = commands_block_hash_source(&root);
+        write_config(
+            &root,
+            "commands:\n  test: echo hi\nidentity:\n  require_identity: true\n",
+        );
+        let after = commands_block_hash_source(&root);
+        assert_eq!(before, after);
         fs::remove_dir_all(&root).unwrap();
     }
 }

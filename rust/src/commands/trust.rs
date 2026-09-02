@@ -8,7 +8,8 @@ use std::path::Path;
 use crate::cli::args::{parse_args, ParsedArgs};
 use crate::cli::context::require_root;
 use crate::cli::output::{emit, UserError};
-use crate::core::config::trusted_playbook_paths;
+use crate::core::config::{load_config, trusted_playbook_paths};
+use crate::core::identity;
 use crate::core::json::Value;
 use crate::core::trust::{
     current_commands_hash, diagnose_mismatch, has_no_commands, is_commands_trusted, read_trust,
@@ -92,11 +93,9 @@ fn execute(root: &Path, args: &ParsedArgs) -> Result<(), UserError> {
         std::process::exit(if trusted { 0 } else { 1 });
     }
 
-    let by = args
-        .flags
-        .str("by")
-        .map(str::to_string)
-        .or_else(|| std::env::var("GATE_SESSION_ID").ok());
+    let config = load_config(root)?;
+    let by = identity::resolve(args, root);
+    identity::require_if_configured(&by, &config)?;
     let record = write_trust(root, by.as_deref()).map_err(|e| UserError::new(e.to_string()))?;
     let playbook_paths = trusted_playbook_paths(root);
 

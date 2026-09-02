@@ -101,6 +101,25 @@ pub fn branch_state(root: &Path) -> BranchState {
     }
 }
 
+/// `git config user.name`, trimmed. `None` when git errors (no such key,
+/// not a repo with no global fallback set, `git` missing) or the value is
+/// empty - the weakest of the three identity sources `gate
+/// trust`/`gate approve`/`gate streak reset` fall back through (see
+/// `core::identity`), so an absent/blank name must read as "no identity"
+/// rather than as an empty string sitting in `by`.
+pub fn user_name(root: &Path) -> Option<String> {
+    let res = git(root, &["config", "user.name"]);
+    if !res.ok {
+        return None;
+    }
+    let name = res.stdout.trim();
+    if name.is_empty() {
+        None
+    } else {
+        Some(name.to_string())
+    }
+}
+
 /// The repo's git hooks directory, respecting worktrees and a custom
 /// `core.hooksPath` - not always a plain `.git/hooks`. `None` when not a
 /// git repo.
@@ -557,6 +576,30 @@ mod tests {
         assert!(!diff.contains(dir.to_str().unwrap()));
         fs::remove_dir_all(&dir).unwrap();
     }
+
+    #[test]
+    fn user_name_reads_the_repo_local_git_config() {
+        let root = make_repo("user-name-set");
+        assert_eq!(user_name(&root).as_deref(), Some("test"));
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn user_name_trims_the_configured_value() {
+        let root = make_repo("user-name-trim");
+        run_git(&root, &["config", "user.name", "  Spacey Name  "]);
+        assert_eq!(user_name(&root).as_deref(), Some("Spacey Name"));
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    // The "unset, and no global fallback either" case (git config errors,
+    // `user_name` returns `None`) is exercised end-to-end by the
+    // conformance suite's identity-fallback tests (`rust/tests/cli_e2e.rs`),
+    // which can isolate `$HOME` for a subprocess without touching this
+    // process's own environment - unsafe to do from a `cargo test` unit
+    // test, since `cargo test` runs the crate's tests in one process and
+    // `std::env::set_var` is a data race against every other test running
+    // concurrently in it.
 
     #[test]
     fn git_hooks_dir_resolves_to_an_absolute_path_under_dot_git() {

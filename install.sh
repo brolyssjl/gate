@@ -17,6 +17,9 @@
 #   GATE_INSTALL_DIR  where to put the binary (default: $HOME/.local/bin)
 #   GATE_VERSION      pin an exact release, e.g. GATE_VERSION=0.4.0
 #                     (default: the latest release)
+#   GATE_KEEP_OLD_INSTALLS  set to 1 to keep obsolete pre-Rust install dirs
+#                     (~/.local/share/brainstorm-tools/gate-v*) instead of
+#                     removing them after a verified install
 #
 # Usage: curl -fsSL https://raw.githubusercontent.com/brolyssjl/gate/main/install.sh | bash
 set -euo pipefail
@@ -156,31 +159,35 @@ install_binary() {
     *":$INSTALL_DIR:"*) ;;
     *) echo "Add it to your PATH: export PATH=\"$INSTALL_DIR:\$PATH\"" ;;
   esac
-  note_legacy_install_dirs
+  clean_legacy_install_dirs
   return 0
 }
 
 # gate predates this binary-release install path: an npm-era prototype
 # installed itself under ~/.local/share/brainstorm-tools/gate-v*. That path
-# is dead (Milestone 6's TypeScript retirement, see ROADMAP.md) - flag any
-# leftover copies so a still-on-PATH stale `gate` doesn't quietly shadow the
-# one this script just installed. Informational only: never deletes anything.
-note_legacy_install_dirs() {
+# is dead (Milestone 6's TypeScript retirement, see ROADMAP.md) - a stale
+# copy could quietly shadow the binary this script just installed. The dirs
+# match a pattern only this installer ever created, so they are ours to
+# remove. Called only after a verified install succeeded, never as a
+# pre-step; set GATE_KEEP_OLD_INSTALLS=1 to keep them.
+clean_legacy_install_dirs() {
   local legacy_root="$HOME/.local/share/brainstorm-tools"
-  local found=()
   local d
   for d in "$legacy_root"/gate-v*; do
-    if [ -d "$d" ]; then
-      found+=("$d")
+    [ -d "$d" ] || continue
+    if [ "${GATE_KEEP_OLD_INSTALLS:-}" = "1" ]; then
+      echo "Note: keeping obsolete pre-Rust install dir (GATE_KEEP_OLD_INSTALLS=1): ${d}"
+      continue
+    fi
+    if rm -rf "$d" 2>/dev/null; then
+      echo "Removed obsolete pre-Rust gate install dir: ${d}"
+    else
+      echo "Note: could not remove obsolete install dir ${d} - safe to delete manually." >&2
     fi
   done
-  if [ "${#found[@]}" -gt 0 ]; then
-    local joined="${found[0]}" i
-    for ((i = 1; i < ${#found[@]}; i++)); do
-      joined="${joined}, ${found[$i]}"
-    done
-    echo "Note: found obsolete pre-Rust gate install dir(s): ${joined} - safe to delete, not touched by this script."
-  fi
+  # Drop the shared root once the last tool's dir is gone; rmdir refuses a
+  # non-empty dir, so a sibling tool's leftovers keep it alive.
+  rmdir "$legacy_root" 2>/dev/null || true
 }
 
 install_from_source() {

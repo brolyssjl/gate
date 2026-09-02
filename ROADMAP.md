@@ -197,10 +197,17 @@ carries over unchanged._
       `--adapt <keys>` to change that), writes the playbook manifest for
       what it materializes, and all four entry points
       (`adapt`/`init`/`doctor`/`update`) compute the pointer body identically
-- [ ] Real-project soak on the Rust binaries, extended to include one
+- [x] Real-project soak on the Rust binaries, extended to include one
       gate→agnosgram RETRO-sync exercise run with both Rust binaries
       together - the one integration point neither repo's own conformance
-      suite can catch (audit RM-06)
+      suite can catch (audit RM-06). Satisfied by the 2026-08-29 CF-123 run
+      on constructflow-api: a framework-blind agent walked the full
+      PLAN..DONE loop on the Rust binaries unprompted (via the adapter
+      block), including `gate retro` -> `.agnosgram/journal` sync verified
+      end to end; a second full-loop run landed 2026-09-02 in gate's own
+      repo (the identity-fallback change was itself developed through the
+      harness). Evidence: constructflow-api PR #88 + the 2026-08-29 soak
+      ledger.
 - [ ] Decide going public / recruit at least one outside pilot user - owner
       decision: the docs site below can't be useful while its audience
       can't reach a private repo (audit RM-03)
@@ -243,7 +250,11 @@ the Rust binaries, feeding Milestone 6's "real-project soak" item above)._
       advisory-only (a distinct, non-blocking warning marker, not real
       enforcement - see the soak-friction fix below). Needs a stable,
       unspoofable session/agent identity threaded from the calling harness
-      into every gate-touching command, not a one-line fix.
+      into every gate-touching command, not a one-line fix. Interim
+      hardening shipped in `1.4.0` (see the 2026-08-29/09-02 round below):
+      weak-but-recorded identity via git user.name fallback plus the
+      opt-in `identity.require_identity` fail-closed knob; non-implementer
+      approval enforcement stays here, blocked on real session identity.
 - [x] 2026-08-24 soak-friction fixes - owner decision: shipped directly
       (this branch IS the fix, no separate remediation PR). Trust-hash
       mismatches now distinguish a coverage-version expansion from a real
@@ -259,6 +270,35 @@ the Rust binaries, feeding Milestone 6's "real-project soak" item above)._
       and an `install.sh` legacy-install-dir note. Also fixed a real, unrelated
       test flake found along the way (a racy shared-env-var mutation in
       `integrations::agnosgram_write`'s test suite).
+
+_Items from the 2026-08-29 -> 2026-09-02 dogfooding round (constructflow
+worker-batch monitoring + framework-blind CF-123 verification + same-week
+fix/release cycle). Root finding: worker agents bypassed gate entirely
+because no repo had ever run `gate adapt` - the 1.3.0 doctor/update
+lifecycle (Milestone 6 above) closed that in the field, and the rest of the
+round hardened what the soak exposed._
+
+- [x] `1.3.0` released and applied to both host repos through the released
+      binary's own `gate doctor`/`gate update` (never hand-applied - the
+      portable/agnostic principle now has a worked example); post-fix, a
+      ticket-only agent with zero gate/SDD prompting followed the full
+      harness unprompted
+- [x] Identity fallback (`1.4.0`, issue #29): `trust`/`approve`/`streak
+      reset` resolve `--by` > `GATE_SESSION_ID` > `git config user.name` >
+      null via a shared `core::identity::resolve`, plus opt-in
+      `identity.require_identity` (fail closed when nothing resolves) -
+      the soak recorded `by: null` on every self-serviced checkpoint of an
+      autonomous run
+- [x] `install.sh` removes obsolete pre-Rust `brainstorm-tools/gate-v*`
+      install dirs after a checksum-verified install (opt-out via
+      `GATE_KEEP_OLD_INSTALLS=1`; shared root rmdir'd only once empty) -
+      the old "safe to delete, not touched" note pushed janitor work onto
+      every adopter
+- [ ] Route `skip`/`review`/`start`/`amend` through `core::identity::
+      resolve` too - they still use the old `--by`/env-only pattern, so
+      their recorded identities stay null in exactly the cases `1.4.0`
+      fixed for the other three commands (consistency follow-up found
+      during the #29 implementation, deliberately left out of its scope)
 
 ## Deferred / v2
 

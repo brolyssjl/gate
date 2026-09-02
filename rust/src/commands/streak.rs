@@ -15,6 +15,7 @@ use crate::cli::output::{emit, UserError};
 use crate::commands::report::most_recent_run_id;
 use crate::core::config::{load_config, GateConfig};
 use crate::core::current::{read_current_run_id, resolve_branch_key, BranchKeyResolution};
+use crate::core::identity;
 use crate::core::json::Value;
 use crate::core::paths::validate_run_id;
 use crate::core::run::{
@@ -169,12 +170,11 @@ fn reset(root: &Path, mut run: Run, args: &ParsedArgs) -> Result<(), UserError> 
         )));
     }
 
+    let config = load_config(root)?;
+    let by = identity::resolve(args, root);
+    identity::require_if_configured(&by, &config)?;
+
     let at = now_iso();
-    let by = args
-        .flags
-        .str("by")
-        .map(str::to_string)
-        .or_else(|| std::env::var("GATE_SESSION_ID").ok());
     run.overrides.push(OverrideEntry {
         phase,
         action: OverrideAction::StreakReset,

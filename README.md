@@ -510,12 +510,48 @@ doing so is explicit and visible, not automatic - the point isn't to make
 looping impossible, it's to make continuing past a real, repeated failure a
 deliberate act with a paper trail, not something that happens by default.
 
+## Identity fallback
+
+`gate trust`, `gate approve`, and `gate streak reset` are Gate's three
+explicit human checkpoints - each records who signed off (`trustedBy`,
+`approval.by`, `override.by`). Left alone, that field stayed `null` unless
+the caller happened to pass `--by` or set `GATE_SESSION_ID` - nothing
+nudged toward either, so the audit trail said *that* a checkpoint was
+passed but not *who* passed it. All three now resolve identity through the
+same fallback chain, in order:
+
+1. `--by <name>`
+2. `GATE_SESSION_ID` (env)
+3. `git config user.name` (trimmed; empty or erroring is treated as absent)
+4. `null`, when all three are absent
+
+Weak identity beats none: `git config user.name` is self-reported and just
+as spoofable as `--by` itself - see "Threat model" below. It just means the
+common case (an agent or human running these commands from inside a normal
+git checkout) no longer defaults to `null`.
+
+Opt-in hard enforcement: set `identity.require_identity: true` in
+`config.yml` and all three commands fail (exit 1) instead of writing a
+`null` identity when none of the three sources resolves anything:
+
+```yaml
+identity:
+  require_identity: true   # optional, default false
+```
+
+This only checks *that* an identity resolved, not *which* one - it does not
+compare the recorded identity against, say, who did the IMPLEMENT-phase
+work (non-implementer/self-approval enforcement). That needs real,
+unspoofable session identity to be meaningful rather than advisory, and is
+deliberately deferred - see ROADMAP.md's "Reviewer identity threading".
+
 ## Threat model
 
 Gate defends against **sloppiness and runaway loops, not malice**. An agent
 (or human) in the same shell can still `gate skip`, `gate trust`, `gate
-streak reset`, or claim a false identity - a CLI cannot prove a human acted.
-What Gate guarantees is that every override is an explicit, separate,
+streak reset`, or claim a false identity (including via `git config
+user.name` - see "Identity fallback" above) - a CLI cannot prove a human
+acted. What Gate guarantees is that every override is an explicit, separate,
 recorded act: skips and streak resets carry a reason and an identity and
 surface in `gate report`; approval is hash-bound to the plan it approved;
 trust is hash-bound to the commands block it reviewed; the review packet is
@@ -547,6 +583,8 @@ integrations:
 targets: {}                      # optional - see "Targets (multi-stack repos)"
 retention: {}                    # optional - gate prune defaults, e.g. { keep: 10, days: 30 }
 scope_ignore: []                 # optional - see "Scope noise (scope_ignore)"; seeded by gate init
+identity:
+  require_identity: false        # optional - see "Identity fallback"
 ```
 
 Diff coverage understands five report formats, auto-detected under `coverage/`

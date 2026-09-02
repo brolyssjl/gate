@@ -14,6 +14,7 @@ pub mod fsx;
 pub mod git;
 pub mod gitignore_state;
 pub mod glob;
+pub mod identity;
 pub mod json;
 pub mod markers;
 pub mod paths;

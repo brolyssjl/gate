@@ -8,6 +8,8 @@ use crate::artifacts::plan::{hash_plan_file, parse_plan_file};
 use crate::cli::args::{parse_args, ParsedArgs};
 use crate::cli::context::require_active_run;
 use crate::cli::output::{emit, UserError};
+use crate::core::config::load_config;
+use crate::core::identity;
 use crate::core::json::Value;
 use crate::core::paths::run_paths;
 use crate::core::run::{now_iso, write_run, Approval, Run};
@@ -65,11 +67,9 @@ fn execute(root: &Path, mut run: Run, args: &ParsedArgs) -> Result<(), UserError
         return Err(UserError::new("plan.md not found"));
     };
 
-    let by = args
-        .flags
-        .str("by")
-        .map(str::to_string)
-        .or_else(|| std::env::var("GATE_SESSION_ID").ok());
+    let config = load_config(root)?;
+    let by = identity::resolve(args, root);
+    identity::require_if_configured(&by, &config)?;
     let reason = args.flags.str("reason").map(str::to_string);
 
     if amend {

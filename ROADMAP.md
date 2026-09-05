@@ -200,19 +200,20 @@ carries over unchanged._
 - [x] Real-project soak on the Rust binaries, extended to include one
       gate→agnosgram RETRO-sync exercise run with both Rust binaries
       together - the one integration point neither repo's own conformance
-      suite can catch (audit RM-06). Satisfied by the 2026-08-29 CF-123 run
-      on constructflow-api: a framework-blind agent walked the full
+      suite can catch (audit RM-06). Satisfied by a 2026-08-29 run
+      on one of the two private host projects used for dogfooding (a
+      production API repo): a framework-blind agent walked the full
       PLAN..DONE loop on the Rust binaries unprompted (via the adapter
       block), including `gate retro` -> `.agnosgram/journal` sync verified
       end to end; a second full-loop run landed 2026-09-02 in gate's own
       repo (the identity-fallback change was itself developed through the
-      harness). Evidence: constructflow-api PR #88 + the 2026-08-29 soak
-      ledger.
+      harness). Evidence: the host repo's PR + the 2026-08-29 soak
+      ledger (both in the private host project).
 - [ ] Decide going public / recruit at least one outside pilot user - owner
       decision: the docs site below can't be useful while its audience
       can't reach a private repo (audit RM-03)
-- [ ] Docs site + case study (with agnosgram, the 2026-07/08 constructflow
-      soak)
+- [ ] Docs site + case study (with agnosgram, the 2026-07/08 soak on the
+      two private host projects used for dogfooding)
 
 ## Fixes & improvements
 
@@ -271,9 +272,9 @@ the Rust binaries, feeding Milestone 6's "real-project soak" item above)._
       test flake found along the way (a racy shared-env-var mutation in
       `integrations::agnosgram_write`'s test suite).
 
-_Items from the 2026-08-29 -> 2026-09-02 dogfooding round (constructflow
-worker-batch monitoring + framework-blind CF-123 verification + same-week
-fix/release cycle). Root finding: worker agents bypassed gate entirely
+_Items from the 2026-08-29 -> 2026-09-02 dogfooding round (host-project
+worker-batch monitoring + a framework-blind ticket verification + same-week
+fix/release cycle; the two host projects are private). Root finding: worker agents bypassed gate entirely
 because no repo had ever run `gate adapt` - the 1.3.0 doctor/update
 lifecycle (Milestone 6 above) closed that in the field, and the rest of the
 round hardened what the soak exposed._

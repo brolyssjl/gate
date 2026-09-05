@@ -132,8 +132,9 @@ short version:
 Dev loop, from repo root:
 
 ```bash
-# rustup's brew shims may be absent; the toolchain itself is stable:
-export PATH="$HOME/.rustup/toolchains/stable-aarch64-apple-darwin/bin:$PATH"
+# If cargo isn't on PATH but rustup is installed, add your toolchain's bin
+# dir (adjust the triple for your platform), e.g.:
+export PATH="$HOME/.rustup/toolchains/stable-<your-target-triple>/bin:$PATH"
 cargo fmt --check --manifest-path rust/Cargo.toml
 cargo clippy --all-targets --manifest-path rust/Cargo.toml -- -D warnings
 cargo test --manifest-path rust/Cargo.toml

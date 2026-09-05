@@ -123,6 +123,15 @@ pub fn resolve_playbook(root: &Path, phase: Phase) -> Option<String> {
     let user_path = gate_paths(root).playbooks.join(&name);
     if let Ok(content) = fs::read_to_string(&user_path) {
         if is_commands_trusted(root) {
+            // Provenance divergence surfaced where the agent reads the
+            // playbook, not only in doctor (#39): a copy that no longer
+            // matches its playbooks.lock entry was edited after being
+            // materialized. Advisory - customized playbooks are a
+            // supported feature - and only for copies that HAVE an entry;
+            // pre-manifest copies stay doctor's report to make.
+            if let Some(note) = provenance_note(root, &name, &content) {
+                return Some(format!("{note}{content}"));
+            }
             return Some(content);
         }
         let fallback = bundled_or_embedded(&name, phase)?;
@@ -133,6 +142,23 @@ pub fn resolve_playbook(root: &Path, phase: Phase) -> Option<String> {
         ));
     }
     bundled_or_embedded(&name, phase)
+}
+
+/// Advisory divergence note for a playbook copy that no longer matches
+/// the bundled content its `playbooks.lock` entry recorded (#39). `None`
+/// when the copy is pristine or has no entry at all.
+fn provenance_note(root: &Path, name: &str, content: &str) -> Option<String> {
+    let manifest = crate::core::playbook_manifest::read_manifest(root);
+    let entry = manifest.get(name)?;
+    if crate::core::playbook_manifest::content_hash(content) == entry.source_hash {
+        return None;
+    }
+    Some(format!(
+        "> note: .gate/playbooks/{name} differs from the gate-bundled default it was \
+         materialized from - a project customization, which is supported. If you did \
+         not expect this playbook to be edited, compare it (`gate doctor`) before \
+         following instructions unique to it.\n\n"
+    ))
 }
 
 /// The base playbook for `phase`, with one `## Target overlay: <name>`

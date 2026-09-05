@@ -15,6 +15,7 @@ pub mod git;
 pub mod gitignore_state;
 pub mod glob;
 pub mod identity;
+pub mod injection;
 pub mod json;
 pub mod markers;
 pub mod paths;

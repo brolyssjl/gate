@@ -315,14 +315,17 @@ them - the tool must never trust them beyond the schemas it validates, and
 agents must be told which parts are data, not instructions. Sister effort:
 agnosgram#38/#39 (owner-only dogfooding posture; SEC-07 extension)._
 
-- [ ] Injection warn-and-mark for review packets and emitted playbooks
-      (issue #39): scan plan/diff content at packet generation and mark
-      hits inline (never remove - the reviewer must still see the code);
-      packet preamble states everything below the fold is data under
-      review; playbook output flags provenance divergence from
-      playbooks.lock where the agent reads it; README threat-model section
-      names artifacts/playbooks as untrusted agent input; hostile-fixture
-      tests for packet and playbook paths
+- [x] Injection warn-and-mark for review packets and emitted playbooks
+      (`1.6.0`, issue #39): every packet opens with a data-under-review
+      preamble; plan/diff content is scanned (std-only matchers ported
+      from agnosgram's SEC-07 lint) and hits add a warning section naming
+      source and line plus stderr detail - the plan and diff sections are
+      never rewritten; playbook output (`gate playbook`, phase entry, the
+      review rubric) prepends an advisory note when a trusted copy
+      diverges from its playbooks.lock provenance (untrusted overrides
+      stay refused outright, as before); README threat model gains the
+      "Untrusted agent-facing inputs" posture; hostile-fixture
+      conformance tests in rust/tests/untrusted.rs
 
 ## Deferred / v2
 

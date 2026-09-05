@@ -1,0 +1,16 @@
+{
+  "files": {
+    "debug.md": {
+      "sourceHash": "sha256:ba80abbdf787a78c8a0049eae6c09eba2ffe2dd269faf073cd2625c27d87f1a8",
+      "gateVersion": "1.5.0"
+    },
+    "retro.md": {
+      "sourceHash": "sha256:54de6ebdf398a4a505419ca8a275e304ac57b27897cefeda5f404f01e1834442",
+      "gateVersion": "1.5.0"
+    },
+    "review.md": {
+      "sourceHash": "sha256:57933a86140de7983058339037978ee02152ad27e4f9222a4e63c77b4a53b01c",
+      "gateVersion": "1.5.0"
+    }
+  }
+}

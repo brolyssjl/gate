@@ -541,7 +541,11 @@ fn untrusted_dot_gate_playbooks_override_is_refused_until_gate_trust_runs() {
 
     assert_eq!(gate(&repo, &["trust"]).code, 0);
     let trusted = gate(&repo, &["playbook", "PLAN", "--json"]).json();
-    assert_eq!(trusted.str("playbook").unwrap(), "# CUSTOM_PLAN_MARKER\n");
+    let trusted_text = trusted.str("playbook").unwrap();
+    // #39: a trusted copy that diverged from its playbooks.lock provenance
+    // ships with an advisory note prepended - content intact underneath.
+    assert!(trusted_text.starts_with("> note: .gate/playbooks/plan.md differs"));
+    assert!(trusted_text.ends_with("# CUSTOM_PLAN_MARKER\n"));
 
     // Editing it again without re-trusting is refused again.
     write_file(&repo, ".gate/playbooks/plan.md", "# TAMPERED_MARKER\n");

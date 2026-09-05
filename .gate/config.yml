@@ -11,5 +11,5 @@ phases:
   implement: required
   test: required
 integrations:
-  agnosgram: off
+  agnosgram: on
   sdd: off

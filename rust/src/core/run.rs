@@ -225,6 +225,15 @@ pub struct Run {
     pub target_override: Option<Vec<String>>,
     /// Session id of the implementer. Always present in JSON.
     pub session_id: Option<String>,
+    /// Who started the run, via the identity fallback chain (issue #33):
+    /// `--by` > `GATE_SESSION_ID` > `git config user.name`. Pure audit
+    /// trail - never compared against anything, unlike `session_id`,
+    /// which the REVIEW gate's independence check reads and which stays
+    /// strictly harness-provided (`--session`/`GATE_SESSION_ID`) so the
+    /// git-name fallback can't flip that check from advisory to blocking
+    /// in solo repos. Omitted from JSON when absent (additive schema-4
+    /// key, like `targetOverride`).
+    pub started_by: Option<String>,
     pub history: Vec<HistoryEntry>,
     pub overrides: Vec<OverrideEntry>,
     /// Registered artifacts keyed by relative filename, insertion-ordered.
@@ -273,6 +282,7 @@ pub fn new_run(params: NewRunParams) -> Run {
         base_ref: params.base_ref,
         target_override: params.target_override.filter(|t| !t.is_empty()),
         session_id: params.session_id,
+        started_by: None,
         history: vec![HistoryEntry {
             phase: Phase::Plan,
             event: HistoryEvent::Entered,
@@ -650,6 +660,9 @@ pub fn run_to_json(run: &Run) -> Value {
         }
     }
     o.insert("sessionId", run.session_id.clone());
+    if let Some(b) = &run.started_by {
+        o.insert("startedBy", b.as_str());
+    }
     o.insert(
         "history",
         Value::Array(run.history.iter().map(history_entry_to_json).collect()),
@@ -773,6 +786,10 @@ fn parse_run(raw: &Value, run_id: &str) -> Result<Run, UserError> {
         .get("sessionId")
         .and_then(|v| v.as_str())
         .map(String::from);
+    let started_by = raw
+        .get("startedBy")
+        .and_then(|v| v.as_str())
+        .map(String::from);
     let history = raw
         .get("history")
         .and_then(|v| v.as_array())
@@ -819,6 +836,7 @@ fn parse_run(raw: &Value, run_id: &str) -> Result<Run, UserError> {
         base_ref,
         target_override,
         session_id,
+        started_by,
         history,
         overrides,
         artifacts,

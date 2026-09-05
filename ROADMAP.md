@@ -294,11 +294,18 @@ round hardened what the soak exposed._
       `GATE_KEEP_OLD_INSTALLS=1`; shared root rmdir'd only once empty) -
       the old "safe to delete, not touched" note pushed janitor work onto
       every adopter
-- [ ] Route `skip`/`review`/`start`/`amend` through `core::identity::
-      resolve` too - they still use the old `--by`/env-only pattern, so
-      their recorded identities stay null in exactly the cases `1.4.0`
-      fixed for the other three commands (consistency follow-up found
-      during the #29 implementation, deliberately left out of its scope)
+- [x] Route `skip`/`review`/`start`/`amend` through `core::identity::
+      resolve` too (`1.5.0`, issue #33) - they still used the old
+      `--by`/env-only pattern, so their recorded identities stayed null in
+      exactly the cases `1.4.0` fixed for the other three commands
+      (consistency follow-up found during the #29 implementation,
+      deliberately left out of its scope). `skip` also honors
+      `identity.require_identity` (a skip is a deliberate sign-off);
+      `start` records the resolved identity as a new additive `startedBy`
+      key while `sessionId` stays strictly harness-provided - routing the
+      git-name fallback into `sessionId` would have flipped the REVIEW
+      gate's reviewer-independence check from advisory to blocking in
+      every solo repo (see README's "Identity fallback")
 
 ## Deferred / v2
 

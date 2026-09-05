@@ -7,6 +7,8 @@ use crate::cli::args::{parse_args, ParsedArgs};
 use crate::cli::context::require_active_run;
 use crate::cli::output::{emit, UserError};
 use crate::commands::advance::advance;
+use crate::core::config::load_config;
+use crate::core::identity;
 use crate::core::json::Value;
 use crate::core::run::{
     now_iso, write_run, HistoryEntry, HistoryEvent, OverrideAction, OverrideEntry, Run,
@@ -55,12 +57,15 @@ fn execute(root: &Path, mut run: Run, args: &ParsedArgs) -> Result<(), UserError
         return Err(UserError::new(format!("{} cannot be skipped", run.phase)));
     }
 
+    // A skip is a deliberate authorization past a gated phase - the same
+    // class of sign-off as trust/approve/streak reset, so it gets the
+    // full identity treatment from #29: fallback chain plus the opt-in
+    // fail-closed knob (issue #33).
+    let config = load_config(root)?;
+    let by = identity::resolve(args, root);
+    identity::require_if_configured(&by, &config)?;
+
     let at = now_iso();
-    let by = args
-        .flags
-        .str("by")
-        .map(str::to_string)
-        .or_else(|| std::env::var("GATE_SESSION_ID").ok());
     run.overrides.push(OverrideEntry {
         phase: run.phase,
         action: OverrideAction::Skip,

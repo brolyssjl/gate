@@ -8,6 +8,11 @@ npx vitest run test/cli.e2e.test.ts test/concurrency.test.ts
 test/humanReview.test.ts test/prune.test.ts test/guard.test.ts
 test/amend.test.ts`) - 68/68 passed, confirming the port's baseline.
 
+This map is deliberately scoped to those ported cases. Suites added after
+the TS retirement have no TS counterpart and are intentionally absent:
+`streak.rs` and `doctor_update.rs` (post-port features), and `identity.rs`
+(issues #29/#33) - their file-level doc comments say so in place.
+
 ## test/amend.test.ts -> rust/tests/amend.rs
 
 | TS case | Rust test fn |

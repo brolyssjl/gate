@@ -30,7 +30,16 @@ Releases are cut from `main` with a semver tag and a GitHub release.
    rust/Cargo.toml -- -D warnings && cargo test --manifest-path
    rust/Cargo.toml`, and the CI job passes (see "The gate crate" below).
 3. Tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`.
-4. `gh release create vX.Y.Z --title "vX.Y.Z - <name>" --notes "…"`.
+4. **Wait for release.yml** - the tag push triggers it, and its release job
+   creates the GitHub release itself (`gh release create --generate-notes
+   --verify-tag`) with the built binaries and `SHA256SUMS` attached. Do NOT
+   run `gh release create` by hand: a release existing before the workflow
+   gets there makes that job fail with "a release with the same tag name
+   already exists", leaving a release with no assets (this happened on
+   v1.5.0; the recovery is `gh release delete vX.Y.Z -y` followed by
+   rerunning the failed job).
+5. Once the workflow is green, replace the auto-generated notes with curated
+   ones: `gh release edit vX.Y.Z --title "vX.Y.Z - <name>" --notes "…"`.
 
 npm distribution is permanently out per the Milestone 6 owner decision
 (see ROADMAP.md). Releases are tags + GitHub releases with cargo-built

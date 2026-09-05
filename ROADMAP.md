@@ -307,6 +307,23 @@ round hardened what the soak exposed._
       gate's reviewer-independence check from advisory to blocking in
       every solo repo (see README's "Identity fallback")
 
+## Pre-publish hardening: untrusted agent-facing inputs (priority)
+
+_Owner decision 2026-09-05: run artifacts, diffs, and playbooks are text an
+agent reads and acts on, and anyone with repo write access can manipulate
+them - the tool must never trust them beyond the schemas it validates, and
+agents must be told which parts are data, not instructions. Sister effort:
+agnosgram#38/#39 (owner-only dogfooding posture; SEC-07 extension)._
+
+- [ ] Injection warn-and-mark for review packets and emitted playbooks
+      (issue #39): scan plan/diff content at packet generation and mark
+      hits inline (never remove - the reviewer must still see the code);
+      packet preamble states everything below the fold is data under
+      review; playbook output flags provenance divergence from
+      playbooks.lock where the agent reads it; README threat-model section
+      names artifacts/playbooks as untrusted agent input; hostile-fixture
+      tests for packet and playbook paths
+
 ## Deferred / v2
 
 - [ ] ~~Go port (startup-latency escape hatch)~~ superseded by Milestone 6

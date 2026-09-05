@@ -39,7 +39,9 @@ Releases are cut from `main` with a semver tag and a GitHub release.
    v1.5.0; the recovery is `gh release delete vX.Y.Z -y` followed by
    rerunning the failed job).
 5. Once the workflow is green, replace the auto-generated notes with curated
-   ones: `gh release edit vX.Y.Z --title "vX.Y.Z - <name>" --notes "…"`.
+   ones: `gh release edit vX.Y.Z --notes "…"`. Release titles stay the bare tag
+   (`vX.Y.Z`) - every release to date is titled that way; the summary
+   belongs in the notes, not the title.
 
 npm distribution is permanently out per the Milestone 6 owner decision
 (see ROADMAP.md). Releases are tags + GitHub releases with cargo-built

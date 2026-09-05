@@ -1,10 +1,13 @@
 //! New (not a TS port): identity resolution for the acting party recorded
-//! by `gate trust`/`gate approve`/`gate streak reset` (`trustedBy`,
-//! `approval.by`, `override.by`) - see README's "Identity fallback"
-//! section and issue #29. Every human checkpoint used to record `by: null`
-//! unless the caller happened to pass `--by` or set `GATE_SESSION_ID`;
-//! nothing nudged toward either, so the audit trail said *that* a
-//! checkpoint was passed but not *who* passed it.
+//! by every identity-carrying command - `gate trust`/`gate approve`/`gate
+//! streak reset` (`trustedBy`, `approval.by`, `override.by`; issue #29)
+//! plus `gate skip` (`override.by`), `gate amend` (`amendment.by`), `gate
+//! review`'s packet request (`review.requestedBy`), and `gate start`'s
+//! audit-only `startedBy` (issue #33) - see README's "Identity fallback"
+//! section. Every human checkpoint used to record `by: null` unless the
+//! caller happened to pass `--by` or set `GATE_SESSION_ID`; nothing
+//! nudged toward either, so the audit trail said *that* a checkpoint was
+//! passed but not *who* passed it.
 //!
 //! This is deliberately weak, spoofable identity - `git config user.name`
 //! is whatever the local config says, not a proof of anything. It's still

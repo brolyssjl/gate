@@ -512,13 +512,15 @@ deliberate act with a paper trail, not something that happens by default.
 
 ## Identity fallback
 
-`gate trust`, `gate approve`, and `gate streak reset` are Gate's three
-explicit human checkpoints - each records who signed off (`trustedBy`,
-`approval.by`, `override.by`). Left alone, that field stayed `null` unless
-the caller happened to pass `--by` or set `GATE_SESSION_ID` - nothing
-nudged toward either, so the audit trail said *that* a checkpoint was
-passed but not *who* passed it. All three now resolve identity through the
-same fallback chain, in order:
+Every command that records who acted resolves that identity through one
+shared fallback chain: the three explicit human checkpoints - `gate
+trust`, `gate approve`, `gate streak reset` (`trustedBy`, `approval.by`,
+`override.by`) - plus `gate skip` (`override.by`), `gate amend`
+(`amendment.by`), `gate review`'s packet request (`review.requestedBy`),
+and `gate start` (`startedBy`). Left alone, those fields stayed `null`
+unless the caller happened to pass `--by` or set `GATE_SESSION_ID` -
+nothing nudged toward either, so the audit trail said *that* a checkpoint
+was passed but not *who* passed it. The chain, in order:
 
 1. `--by <name>`
 2. `GATE_SESSION_ID` (env)
@@ -530,9 +532,20 @@ as spoofable as `--by` itself - see "Threat model" below. It just means the
 common case (an agent or human running these commands from inside a normal
 git checkout) no longer defaults to `null`.
 
+One deliberate exception: `gate start`'s `sessionId` stays strictly
+harness-provided (`--session` or `GATE_SESSION_ID`, no git-name
+fallback). The REVIEW gate's reviewer-independence check hard-fails when
+the reviewer name equals the recorded `sessionId`, so letting `git config
+user.name` leak into it would flip the documented solo review flow from
+advisory to blocking in every one-person repo. Who *started* the run is
+recorded separately as `startedBy` (the full chain, audit-only, never
+compared against anything).
+
 Opt-in hard enforcement: set `identity.require_identity: true` in
-`config.yml` and all three commands fail (exit 1) instead of writing a
-`null` identity when none of the three sources resolves anything:
+`config.yml` and the deliberate sign-offs - `trust`, `approve`, `streak
+reset`, and `skip` - fail (exit 1) instead of writing a `null` identity
+when none of the three sources resolves anything (`start`, `amend`, and
+the review packet request still record `null`; they are not sign-offs):
 
 ```yaml
 identity:

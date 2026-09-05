@@ -14,6 +14,7 @@ use crate::core::current::{
     resolve_branch_key, with_current_lock, BranchKeyResolution, NO_GIT_BRANCH_KEY,
 };
 use crate::core::git::head_sha;
+use crate::core::identity;
 use crate::core::json::Value;
 use crate::core::paths::run_paths;
 use crate::core::playbooks::resolve_playbook_with_overlays;
@@ -96,11 +97,18 @@ fn execute(root: &Path, args: &ParsedArgs) -> Result<(), UserError> {
         )));
     }
     let profile_flag_given = args.flags.str("profile").is_some();
+    // sessionId stays strictly harness-provided: the REVIEW gate's
+    // independence check hard-fails when the reviewer equals it, so the
+    // git-name fallback must never leak in here (it would flip the
+    // documented solo review flow from advisory to blocking). The
+    // fallback-chain identity is recorded separately as `startedBy`
+    // below (issue #33).
     let session_id = args
         .flags
         .str("session")
         .map(str::to_string)
         .or_else(|| std::env::var("GATE_SESSION_ID").ok());
+    let started_by = identity::resolve(args, root);
     let target_override: Option<Vec<String>> = args.flags.str("target").map(|s| {
         s.split(',')
             .map(|t| t.trim().to_string())
@@ -205,6 +213,7 @@ fn execute(root: &Path, args: &ParsedArgs) -> Result<(), UserError> {
             session_id: session_id.clone(),
             target_override: target_override.clone(),
         });
+        new_r.started_by = started_by.clone();
         write_run(root, &mut new_r).map_err(|e| UserError::new(e.to_string()))?;
         if let Some(slot) = branches.iter_mut().find(|(k, _)| k == &branch_key) {
             slot.1 = id;

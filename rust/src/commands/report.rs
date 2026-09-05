@@ -59,6 +59,9 @@ pub struct ReportData {
     pub profile: String,
     pub phase: Phase,
     pub status: RunStatus,
+    /// `run.startedBy` passed through verbatim; omitted from JSON when
+    /// absent, mirroring run.json's additive key (issue #33).
+    pub started_by: Option<String>,
     pub total_seconds: i64,
     pub gate_failures: i64,
     pub phases: Vec<PhaseReport>,
@@ -244,6 +247,7 @@ pub fn build_report_data(root: &Path, run: &Run) -> ReportData {
         profile: run.profile.clone(),
         phase: run.phase,
         status: run.status,
+        started_by: run.started_by.clone(),
         total_seconds,
         gate_failures,
         phases,
@@ -279,6 +283,11 @@ pub fn render_report_human(data: &ReportData, archived: bool) -> String {
             if archived { " (archived)" } else { "" }
         ),
         format!("  Title:    {}", data.title),
+    ];
+    if let Some(b) = &data.started_by {
+        lines.push(format!("  Started:  by {b}"));
+    }
+    lines.extend([
         format!(
             "  Profile:  {}    Phase: {}    Status: {}",
             data.profile,
@@ -292,7 +301,7 @@ pub fn render_report_human(data: &ReportData, archived: bool) -> String {
         ),
         String::new(),
         "  Phase durations:".to_string(),
-    ];
+    ]);
     for p in &data.phases {
         let mut line = format!(
             "    {:<10} {:>8}",
@@ -383,6 +392,9 @@ pub fn report_data_to_json(data: &ReportData) -> Value {
     v.insert("profile", data.profile.as_str());
     v.insert("phase", data.phase.as_str());
     v.insert("status", data.status.as_str());
+    if let Some(b) = &data.started_by {
+        v.insert("startedBy", b.as_str());
+    }
     v.insert("totalSeconds", data.total_seconds);
     v.insert("gateFailures", data.gate_failures);
     v.insert(
@@ -498,6 +510,10 @@ fn report_data_from_json(v: &Value) -> ReportData {
             .and_then(|x| x.as_str())
             .and_then(RunStatus::from_str_opt)
             .unwrap_or(RunStatus::Active),
+        started_by: v
+            .get("startedBy")
+            .and_then(|x| x.as_str())
+            .map(String::from),
         total_seconds: as_i64(v.get("totalSeconds")),
         gate_failures: as_i64(v.get("gateFailures")),
         phases: v
@@ -774,6 +790,7 @@ mod tests {
             profile: "feature".to_string(),
             phase: Phase::Done,
             status: RunStatus::Done,
+            started_by: Some("alice".to_string()),
             total_seconds: 42,
             gate_failures: 1,
             phases: vec![PhaseReport {
@@ -808,6 +825,7 @@ mod tests {
             profile: "feature".to_string(),
             phase: Phase::Plan,
             status: RunStatus::Active,
+            started_by: None,
             total_seconds: 0,
             gate_failures: 0,
             phases: vec![],
@@ -845,6 +863,7 @@ mod tests {
             profile: "feature".to_string(),
             phase: Phase::Test,
             status: RunStatus::Active,
+            started_by: None,
             total_seconds: 0,
             gate_failures: 3,
             phases: vec![],
@@ -870,6 +889,7 @@ mod tests {
             profile: "feature".to_string(),
             phase: Phase::Done,
             status: RunStatus::Done,
+            started_by: None,
             total_seconds: 5,
             gate_failures: 0,
             phases: vec![],

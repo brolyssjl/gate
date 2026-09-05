@@ -1031,6 +1031,9 @@ fn json_schema_check_report_playbook_expose_stable_top_level_keys() {
             "phase",
             "phases",
             "profile",
+            // additive #33 key: present here because make_repo seeds a
+            // git user.name for the fallback chain to resolve
+            "startedBy",
             "status",
             "title",
             "totalSeconds"

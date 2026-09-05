@@ -1,5 +1,6 @@
 {
-  "commandsHash": "sha256:c1e084834bbf534ffe4c441ed827479ad74eb28f62a9cadd40def7bd17a71e4a",
-  "trustedAt": "2026-08-22T20:09:59.982Z",
-  "trustedBy": null
+  "commandsHash": "sha256:d8e6993e470d4c9224075b681735cef87540d60680e8aed537eded09335126b4",
+  "trustedAt": "2026-09-05T17:28:13.487Z",
+  "trustedBy": "Jonatan",
+  "coverageVersion": 2
 }

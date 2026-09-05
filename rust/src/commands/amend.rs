@@ -15,6 +15,7 @@ use crate::cli::args::parse_args;
 use crate::cli::context::require_active_run;
 use crate::cli::output::{emit, UserError};
 use crate::core::git::diff_no_index;
+use crate::core::identity;
 use crate::core::json::Value;
 use crate::core::paths::run_paths;
 use crate::core::run::{now_iso, write_run, Amendment};
@@ -120,11 +121,10 @@ pub fn run(argv: Vec<String>) -> Result<(), UserError> {
         warning,
     } = render_diff(&paths.plan_approved, &paths.plan, &approval.plan_hash);
 
-    let by = args
-        .flags
-        .str("by")
-        .map(String::from)
-        .or_else(|| std::env::var("GATE_SESSION_ID").ok());
+    // The sign-off on an amendment is `gate approve --amend` (which
+    // requires via #29); recording who amended just gets the fallback
+    // chain, no require_if_configured (#33).
+    let by = identity::resolve(&args, &ctx.root);
 
     run.amendment = Some(Amendment {
         plan_hash: current_hash,

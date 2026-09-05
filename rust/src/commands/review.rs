@@ -13,6 +13,7 @@ use crate::cli::output::{emit, UserError};
 use crate::core::config::GateConfig;
 use crate::core::fsx::write_file_atomic;
 use crate::core::git::{diff_text, tree_fingerprint};
+use crate::core::identity;
 use crate::core::json::Value;
 use crate::core::paths::run_paths;
 use crate::core::playbooks::resolve_playbook_with_overlays;
@@ -145,11 +146,10 @@ fn ensure_packet(
     .join("\n");
     write_file_atomic(&paths.review_packet, &packet).map_err(|e| UserError::new(e.to_string()))?;
 
-    let requested_by = args
-        .flags
-        .str("by")
-        .map(String::from)
-        .or_else(|| std::env::var("GATE_SESSION_ID").ok());
+    // Requesting a packet is not a sign-off (that happens at reviewer:
+    // in review.md), so no require_if_configured here - just the #29
+    // fallback chain instead of the old --by/env-only pattern (#33).
+    let requested_by = identity::resolve(args, root);
     run.review = Some(ReviewRequest {
         requested_by: requested_by.clone(),
         requested_at: now_iso(),

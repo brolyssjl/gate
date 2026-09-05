@@ -52,6 +52,15 @@ pub struct JournalEntryParams<'a> {
     /// Unix epoch seconds; `None` defaults to now (mirrors TS's `when: Date
     /// = new Date()` default parameter).
     pub when: Option<i64>,
+    /// No TS counterpart. `None` (every real caller, e.g. `gate retro`) uses
+    /// the process's ambient local time zone, same as always. `Some(offset)`
+    /// pins the heading's timestamp to that fixed UTC offset (seconds)
+    /// instead, bypassing `local_timestamp_at`'s `tzset()`/`localtime_r`
+    /// call entirely - this is what lets this module's tests fix "UTC"
+    /// deterministically without mutating the process-global `TZ` env var,
+    /// which used to race other threads under `cargo test`'s parallel
+    /// runner (see `local_timestamp_with_offset`).
+    pub tz_offset_secs: Option<i64>,
 }
 
 fn now_secs() -> i64 {
@@ -84,42 +93,54 @@ extern "C" {
     fn tzset();
 }
 
+/// `YYYY-MM-DD HH:MM` for `epoch_secs` shifted by a fixed UTC offset
+/// (seconds, positive east of UTC) - pure civil-calendar arithmetic, no FFI,
+/// no env. This is the same identity `localtime_r` itself relies on (local
+/// broken-down time is UTC shifted by the zone's offset at that instant,
+/// modulo the leap seconds neither side accounts for), so it doubles as
+/// both the UTC fallback below and the deterministic path tests use to pin
+/// an offset without touching the process-global `TZ` env var (see
+/// `JournalEntryParams::tz_offset_secs`).
+fn local_timestamp_with_offset(epoch_secs: i64, gmtoff_secs: i64) -> String {
+    let local_secs = epoch_secs + gmtoff_secs;
+    let (y, m, d) = civil_from_days(local_secs.div_euclid(86_400));
+    let rem = local_secs.rem_euclid(86_400);
+    format!(
+        "{y:04}-{m:02}-{d:02} {:02}:{:02}",
+        rem / 3600,
+        (rem % 3600) / 60
+    )
+}
+
 /// `YYYY-MM-DD HH:MM` in local time for a given Unix instant, exactly as
 /// `src/integrations/agnosgramWrite.ts`'s `localTimestamp` renders a `Date`.
 /// Calls `tzset()` first so a `TZ` env change since the last call is picked
-/// up (matters for tests; a no-op in the common case where `TZ` never
-/// changes during the process's lifetime).
+/// up (matters for callers that need a specific zone; a no-op in the common
+/// case where `TZ` never changes during the process's lifetime).
 fn local_timestamp_at(epoch_secs: i64) -> String {
     unsafe { tzset() };
     let mut tm: Tm = unsafe { std::mem::zeroed() };
     let ok = unsafe { !localtime_r(&epoch_secs, &mut tm).is_null() };
-    if !ok {
+    let gmtoff = if ok {
+        tm.tm_gmtoff
+    } else {
         // Fall back to UTC rather than panicking - this should not happen on
         // darwin/linux, but a journal entry is more useful with a UTC
         // timestamp than with a crashed `gate retro`.
-        let (y, m, d) = civil_from_days(epoch_secs.div_euclid(86_400));
-        let rem = epoch_secs.rem_euclid(86_400);
-        return format!(
-            "{y:04}-{m:02}-{d:02} {:02}:{:02}",
-            rem / 3600,
-            (rem % 3600) / 60
-        );
-    }
-    format!(
-        "{:04}-{:02}-{:02} {:02}:{:02}",
-        tm.tm_year + 1900,
-        tm.tm_mon + 1,
-        tm.tm_mday,
-        tm.tm_hour,
-        tm.tm_min
-    )
+        0
+    };
+    local_timestamp_with_offset(epoch_secs, gmtoff)
 }
 
 pub fn format_journal_entry(params: &JournalEntryParams) -> String {
     let when = params.when.unwrap_or_else(now_secs);
 
+    let timestamp = match params.tz_offset_secs {
+        Some(offset) => local_timestamp_with_offset(when, offset),
+        None => local_timestamp_at(when),
+    };
     let mut heading_parts = vec![
-        format!("## {}", local_timestamp_at(when)),
+        format!("## {timestamp}"),
         "·".to_string(),
         "gate".to_string(),
     ];
@@ -304,25 +325,18 @@ mod tests {
     use std::fs as stdfs;
     use std::path::PathBuf;
 
-    // 2026-07-27 14:05 UTC. Tests run under TZ=UTC (see `with_tz`) so this
-    // reads as the same local wall-clock time the TS suite hardcodes via a
-    // local-time `Date` constructor - a deliberate, documented adaptation
-    // (see this module's doc comment on `local_timestamp_at`): the TS test
-    // fixture is a local `Date`, which is not portably reproducible across
-    // machines/CI runners with different system timezones, so this port
-    // pins the timezone explicitly instead.
+    // 2026-07-27 14:05 UTC. Tests that care about the rendered heading pass
+    // `tz_offset_secs: Some(0)` so this reads as the same local wall-clock
+    // time the TS suite hardcodes via a local-time `Date` constructor - a
+    // deliberate, documented adaptation (see this module's doc comment on
+    // `local_timestamp_at`): the TS test fixture is a local `Date`, which is
+    // not portably reproducible across machines/CI runners with different
+    // system timezones, so this port pins the offset explicitly instead.
+    // Pinning it as a parameter (rather than the process-global `TZ` env
+    // var, as an earlier version of this suite did) means these tests don't
+    // race other threads under `cargo test`'s parallel runner - see
+    // `JournalEntryParams::tz_offset_secs`.
     const WHEN: i64 = 1785161100; // Date.UTC(2026, 6, 27, 14, 5)
-
-    fn with_tz<T>(tz: &str, f: impl FnOnce() -> T) -> T {
-        let prior = env::var("TZ").ok();
-        env::set_var("TZ", tz);
-        let result = f();
-        match prior {
-            Some(v) => env::set_var("TZ", v),
-            None => env::remove_var("TZ"),
-        }
-        result
-    }
 
     static AGNOSGRAM_BIN_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
@@ -365,87 +379,84 @@ mod tests {
 
     #[test]
     fn renders_every_slot_when_broke_avoid_and_conventions_are_all_answered() {
-        with_tz("UTC", || {
-            let retro = RetroLog {
-                broke: vec!["assumed the API was idempotent".to_string()],
-                avoid: vec!["skipping the reproduce step".to_string()],
-                conventions: vec!["always add --dry-run to destructive commands".to_string()],
-                body: String::new(),
-            };
-            let entry = format_journal_entry(&JournalEntryParams {
-                run_id: "2026-07-27-add-greet",
-                run_title: "add greet",
-                run_profile: "feature",
-                retro: &retro,
-                branch: Some("milestone-3-ecosystem"),
-                when: Some(WHEN),
-            });
-            let expected = [
-                "## 2026-07-27 14:05 · gate · milestone-3-ecosystem",
-                "- **Did:** Completed gate run \"add greet\" (2026-07-27-add-greet, profile feature)",
-                "- **Learned:** assumed the API was idempotent",
-                "- **Decided:** always add --dry-run to destructive commands",
-                "- **Avoid:** skipping the reproduce step",
-                "- **Source:** .gate/runs/2026-07-27-add-greet",
-                "",
-            ]
-            .join("\n");
-            assert_eq!(entry, expected);
+        let retro = RetroLog {
+            broke: vec!["assumed the API was idempotent".to_string()],
+            avoid: vec!["skipping the reproduce step".to_string()],
+            conventions: vec!["always add --dry-run to destructive commands".to_string()],
+            body: String::new(),
+        };
+        let entry = format_journal_entry(&JournalEntryParams {
+            run_id: "2026-07-27-add-greet",
+            run_title: "add greet",
+            run_profile: "feature",
+            retro: &retro,
+            branch: Some("milestone-3-ecosystem"),
+            when: Some(WHEN),
+            tz_offset_secs: Some(0),
         });
+        let expected = [
+            "## 2026-07-27 14:05 · gate · milestone-3-ecosystem",
+            "- **Did:** Completed gate run \"add greet\" (2026-07-27-add-greet, profile feature)",
+            "- **Learned:** assumed the API was idempotent",
+            "- **Decided:** always add --dry-run to destructive commands",
+            "- **Avoid:** skipping the reproduce step",
+            "- **Source:** .gate/runs/2026-07-27-add-greet",
+            "",
+        ]
+        .join("\n");
+        assert_eq!(entry, expected);
     }
 
     #[test]
     fn omits_empty_slots_and_the_branch_segment_when_unknown() {
-        with_tz("UTC", || {
-            let retro = RetroLog {
-                broke: vec![],
-                avoid: vec!["forgetting to check the token expiry edge case".to_string()],
-                conventions: vec![],
-                body: String::new(),
-            };
-            let entry = format_journal_entry(&JournalEntryParams {
-                run_id: "2026-07-27-fix-login",
-                run_title: "fix login",
-                run_profile: "bugfix",
-                retro: &retro,
-                branch: None,
-                when: Some(WHEN),
-            });
-            let expected = [
-                "## 2026-07-27 14:05 · gate",
-                "- **Did:** Completed gate run \"fix login\" (2026-07-27-fix-login, profile bugfix)",
-                "- **Avoid:** forgetting to check the token expiry edge case",
-                "- **Source:** .gate/runs/2026-07-27-fix-login",
-                "",
-            ]
-            .join("\n");
-            assert_eq!(entry, expected);
+        let retro = RetroLog {
+            broke: vec![],
+            avoid: vec!["forgetting to check the token expiry edge case".to_string()],
+            conventions: vec![],
+            body: String::new(),
+        };
+        let entry = format_journal_entry(&JournalEntryParams {
+            run_id: "2026-07-27-fix-login",
+            run_title: "fix login",
+            run_profile: "bugfix",
+            retro: &retro,
+            branch: None,
+            when: Some(WHEN),
+            tz_offset_secs: Some(0),
         });
+        let expected = [
+            "## 2026-07-27 14:05 · gate",
+            "- **Did:** Completed gate run \"fix login\" (2026-07-27-fix-login, profile bugfix)",
+            "- **Avoid:** forgetting to check the token expiry edge case",
+            "- **Source:** .gate/runs/2026-07-27-fix-login",
+            "",
+        ]
+        .join("\n");
+        assert_eq!(entry, expected);
     }
 
     #[test]
     fn joins_multiple_entries_in_a_slot_with_a_middle_dot() {
-        with_tz("UTC", || {
-            let retro = RetroLog {
-                broke: vec![
-                    "one thing broke".to_string(),
-                    "another thing broke".to_string(),
-                ],
-                avoid: vec![],
-                conventions: vec![],
-                body: String::new(),
-            };
-            let entry = format_journal_entry(&JournalEntryParams {
-                run_id: "r1",
-                run_title: "t",
-                run_profile: "feature",
-                retro: &retro,
-                branch: Some("main"),
-                when: Some(WHEN),
-            });
-            assert!(entry.contains("- **Learned:** one thing broke \u{b7} another thing broke"));
-            assert!(!entry.contains("; "));
+        let retro = RetroLog {
+            broke: vec![
+                "one thing broke".to_string(),
+                "another thing broke".to_string(),
+            ],
+            avoid: vec![],
+            conventions: vec![],
+            body: String::new(),
+        };
+        let entry = format_journal_entry(&JournalEntryParams {
+            run_id: "r1",
+            run_title: "t",
+            run_profile: "feature",
+            retro: &retro,
+            branch: Some("main"),
+            when: Some(WHEN),
+            tz_offset_secs: Some(0),
         });
+        assert!(entry.contains("- **Learned:** one thing broke \u{b7} another thing broke"));
+        assert!(!entry.contains("; "));
     }
 
     #[test]
@@ -471,21 +482,18 @@ mod tests {
             conventions: vec![],
             body: String::new(),
         };
-        let entry = with_tz("UTC", || {
-            format_journal_entry(&JournalEntryParams {
-                run_id: "r1",
-                run_title: "demo",
-                run_profile: "feature",
-                retro: &retro,
-                branch: Some("main"),
-                when: Some(WHEN),
-            })
+        let entry = format_journal_entry(&JournalEntryParams {
+            run_id: "r1",
+            run_title: "demo",
+            run_profile: "feature",
+            retro: &retro,
+            branch: Some("main"),
+            when: Some(WHEN),
+            tz_offset_secs: Some(0),
         });
 
-        let result = with_tz("UTC", || {
-            with_agnosgram_bin("/nonexistent/gate-agnosgram-test-stub", || {
-                write_journal_entry(&root, &entry, Some(WHEN)).unwrap()
-            })
+        let result = with_agnosgram_bin("/nonexistent/gate-agnosgram-test-stub", || {
+            write_journal_entry(&root, &entry, Some(WHEN)).unwrap()
         });
         assert_eq!(result.method, JournalWriteMethod::Fallback);
         assert_eq!(result.journal_file, ".agnosgram/journal/2026-07.md");
@@ -520,6 +528,7 @@ mod tests {
             retro: &retro_a,
             branch: Some("main"),
             when: Some(WHEN),
+            tz_offset_secs: None,
         });
         let second = format_journal_entry(&JournalEntryParams {
             run_id: "r2",
@@ -528,6 +537,7 @@ mod tests {
             retro: &retro_b,
             branch: Some("main"),
             when: Some(WHEN),
+            tz_offset_secs: None,
         });
 
         let (r1, r2) = with_agnosgram_bin("/nonexistent/gate-agnosgram-test-stub", || {
@@ -577,6 +587,7 @@ mod tests {
             retro: &retro,
             branch: Some("main"),
             when: Some(WHEN),
+            tz_offset_secs: None,
         });
 
         let result = with_agnosgram_bin(stub.to_str().unwrap(), || {

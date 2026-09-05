@@ -7,3 +7,10 @@ updates:
     groups:
       github-actions:
         patterns: ["*"]
+  # The crate is zero-dependency by policy, so this only ever fires if a
+  # [dependencies] entry lands (which needs an owner decision first) - at
+  # which point updates are already covered instead of silently untracked.
+  - package-ecosystem: "cargo"
+    directory: "/rust"
+    schedule:
+      interval: "monthly"

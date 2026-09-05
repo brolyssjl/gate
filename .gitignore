@@ -11,3 +11,6 @@ rust/target/
 # Local design docs, not part of the published repo
 kickoff-gate.md
 proposal-2-gate-devflow-quality_1.md
+
+# Claude Code local state (agent worktrees etc.)
+.claude/

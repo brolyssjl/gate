@@ -11,3 +11,21 @@ Markdown, reviewed in PRs). **Before doing any work:**
    areas you are about to touch.
 4. Before ending the session, record what happened with `agnosgram log`.
 <!-- agnosgram:end -->
+
+<!-- gate:start -->
+<!-- Managed by gate. Edits inside this block are overwritten on `gate adapt`. -->
+## Gate quality flow
+
+This repo uses Gate to enforce PLAN -> IMPLEMENT -> TEST -> REVIEW -> RETRO
+as a state machine with deterministic gates. Before doing any work:
+
+1. Run `gate status`. No active run? Start one: `gate start "<title>"`.
+2. Run `gate playbook` for the current phase - that is your instruction set.
+3. Do the work the playbook describes.
+4. Run `gate next`. It checks the gate and advances on pass; on fail it
+   prints exactly what evidence is missing - fix that, don't argue with it.
+5. Loop 2-4 until the run reaches DONE.
+
+Never hand-edit files under `.gate/runs/` (use `gate log` to register
+artifacts). A red gate means missing evidence, not a suggestion to skip it.
+<!-- gate:end -->

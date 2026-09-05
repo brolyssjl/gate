@@ -117,6 +117,7 @@ pub fn run(argv: Vec<String>) -> Result<(), UserError> {
         retro: &retro,
         branch: branch.as_deref(),
         when: Some(when),
+        tz_offset_secs: None,
     });
     let result = write_journal_entry(&ctx.root, &entry, Some(when))?;
 

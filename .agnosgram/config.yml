@@ -1,0 +1,26 @@
+# Agnosgram configuration. Plain YAML, reviewable in PRs.
+# adapters/sdd toggles: auto = follow detection, on = force, off = never.
+
+version: 1
+journal:
+  committed: true
+staleness_days: 120
+budgets:
+  state/status.md: 400
+  context/architecture.md: 1500
+  context/stack.md: 800
+  context/domain.md: 1000
+  lessons/pitfalls.md: 1000
+  lessons/conventions.md: 1000
+adapters:
+  claude: on
+  cursor: off
+  windsurf: off
+  cline: off
+  roo: off
+  agents: on
+sdd:
+  openspec: auto
+  speckit: auto
+  bmad: auto
+  agentos: auto

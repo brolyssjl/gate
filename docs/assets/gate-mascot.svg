@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Gate's mascot: an umpire owl with a checkered flag">
+  <rect x="0" y="0" width="256" height="256" rx="56" fill="#f4ecdd"/>
+  <g transform="translate(22 18) scale(2.2)">
+    <ellipse cx="48" cy="58" rx="26" ry="27" fill="#33415f"/>
+    <ellipse cx="24" cy="60" rx="7" ry="14" fill="#2a3650"/>
+    <ellipse cx="72" cy="60" rx="7" ry="14" fill="#2a3650"/>
+    <clipPath id="gm-belly"><ellipse cx="48" cy="66" rx="15" ry="16"/></clipPath>
+    <ellipse cx="48" cy="66" rx="15" ry="16" fill="#fdf8ec"/>
+    <g clip-path="url(#gm-belly)">
+      <rect x="30" y="57" width="36" height="5" fill="#33415f"/>
+      <rect x="30" y="67" width="36" height="5" fill="#33415f"/>
+      <rect x="30" y="77" width="36" height="5" fill="#33415f"/>
+    </g>
+    <circle cx="40" cy="44" r="9" fill="#ffffff"/>
+    <circle cx="56" cy="44" r="9" fill="#ffffff"/>
+    <circle cx="41.5" cy="45" r="3.4" fill="#1c2438"/>
+    <circle cx="54.5" cy="45" r="3.4" fill="#1c2438"/>
+    <path d="M44 52 L52 52 L48 58 Z" fill="#e2a13d"/>
+    <path d="M31 33 A18 15 0 0 1 65 33 L65 30 A19 16 0 0 0 31 30 Z" fill="#1f2a44"/>
+    <rect x="26" y="30" width="27" height="5" rx="2.5" fill="#1f2a44"/>
+    <line x1="76" y1="42" x2="76" y2="58" stroke="#1c2438" stroke-width="2"/>
+    <rect x="76" y="42" width="12" height="9" fill="#ffffff" stroke="#1c2438" stroke-width="1"/>
+    <rect x="76" y="42" width="4" height="3" fill="#1c2438"/>
+    <rect x="84" y="42" width="4" height="3" fill="#1c2438"/>
+    <rect x="80" y="45" width="4" height="3" fill="#1c2438"/>
+    <rect x="76" y="48" width="4" height="3" fill="#1c2438"/>
+    <rect x="84" y="48" width="4" height="3" fill="#1c2438"/>
+  </g>
+</svg>

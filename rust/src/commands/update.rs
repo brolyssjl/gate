@@ -20,6 +20,7 @@ use crate::cli::context::require_root;
 use crate::cli::output::{emit, UserError};
 use crate::commands::adapt::{apply_adapter, AdaptAction, AdaptResult};
 use crate::commands::doctor::{diagnose, PlaybookStatus, Severity};
+use crate::core::fsx::{confined_write_target, write_file_atomic};
 use crate::core::json::Value;
 use crate::core::paths::gate_paths;
 use crate::core::playbook_manifest::{read_manifest, record_entry};
@@ -212,7 +213,10 @@ fn apply_playbooks(
 }
 
 fn write_and_record(root: &Path, dir: &Path, file: &str, content: &str) -> Result<(), UserError> {
-    fs::write(dir.join(file), content).map_err(|e| UserError::new(e.to_string()))?;
+    let dest = dir.join(file);
+    let rel = dest.strip_prefix(root).unwrap_or(&dest);
+    let confined = confined_write_target(root, rel).map_err(|e| UserError::new(e.to_string()))?;
+    write_file_atomic(&confined, content).map_err(|e| UserError::new(e.to_string()))?;
     record_entry(root, file, content).map_err(|e| UserError::new(e.to_string()))
 }
 

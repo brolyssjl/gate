@@ -40,3 +40,14 @@ never as something it (or a reading agent) should trust:
 - **Gate's own behavior never depends on free text.** Artifacts drive gates
   only through the schemas Gate validates (frontmatter fields, hashes,
   exit codes); no prose in any artifact changes what the CLI does.
+
+Writes never follow symlinks out of the project. Every write under the
+project root - plan snapshots, adapter targets like `CLAUDE.md`, config and
+playbook files, the review packet - is confined to that root before it
+happens: an absolute or `..`-bearing path is rejected, a symlinked ancestor
+directory or a symlinked target is refused (`fsx::confined_write_target`),
+and the atomic-write primitive itself (`fsx::write_file_atomic`) creates its
+temp file with a unique name and `O_EXCL` so a pre-staged `<path>.tmp`
+symlink is never opened, let alone written through. A committed symlink can
+no longer redirect a gate-initiated write to an attacker-chosen destination
+outside the repo.

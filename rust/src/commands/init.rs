@@ -17,6 +17,7 @@ use crate::cli::args::{parse_args, ParsedArgs};
 use crate::cli::output::{emit, UserError};
 use crate::commands::adapt::{apply_adapter, AdaptResult};
 use crate::commands::infer_stack::{infer_commands, infer_scope_ignore};
+use crate::core::fsx::{confined_write_target, write_file_atomic};
 use crate::core::gitignore_state::record_gitignore_state;
 use crate::core::json::{stringify_compact, Value};
 use crate::core::paths::gate_paths;
@@ -62,7 +63,10 @@ fn execute(root: &Path, args: &ParsedArgs) -> Result<(), UserError> {
     for (file, content) in current_bundled_playbooks() {
         let dest = paths.playbooks.join(&file);
         if !dest.exists() {
-            fs::write(&dest, &content).map_err(|e| UserError::new(e.to_string()))?;
+            let rel = dest.strip_prefix(root).unwrap_or(&dest);
+            let confined =
+                confined_write_target(root, rel).map_err(|e| UserError::new(e.to_string()))?;
+            write_file_atomic(&confined, &content).map_err(|e| UserError::new(e.to_string()))?;
             record_entry(root, &file, &content).map_err(|e| UserError::new(e.to_string()))?;
         }
     }
@@ -75,7 +79,10 @@ fn execute(root: &Path, args: &ParsedArgs) -> Result<(), UserError> {
     // but never rewrites an existing config.yml - only a config that doesn't
     // exist yet gets written, avoiding clobbering hand edits.
     if !paths.config.exists() {
-        fs::write(&paths.config, build_config(root, det))
+        let rel = paths.config.strip_prefix(root).unwrap_or(&paths.config);
+        let confined =
+            confined_write_target(root, rel).map_err(|e| UserError::new(e.to_string()))?;
+        write_file_atomic(&confined, &build_config(root, det))
             .map_err(|e| UserError::new(e.to_string()))?;
     }
 
@@ -194,7 +201,9 @@ fn ensure_gitignore(root: &Path) -> Result<bool, UserError> {
         block_lines.join("\n")
     );
     let content = format!("{prefix}{block}");
-    fs::write(&path, &content).map_err(|e| UserError::new(e.to_string()))?;
+    let rel = path.strip_prefix(root).unwrap_or(&path);
+    let confined = confined_write_target(root, rel).map_err(|e| UserError::new(e.to_string()))?;
+    write_file_atomic(&confined, &content).map_err(|e| UserError::new(e.to_string()))?;
     // Record exactly what was written so the scope check can tell this write
     // apart from any later edit (review finding: a blanket .gitignore
     // exemption is a scope-check bypass) - see core/gitignore_state.rs.

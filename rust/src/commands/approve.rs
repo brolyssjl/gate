@@ -9,20 +9,27 @@ use crate::cli::args::{parse_args, ParsedArgs};
 use crate::cli::context::require_active_run;
 use crate::cli::output::{emit, UserError};
 use crate::core::config::load_config;
+use crate::core::fsx::{confined_write_target, write_file_atomic};
 use crate::core::identity;
 use crate::core::json::Value;
 use crate::core::paths::run_paths;
 use crate::core::run::{now_iso, write_run, Approval, Run};
 use crate::core::state_machine::{next_phase, Phase};
 
+/// Report finding 3(a): this used to be a plain `fs::write` of the plan's
+/// content (attacker-authored) to `plan.approved.md` - a committed symlink
+/// there landed that content anywhere on disk. Route it through the same
+/// containment + atomic-write path as every other write under `root`.
 fn snapshot_approved_plan(
     root: &std::path::Path,
     run_id: &str,
     plan_path: &std::path::Path,
 ) -> Result<(), UserError> {
     let content = fs::read_to_string(plan_path).map_err(|e| UserError::new(e.to_string()))?;
-    fs::write(run_paths(root, run_id).plan_approved, content)
-        .map_err(|e| UserError::new(e.to_string()))
+    let plan_approved = run_paths(root, run_id).plan_approved;
+    let rel = plan_approved.strip_prefix(root).unwrap_or(&plan_approved);
+    let target = confined_write_target(root, rel).map_err(|e| UserError::new(e.to_string()))?;
+    write_file_atomic(&target, &content).map_err(|e| UserError::new(e.to_string()))
 }
 
 fn approval_to_data(a: &Approval) -> Value {

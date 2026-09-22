@@ -20,6 +20,7 @@ use crate::cli::output::{emit, UserError};
 use crate::commands::report::{build_report_data, parse_iso_millis_or, report_data_to_json};
 use crate::core::config::load_config;
 use crate::core::current::list_active_branches;
+use crate::core::fsx::{confined_write_target, write_file_atomic};
 use crate::core::json::{self, Value};
 use crate::core::paths::{archive_path, gate_paths, run_paths};
 use crate::core::run::{read_run, RunStatus};
@@ -194,7 +195,11 @@ pub fn run(argv: Vec<String>) -> Result<(), UserError> {
         let run = read_run(&root, &c.id)?;
         let data = build_report_data(&root, &run);
         let text = json::stringify_pretty(&report_data_to_json(&data)) + "\n";
-        fs::write(archive_path(&root, &c.id), text).map_err(|e| UserError::new(e.to_string()))?;
+        let dest = archive_path(&root, &c.id);
+        let rel = dest.strip_prefix(&root).unwrap_or(&dest);
+        let confined =
+            confined_write_target(&root, rel).map_err(|e| UserError::new(e.to_string()))?;
+        write_file_atomic(&confined, &text).map_err(|e| UserError::new(e.to_string()))?;
         let _ = fs::remove_dir_all(run_paths(&root, &c.id).dir);
         pruned.push(c.id.clone());
     }

@@ -201,7 +201,10 @@ fn ensure_packet(
         String::new(),
     ]);
     let packet = packet_lines.join("\n");
-    write_file_atomic(&paths.review_packet, &packet).map_err(|e| UserError::new(e.to_string()))?;
+    // Report finding 10: the packet can carry the full repo diff, so write
+    // it 0o600 rather than the ambient umask.
+    crate::core::fsx::write_file_atomic_mode(&paths.review_packet, &packet, Some(0o600))
+        .map_err(|e| UserError::new(e.to_string()))?;
 
     // Requesting a packet is not a sign-off (that happens at reviewer:
     // in review.md), so no require_if_configured here - just the #29

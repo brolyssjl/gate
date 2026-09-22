@@ -1,7 +1,6 @@
 //! Port of `src/commands/start.ts`: `gate start "<title>"` - create a run,
 //! enter PLAN, print the plan playbook.
 
-use std::fs;
 use std::path::Path;
 
 use crate::artifacts::plan::hash_plan_file;
@@ -13,6 +12,7 @@ use crate::core::config::load_config;
 use crate::core::current::{
     resolve_branch_key, with_current_lock, BranchKeyResolution, NO_GIT_BRANCH_KEY,
 };
+use crate::core::fsx::{confined_write_target, write_file_atomic};
 use crate::core::git::head_sha;
 use crate::core::identity;
 use crate::core::json::Value;
@@ -26,6 +26,15 @@ use crate::integrations::{detect, plan_hints};
 const PLAN_TEMPLATE: &str = "---\ngoal:\nspec:\nfiles:\n  -\nout_of_scope: []\ncriteria:\n  - id: c1\n    text:\n    verify: \"test: \"\nrisks: []\nacknowledgments: []\n---\n\n# Plan: %TITLE%\n\n";
 
 const DEBUG_TEMPLATE: &str = "---\ntriggering_test:\nreproduced: false\ncycles:\n  - hypothesis:\n    prediction:\n    experiment:\n    observation:\n    conclusion:\n    status: in-progress\n---\n\n# Debug log: %TITLE%\n\n";
+
+/// Write one of the run-scaffold templates (plan/debug-log/retro) under
+/// `root`, refusing to follow a symlink out of the project (report finding
+/// 3).
+fn write_run_template(root: &Path, target: &Path, content: &str) -> Result<(), UserError> {
+    let rel = target.strip_prefix(root).unwrap_or(target);
+    let confined = confined_write_target(root, rel).map_err(|e| UserError::new(e.to_string()))?;
+    write_file_atomic(&confined, content).map_err(|e| UserError::new(e.to_string()))
+}
 
 /// `Object.keys(PROFILES)` in declaration order (`core::state_machine`
 /// doesn't expose this list itself - see its module docs).
@@ -273,17 +282,22 @@ fn execute(root: &Path, args: &ParsedArgs) -> Result<(), UserError> {
             let id = run.id.clone();
             let paths = run_paths(root, &id);
             if !paths.plan.exists() {
-                fs::write(&paths.plan, PLAN_TEMPLATE.replace("%TITLE%", &title))
-                    .map_err(|e| UserError::new(e.to_string()))?;
+                write_run_template(root, &paths.plan, &PLAN_TEMPLATE.replace("%TITLE%", &title))?;
             }
             let sequence = phase_sequence(&run.profile);
             if sequence.contains(&Phase::Debug) && !paths.debug_log.exists() {
-                fs::write(&paths.debug_log, DEBUG_TEMPLATE.replace("%TITLE%", &title))
-                    .map_err(|e| UserError::new(e.to_string()))?;
+                write_run_template(
+                    root,
+                    &paths.debug_log,
+                    &DEBUG_TEMPLATE.replace("%TITLE%", &title),
+                )?;
             }
             if sequence.contains(&Phase::Retro) && !paths.retro.exists() {
-                fs::write(&paths.retro, RETRO_TEMPLATE.replace("%TITLE%", &title))
-                    .map_err(|e| UserError::new(e.to_string()))?;
+                write_run_template(
+                    root,
+                    &paths.retro,
+                    &RETRO_TEMPLATE.replace("%TITLE%", &title),
+                )?;
             }
 
             let hints = plan_hints(detect(root));

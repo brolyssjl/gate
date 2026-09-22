@@ -209,11 +209,16 @@ carries over unchanged._
       repo (the identity-fallback change was itself developed through the
       harness). Evidence: the host repo's PR + the 2026-08-29 soak
       ledger (both in the private host project).
-- [ ] Decide going public / recruit at least one outside pilot user - owner
-      decision: the docs site below can't be useful while its audience
-      can't reach a private repo (audit RM-03)
+- [x] Decide going public (owner decision, audit RM-03): both repos flipped
+      public 2026-09-15 after a clean pre-flight sweep (doctor clean, no
+      host-project names or secret patterns in the current trees, release
+      assets + LICENSE/README verified). Accepted caveat: host-project
+      names remain in old git history and closed PRs
+- [ ] Recruit at least one outside pilot user (the other half of RM-03;
+      unblocked by going public)
 - [ ] Docs site + case study (with agnosgram, the 2026-07/08 soak on the
-      two private host projects used for dogfooding)
+      two private host projects used for dogfooding; unblocked by going
+      public - its audience can reach the repo now)
 
 ## Fixes & improvements
 

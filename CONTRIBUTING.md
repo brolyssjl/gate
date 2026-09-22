@@ -45,7 +45,8 @@ Releases are cut from `main` with a semver tag and a GitHub release.
 
 npm distribution is permanently out per the Milestone 6 owner decision
 (see ROADMAP.md). Releases are tags + GitHub releases with cargo-built
-binaries; no npm publishing.
+binaries; no npm publishing. See [SECURITY.md](SECURITY.md) for how a
+downloaded release is verified end to end.
 
 ### Release checksums (SEC-02/03)
 
@@ -68,6 +69,25 @@ generated for it) instead of a real download:
 ```bash
 source install.sh
 verify_checksum /path/to/downloaded-file gate-linux-x64 /path/to/SHA256SUMS
+```
+
+### Release provenance
+
+`release.yml` also attests build provenance for every release asset with
+`actions/attest-build-provenance` (needs the `id-token: write` and
+`attestations: write` workflow permissions - a signed SLSA statement tying
+the binary to the exact workflow run that built it, on top of the checksum
+above). `install.sh` checks it with `gh attestation verify` after the
+checksum passes, when `gh` is on PATH; missing `gh`, or a release that
+predates attestations, is a note, not a failure - only a verification
+mismatch aborts the install. Source the script the same way to exercise
+`verify_provenance` against a fake `gh` on `PATH` (a shell function or a
+stub script that echoes canned output and exits 0/1) instead of a real
+release:
+
+```bash
+source install.sh
+verify_provenance /path/to/downloaded-file gate-linux-x64
 ```
 
 `bash -n install.sh` is the syntax-only check; the CI/release paths

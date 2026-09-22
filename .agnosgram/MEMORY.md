@@ -18,7 +18,7 @@ A fact belongs in exactly one place; the other side links to it.
 ## Freshness
 | File | Last verified | Budget |
 |------|---------------|--------|
-| state/status.md | 2026-09-05 | 400 tokens |
+| state/status.md | 2026-09-22 | 400 tokens |
 | context/architecture.md | 2026-09-05 | 1500 tokens |
 | context/stack.md | 2026-09-05 | 800 tokens |
 | context/domain.md | 2026-09-05 | 1000 tokens |

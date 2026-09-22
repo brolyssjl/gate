@@ -42,8 +42,12 @@ PATH - no Node required:
 curl -fsSL https://raw.githubusercontent.com/brolyssjl/gate/main/install.sh | bash
 ```
 
-`GATE_VERSION=X.Y.Z ./install.sh` pins an exact version instead of installing
-the latest release.
+To pin an exact version instead of the latest release, set `GATE_VERSION`
+for the `bash` side of the pipe:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/brolyssjl/gate/main/install.sh | GATE_VERSION=1.6.1 bash
+```
 
 Building from source needs only a stable Rust toolchain:
 

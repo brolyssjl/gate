@@ -34,6 +34,15 @@ targets:
     commands: { test: "vitest run" }
 ```
 
+A target's `playbooks:` path (`test.api.md` above) must be **relative and
+confined to the project root**: no absolute path, no `..` component, and it
+must canonicalize to somewhere under the root and name a regular file (not a
+directory, FIFO, or device). `gate` refuses a config with a path that fails
+this - naming the offending `targets.<name>.playbooks.<phase>` key and path -
+before it will run any command at all; the same check runs again wherever the
+file is actually read, as a backstop. A path that doesn't exist yet is not a
+violation (nothing to confine), only the escape itself is.
+
 Composition rule: **profiles choose which phases run; targets choose how each
 phase runs.** IMPLEMENT/TEST/DEBUG resolve affected targets from the real
 changed files and run each target's own commands, producing bracketed check
@@ -41,7 +50,11 @@ names (`implement.build[api]`, `test.command[web]`) so a change touching both
 stacks must pass both. `gate playbook` appends a `## Target overlay: <name>`
 section per affected target that declares one - once `gate trust` covers it
 (see [Integrity: command trust (TOFU)](integrity.md#command-trust-tofu)); an
-untrusted overlay is refused, not appended. With no `targets:` configured, or
+untrusted overlay is refused, not appended. Both the base playbook and every
+overlay are scanned for injection phrasing (the same warn-and-mark check
+`gate review`'s plan/diff already get) - a hit is flagged inline, never
+dropped or rewritten, in both `gate playbook`'s output and the review
+packet's rubric section. With no `targets:` configured, or
 none affected by the change, behavior and check names are byte-identical to a
 single-stack repo - targets are purely additive. `gate start --target <a,b>`
 overrides resolution for the whole run.

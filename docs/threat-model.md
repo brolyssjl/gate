@@ -29,14 +29,29 @@ never as something it (or a reading agent) should trust:
   fingerprint-bound, and hiding code from a reviewer would be worse than
   any injection. A directive-shaped line in reviewed content is a finding,
   not an instruction.
+- **Playbook overrides/overlays get the same scan.** `.gate/playbooks/`
+  overrides and each target's `playbooks:` overlay are what gate *tells the
+  agent* to do, the same untrusted-input class as the plan and diff - a hit
+  is flagged inline, in both `gate playbook`'s output and the review
+  packet's rubric section, never dropped or rewritten.
+- **Playbook overlay paths are confined to the project root.** A target's
+  `playbooks:` path must be relative, contain no `..` component, and
+  canonicalize to somewhere under the root naming a regular file - checked
+  both when `config.yml` is loaded and again wherever the file is actually
+  read. Without this, an absolute or `../`-escaping path would read an
+  arbitrary file on the machine (credentials, SSH keys, anything the gate
+  process can see) into the agent's context, or hang the process if pointed
+  at a FIFO.
 - **Playbook provenance is visible where it's read.** A `.gate/playbooks/`
-  copy that diverged from the bundled content its `playbooks.lock` entry
-  recorded gets an advisory note prepended wherever the playbook is emitted
-  (`gate playbook`, phase entry, the review rubric) - customized playbooks
-  are a supported feature, but an agent should never follow instructions
-  unique to an edited copy without knowing it was edited. Untrusted
-  playbook overrides (commands block not trusted) are refused outright, as
-  before.
+  copy with no entry in `playbooks.lock` at all - never materialized by
+  `gate init`/`gate update`, so it could be entirely hand-authored - gets a
+  loud **UNVERIFIED PLAYBOOK** note. A copy that diverged from the bundled
+  content its lock entry *does* record gets a quieter advisory note;
+  customized playbooks are a supported feature, but an agent should never
+  follow instructions unique to an edited (or unverified) copy without
+  knowing it. Both notes surface wherever the playbook is emitted (`gate
+  playbook`, phase entry, the review rubric). Untrusted playbook overrides
+  (commands block not trusted) are refused outright, as before.
 - **Gate's own behavior never depends on free text.** Artifacts drive gates
   only through the schemas Gate validates (frontmatter fields, hashes,
   exit codes); no prose in any artifact changes what the CLI does.

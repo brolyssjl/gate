@@ -154,7 +154,26 @@ resolution falls back to the bundled or embedded default with a banner
 naming what was refused and pointing at `gate trust`; nothing is a hard
 error. `gate trust` (and `--check`) list which playbook paths are covered
 alongside the commands hash, the same way it's always reported what it's
-approving.
+approving. A target's `playbooks:` path is additionally confined to the
+project root - see [Runs and concurrency: targets](runs-and-concurrency.md#targets-multi-stack-repos)
+- independent of trust coverage: an escaping path is refused at config-load
+time, before trust is even consulted.
+
+Trust covering an override is not the same as gate having *installed* it.
+`gate playbook` also reports each `.gate/playbooks/<phase>.md` copy's
+provenance against `.gate/playbooks.lock` (the record `gate init`/`gate
+update` write when they materialize a copy):
+
+- no entry at all - the copy was never materialized by gate, so it could be
+  entirely hand-authored - prints a loud **UNVERIFIED PLAYBOOK** note saying
+  so, even though a trusted override still takes effect.
+- an entry whose hash no longer matches the copy's content - a tracked copy
+  a human edited after materializing it - prints a quieter advisory note;
+  customized playbooks are a supported feature.
+- an entry whose hash matches - pristine - no note.
+
+Both notes point at `gate doctor` to compare the copy against the bundled
+default before trusting instructions unique to it.
 
 Approval is deliberately separate from writing the plan: `gate approve` records
 who signed off and the plan's content hash in `run.json`, so the author can't

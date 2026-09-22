@@ -1,6 +1,17 @@
+<div align="center">
+  <img src="docs/assets/gate-mascot.svg" width="150" alt="Gate's mascot: a traffic-officer owl with aviators and a stop paddle">
+
 # Gate
 
-An **agent-agnostic quality harness**. Gate turns the development flow -
+**An agent-agnostic quality harness - the umpire for any AI agent's dev loop.**
+
+[![Release](https://img.shields.io/github/v/release/brolyssjl/gate)](https://github.com/brolyssjl/gate/releases)
+[![CI](https://github.com/brolyssjl/gate/actions/workflows/ci.yml/badge.svg)](https://github.com/brolyssjl/gate/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/github/license/brolyssjl/gate)](LICENSE)
+
+</div>
+
+Gate turns the development flow -
 `PLAN → IMPLEMENT → TEST → REVIEW → RETRO → DONE` (a bugfix run swaps
 IMPLEMENT for DEBUG) - into an enforced state machine with deterministic
 quality gates. Any AI agent (or human) does the thinking; Gate holds the
@@ -21,6 +32,14 @@ retry loop.
 Which phases a run walks is chosen by its **profile** (`feature`, `bugfix`,
 `refactor`, `docs`); the phase *catalog* and profiles are pure data, so adding a
 phase or profile touches no transition logic.
+
+## Contents
+
+**Using it** - [Install](#install) · [The agent loop](#the-agent-loop-is-two-commands) · [Walkthrough](#walkthrough) · [The gates](#the-gates) · [Profiles](#profiles) · [Concurrency](#concurrency-branch-keyed-runs) · [Review & report](#review--report) · [Retro & the Agnosgram journal](#retro-and-the-agnosgram-journal)
+
+**Fitting your repo** - [SDD composition](#sdd-composition) · [Targets](#targets-multi-stack-repos) · [Scope noise](#scope-noise-scope_ignore) · [Agent adapters](#agent-adapters) · [doctor & update](#gate-doctor-and-gate-update) · [Pruning runs](#pruning-runs) · [gate guard](#gate-guard-opt-in-pre-commit-hook) · [Configuration](#configuration) · [Output formats](#output-formats)
+
+**Guarantees** - [Evidence integrity](#evidence-integrity) · [Loop enforcement](#loop-enforcement-failure-streak-cap) · [Identity fallback](#identity-fallback) · [Threat model](#threat-model) · [Command trust (TOFU)](#command-trust-tofu)
 
 ## Install
 
@@ -705,8 +724,9 @@ TOON is worse on small objects.
 ## Deliberately not yet
 
 A Go port was once the startup-latency escape hatch; superseded by the
-Milestone 6 Rust port (landed). What remains: 1.0.0 rollout gate (soak
-period, docs site). See `ROADMAP.md` for the full plan.
+Milestone 6 Rust port (landed). The 1.0.0 rollout gate (soak period) has
+since shipped too. What remains: a docs site. See `ROADMAP.md` for the
+full plan.
 
 ## Development
 

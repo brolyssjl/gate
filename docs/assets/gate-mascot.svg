@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Gate's mascot: a traffic-officer owl with aviators and a stop paddle">
+  <rect x="0" y="0" width="256" height="256" rx="56" fill="#f4ecdd"/>
+  <defs>
+    <linearGradient id="g-body" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#48597e"/><stop offset="1" stop-color="#2a3854"/></linearGradient>
+    <linearGradient id="g-wing" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3b4c71"/><stop offset="1" stop-color="#243050"/></linearGradient>
+    <linearGradient id="g-belly" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fbf5e6"/><stop offset="1" stop-color="#e9dab8"/></linearGradient>
+    <linearGradient id="g-cap" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#31405f"/><stop offset="1" stop-color="#1a2340"/></linearGradient>
+    <linearGradient id="g-lens" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#414b63"/><stop offset="1" stop-color="#10141f"/></linearGradient>
+  </defs>
+  <g transform="translate(8 8) scale(2)">
+    <ellipse cx="58" cy="109" rx="32" ry="5.5" fill="#1c2438" opacity="0.12"/>
+    <path d="M38 96 L33 107 L45 100 Z" fill="#243050"/>
+    <path d="M45 99 L43 109 L53 102 Z" fill="#2a3854"/>
+    <path d="M58 20 C80 20, 90 44, 88 68 C86 92, 74 105, 58 105 C42 105, 30 92, 28 68 C26 44, 36 20, 58 20 Z" fill="url(#g-body)"/>
+    <path d="M30 56 C21 65, 21 85, 30 95 C37 91, 39 71, 35 58 Z" fill="url(#g-wing)"/>
+    <ellipse cx="58" cy="77" rx="19" ry="21" fill="url(#g-belly)"/>
+    <g fill="none" stroke="#d5c193" stroke-width="1.2" opacity="0.9">
+      <path d="M47 88 q4 4.5 7.5 0 q4 4.5 7.5 0 q4 4.5 7.5 0"/>
+      <path d="M45 95 q4 4.5 7.5 0 q4 4.5 7.5 0 q4 4.5 7.5 0 q3 3.6 6 0"/>
+    </g>
+    <path d="M39 65 Q58 71 77 65 L77 92 Q58 101 39 92 Z" fill="#d7e142"/>
+    <path d="M39 72 Q58 78 77 72 L77 77.5 Q58 83.5 39 77.5 Z" fill="#c9ced6"/>
+    <path d="M39 83 Q58 89 77 83 L77 88.5 Q58 94.5 39 88.5 Z" fill="#c9ced6"/>
+    <path d="M39 65 Q58 71 77 65" stroke="#b8c22e" stroke-width="1.4" fill="none"/>
+    <path d="M47 59 Q58 65 69 59" stroke="#12182e" stroke-width="1.2" fill="none"/>
+    <rect x="59" y="62" width="7" height="4.6" rx="2" fill="#c9ced6" stroke="#5d6470" stroke-width="0.8"/>
+    <circle cx="64" cy="66.8" r="2.6" fill="#c9ced6" stroke="#5d6470" stroke-width="0.8"/>
+    <path d="M38.5 38 q8.5 -3 17 0 q-0.8 12 -8.5 12 q-7.7 0 -8.5 -12 Z" fill="url(#g-lens)" stroke="#e2a13d" stroke-width="1.7"/>
+    <path d="M62.5 38 q8.5 -3 17 0 q-0.8 12 -8.5 12 q-7.7 0 -8.5 -12 Z" fill="url(#g-lens)" stroke="#e2a13d" stroke-width="1.7"/>
+    <path d="M55.5 39.5 Q59 36.5 62.5 39.5" stroke="#e2a13d" stroke-width="1.7" fill="none"/>
+    <path d="M38.5 38.5 L34 36.5" stroke="#e2a13d" stroke-width="1.6" stroke-linecap="round"/>
+    <path d="M79.5 38.5 L84 36.5" stroke="#e2a13d" stroke-width="1.6" stroke-linecap="round"/>
+    <path d="M41 40 L48 46.5" stroke="#ffffff" stroke-width="2" opacity="0.28" stroke-linecap="round"/>
+    <path d="M65 40 L72 46.5" stroke="#ffffff" stroke-width="2" opacity="0.28" stroke-linecap="round"/>
+    <path d="M54 51 Q58 49 62 51 Q60.5 59 58 59 Q55.5 59 54 51 Z" fill="#d99a34"/>
+    <path d="M55.5 51.5 Q57 50.8 58.5 51.3" stroke="#f0c173" stroke-width="1" fill="none" stroke-linecap="round"/>
+    <g transform="rotate(-6 59 16)">
+      <path d="M39 18 Q58 0 79 18 Z" fill="url(#g-cap)"/>
+      <rect x="38" y="16.5" width="42" height="6.5" fill="#12182e"/>
+      <g fill="#f4f0e6">
+        <rect x="41" y="18" width="4" height="3.6"/>
+        <rect x="49" y="18" width="4" height="3.6"/>
+        <rect x="57" y="18" width="4" height="3.6"/>
+        <rect x="65" y="18" width="4" height="3.6"/>
+        <rect x="73" y="18" width="4" height="3.6"/>
+      </g>
+      <circle cx="59" cy="10.5" r="3.2" fill="#e2a13d"/>
+      <circle cx="59" cy="10.5" r="1.2" fill="#b3761f"/>
+      <path d="M42 23 Q59 30 76 23 L76 26 Q59 33.5 42 26 Z" fill="#0e1426"/>
+    </g>
+    <path d="M86 56 C97 50, 103 43, 105 34 C99 34, 89 41, 84 50 Z" fill="url(#g-wing)"/>
+    <line x1="103" y1="22" x2="103" y2="101" stroke="#8a8f9c" stroke-width="2.4" stroke-linecap="round"/>
+    <ellipse cx="103" cy="102" rx="5" ry="1.6" fill="#1c2438" opacity="0.15"/>
+    <path d="M103 5.5 L109 8 L111.5 14 L109 20 L103 22.5 L97 20 L94.5 14 L97 8 Z" fill="#d64541" stroke="#ffffff" stroke-width="2.2" stroke-linejoin="round"/>
+    <path d="M99 14 h8" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round"/>
+    <circle cx="103" cy="40" r="4.6" fill="#ffffff" stroke="#d5d9e0" stroke-width="0.9"/>
+    <ellipse cx="50" cy="104" rx="5" ry="2.6" fill="#d99a34"/>
+    <ellipse cx="64" cy="104" rx="5" ry="2.6" fill="#d99a34"/>
+  </g>
+</svg>

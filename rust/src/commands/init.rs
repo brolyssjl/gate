@@ -109,8 +109,7 @@ fn execute(root: &Path, args: &ParsedArgs) -> Result<(), UserError> {
     });
     if gitignore_updated {
         lines.push(
-            "  gitignore: added .gate/ run-state entries (config.yml and trust.json stay tracked)"
-                .to_string(),
+            "  gitignore: added .gate/ run-state entries (config.yml stays tracked)".to_string(),
         );
     }
     lines.push(if adapt_results.is_empty() {
@@ -160,12 +159,16 @@ fn execute(root: &Path, args: &ParsedArgs) -> Result<(), UserError> {
 }
 
 /// `.gate/runs/`, the legacy single-run pointer, `current.json`, and
-/// `archive/` are ephemeral run state - never `config.yml` or `trust.json`,
-/// which stay tracked so CI inherits the command pin (see README). Idempotent
-/// and non-destructive: only appends entries genuinely missing from an
-/// existing `.gitignore`, on both a fresh `init` and every `--refresh`, so
-/// upgrading an older `.gate/` project actually gets the entries the docs
-/// have always claimed instead of leaving it prose-only.
+/// `archive/` are ephemeral run state - never `config.yml`, which stays
+/// tracked so CI inherits the command pin (see README). Trust (`gate
+/// trust`) is not repo state at all any more (security audit 2026-09-22,
+/// finding 1): it lives in a machine-local store outside the tree
+/// (`core::trust`), so there is no `trust.json` for this function to
+/// exempt or for `gate init` to create. Idempotent and non-destructive:
+/// only appends entries genuinely missing from an existing `.gitignore`, on
+/// both a fresh `init` and every `--refresh`, so upgrading an older
+/// `.gate/` project actually gets the entries the docs have always claimed
+/// instead of leaving it prose-only.
 const GITIGNORE_MARKER: &str =
     "# Gate's own ephemeral run folders (config + playbooks stay tracked)";
 const GITIGNORE_ENTRIES: [&str; 4] = [

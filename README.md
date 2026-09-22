@@ -67,7 +67,7 @@ cargo build --release --manifest-path rust/Cargo.toml
 
 ```bash
 gate init                     # scaffold .gate/, infer commands, install CLAUDE.md/AGENTS.md pointers
-gate trust                    # review .gate/config.yml, then approve its commands (TOFU)
+gate trust                    # review .gate/config.yml, then approve its commands for this machine (TOFU)
 gate start "add password reset"    # optional: --profile feature|bugfix|refactor|docs
 #   → enters PLAN, scaffolds .gate/runs/<id>/plan.md, prints the plan playbook
 # …fill in plan.md: goal, files, acceptance criteria (each with a verify)…

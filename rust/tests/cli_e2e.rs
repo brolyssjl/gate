@@ -4,7 +4,7 @@
 
 mod common;
 
-use common::{gate, gate_opts, git_out, make_repo, write_file, GateOpts};
+use common::{gate, gate_opts, git_out, make_repo, make_temp_dir, write_file, GateOpts};
 
 const PLAN: &str = "---\ngoal: Add greet\napproved: true\nfiles:\n  - greet.js\n  - test.js\ncriteria:\n  - id: c1\n    text: \"greets by name\"\n    verify: \"test: greets by name\"\n---\n# Plan\n";
 
@@ -556,42 +556,88 @@ fn untrusted_dot_gate_playbooks_override_is_refused_until_gate_trust_runs() {
 }
 
 /// A `gate trust --check` mismatch caused purely by gate's own trust-hash
-/// coverage growing (a `trust.json` written before playbooks joined the
-/// hash, replayed against a config whose commands never changed) reads as a
-/// coverage-expansion notice, not a tampering warning.
+/// coverage growing (a local trust record written before playbooks joined
+/// the hash, replayed against a config whose commands never changed) reads
+/// as a coverage-expansion notice, not a tampering warning. Uses its own
+/// dedicated `GATE_CONFIG_DIR` (rather than the suite's shared default) so
+/// the local trust store holds exactly one record to hand-edit.
 #[test]
 fn trust_check_distinguishes_coverage_expansion_from_a_real_change() {
     let repo = make_repo(&[]);
-    gate(&repo, &["init", "--no-adapt"]);
+    let config_dir = make_temp_dir("gate-config-coverage-expansion");
+    let env: [(&str, &str); 1] = [("GATE_CONFIG_DIR", config_dir.to_str().unwrap())];
+
+    gate_opts(
+        &repo,
+        &["init", "--no-adapt"],
+        GateOpts {
+            env: &env,
+            input: None,
+        },
+    );
 
     // Capture the coverage-version-1 (pre-SEC-01) hash: the commands block
     // as `gate init` scaffolded it, with no playbook overrides present -
     // `gate init` seeds `.gate/playbooks/*.md` by default, so they're
     // removed first to isolate the pre-playbook-coverage shape.
     std::fs::remove_dir_all(repo.join(".gate/playbooks")).unwrap();
-    let legacy_trusted = gate(&repo, &["trust", "--json"]).json();
+    let legacy_trusted = gate_opts(
+        &repo,
+        &["trust", "--json"],
+        GateOpts {
+            env: &env,
+            input: None,
+        },
+    )
+    .json();
     let legacy_hash = legacy_trusted.str("commandsHash").unwrap().to_string();
 
-    // Simulate a `trust.json` written before playbook coverage existed:
-    // same hash, coverage version 1.
-    write_file(
-        &repo,
-        ".gate/trust.json",
-        &format!("{{\n  \"commandsHash\": \"{legacy_hash}\",\n  \"trustedAt\": \"2026-01-01T00:00:00.000Z\",\n  \"trustedBy\": null,\n  \"coverageVersion\": 1\n}}\n"),
+    // Rewrite the local trust record `gate trust` just wrote (never
+    // `.gate/trust.json` in the repo - finding 1 means that file has no
+    // bearing on the decision any more) to simulate one written before
+    // playbook coverage existed: same hash, coverage version 1.
+    let trust_dir = config_dir.join("trust");
+    let records: Vec<_> = std::fs::read_dir(&trust_dir)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .collect();
+    assert_eq!(
+        records.len(),
+        1,
+        "expected exactly one local trust record, got {records:?}"
     );
+    std::fs::write(
+        &records[0],
+        format!("{{\n  \"commandsHash\": \"{legacy_hash}\",\n  \"trustedAt\": \"2026-01-01T00:00:00.000Z\",\n  \"trustedBy\": null,\n  \"coverageVersion\": 1\n}}\n"),
+    )
+    .unwrap();
 
     // Widen coverage the way SEC-01 did, without re-trusting: bring back a
     // `.gate/playbooks/*.md` override. The commands block itself is
     // untouched.
     write_file(&repo, ".gate/playbooks/plan.md", "# custom plan\n");
 
-    let check = gate(&repo, &["trust", "--check", "--json"]);
+    let check = gate_opts(
+        &repo,
+        &["trust", "--check", "--json"],
+        GateOpts {
+            env: &env,
+            input: None,
+        },
+    );
     assert_eq!(check.code, 1);
     let data = check.json();
     assert_eq!(data.get("trusted").unwrap().as_bool(), Some(false));
     assert_eq!(data.str("mismatchReason"), Some("coverageExpanded"));
 
-    let check_human = gate(&repo, &["trust", "--check"]);
+    let check_human = gate_opts(
+        &repo,
+        &["trust", "--check"],
+        GateOpts {
+            env: &env,
+            input: None,
+        },
+    );
     assert_eq!(check_human.code, 1);
     assert!(!check_human.stdout.contains("NOT trusted"));
     assert!(check_human.stdout.contains("coverage expanded"));
@@ -606,12 +652,26 @@ fn trust_check_distinguishes_coverage_expansion_from_a_real_change() {
         ".gate/config.yml",
         "commands:\n  test: echo tampered\n",
     );
-    let tampered_check = gate(&repo, &["trust", "--check", "--json"]);
+    let tampered_check = gate_opts(
+        &repo,
+        &["trust", "--check", "--json"],
+        GateOpts {
+            env: &env,
+            input: None,
+        },
+    );
     assert_eq!(tampered_check.code, 1);
     let tampered_data = tampered_check.json();
     assert_eq!(tampered_data.str("mismatchReason"), Some("changed"));
 
-    let tampered_human = gate(&repo, &["trust", "--check"]);
+    let tampered_human = gate_opts(
+        &repo,
+        &["trust", "--check"],
+        GateOpts {
+            env: &env,
+            input: None,
+        },
+    );
     assert_eq!(tampered_human.code, 1);
     assert!(tampered_human.stdout.contains("NOT trusted"));
     assert!(!tampered_human.stdout.contains("coverage expanded"));

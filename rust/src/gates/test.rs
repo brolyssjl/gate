@@ -72,7 +72,7 @@ pub fn test_gate(ctx: &GateContext) -> GateResult {
     if !is_commands_trusted(&ctx.root) {
         checks.push(fail_untrusted(
             "test.command",
-            "test command not trusted - review .gate/config.yml and run `gate trust`",
+            "test command not trusted - trust is per machine, per checkout; review .gate/config.yml and run `gate trust`",
         ));
         return result(Phase::Test, checks);
     }

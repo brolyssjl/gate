@@ -19,6 +19,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::OnceLock;
 
 /// Resolve how to invoke the `gate` binary under test: `$GATE_BIN` when set
 /// (conformance mode against any binary implementing the CLI contract these
@@ -54,6 +55,25 @@ pub struct GateOpts<'a> {
     pub input: Option<&'a str>,
 }
 
+/// A `GATE_CONFIG_DIR` shared by every spawned `gate` process in this test
+/// binary, created once and reused for the life of the process - never the
+/// real `$HOME/.config/gate` (security audit 2026-09-22, finding 1: trust
+/// is machine-local now, and this suite must not read or write the
+/// machine's real trust store). Trust records are keyed by a hash of the
+/// canonicalized project root (`core::trust`), so distinct repos under this
+/// one shared directory never collide; a test that needs its own isolated
+/// config dir (to assert on the store's exact contents, or to simulate two
+/// different machines) passes `GATE_CONFIG_DIR` explicitly via `GateOpts`,
+/// which wins over this default.
+fn default_gate_config_dir() -> &'static Path {
+    static DIR: OnceLock<PathBuf> = OnceLock::new();
+    DIR.get_or_init(|| {
+        let dir = unique_dir("gate-config-home");
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    })
+}
+
 /// Spawn the `gate` CLI under test and capture its result. See `gate_bin`
 /// re: `$GATE_BIN`. Port of `helpers.ts`'s `gate()`.
 pub fn gate(cwd: &Path, args: &[&str]) -> GateOutput {
@@ -66,6 +86,7 @@ pub fn gate_opts(cwd: &Path, args: &[&str], opts: GateOpts) -> GateOutput {
     let mut cmd = Command::new(gate_bin());
     cmd.args(args)
         .current_dir(cwd)
+        .env("GATE_CONFIG_DIR", default_gate_config_dir())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     for (k, v) in opts.env {
@@ -104,6 +125,7 @@ pub fn gate_spawn(cwd: &Path, args: &[&str]) -> Child {
     Command::new(gate_bin())
         .args(args)
         .current_dir(cwd)
+        .env("GATE_CONFIG_DIR", default_gate_config_dir())
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

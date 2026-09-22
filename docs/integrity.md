@@ -124,12 +124,24 @@ deliberately deferred - see ROADMAP.md's "Reviewer identity threading".
 
 Gate executes the commands in `config.yml` - the same trust class as npm
 scripts. Before any gate will run them, a human must review the config and run
-`gate trust`, which hashes the `commands:` block into `.gate/trust.json`. The
+`gate trust`, which hashes the `commands:` block and writes the record to a
+machine-local store, keyed by a hash of the checkout's canonicalized project
+root - `$GATE_CONFIG_DIR/trust/<hash>.json`, falling back to
+`$XDG_CONFIG_HOME/gate/trust/` and then `$HOME/.config/gate/trust/`. The
 IMPLEMENT and TEST gates **refuse to spawn a process** until the current hash
 matches; changing a command invalidates trust until you re-run `gate trust`.
-`.gate/trust.json` is committed, so CI inherits the pin and a command change +
-re-trust land in the same diff for review. `gate trust --check` reports status
-(exit 0/1) without writing.
+`gate trust --check` reports status (exit 0/1) without writing.
+
+Trust is a property of *this machine and this checkout*, never of the repo.
+Earlier versions stored the record at `.gate/trust.json`, tracked in the repo
+- that meant a cloned repo could ship its own trust decision: an attacker ran
+`gate trust` in their own copy, committed the resulting `trust.json` next to a
+hostile `commands:` block, and the victim's very first `gate check` on a fresh
+clone ran it, no local `gate trust` ever required (security audit 2026-09-22,
+finding 1). A `.gate/trust.json` left over in a repo now has no bearing on the
+decision at all - `gate doctor` flags one as a stale file to delete, and CI
+runners need their own `gate trust` (or a pre-seeded `GATE_CONFIG_DIR`) the
+same as any other machine; there is no repo-level pin to inherit any more.
 
 The same hash also covers **playbooks** - `.gate/playbooks/<phase>.md`
 overrides and each target's `playbooks:` overlay file (path *and* content,

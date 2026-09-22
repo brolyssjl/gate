@@ -129,9 +129,14 @@ verify_checksum() {
 #
 # Skipped (with a note, not a failure) when `gh` isn't installed, since it's
 # the only tool that can check this. Treated as a pass when the release
-# predates attestations (no attestations found - older releases have none).
-# Any other failure aborts the install and removes the temp files, same as a
-# checksum mismatch.
+# predates attestations - older releases have none, and gh (as of 2.96.0)
+# reports that two different ways depending on how it resolved the subject:
+# a plain "no attestations found", or (verified against the real
+# gate-linux-x64/agnosgram-darwin-arm64 v1.5.1 assets, which predate this
+# feature) an HTTP 404 from the attestations API, e.g.
+#   Error: HTTP 404: Not Found (https://api.github.com/repos/OWNER/REPO/attestations/sha256:...?per_page=30&predicate_type=...)
+# Any other failure (signature mismatch, wrong repo, a different HTTP error)
+# aborts the install and removes the temp files, same as a checksum mismatch.
 verify_provenance() {
   local file="$1" asset="$2"
 
@@ -147,7 +152,7 @@ verify_provenance() {
     return 0
   fi
 
-  if echo "$out" | grep -qi "no attestations found"; then
+  if echo "$out" | grep -Eqi 'no attestations found|HTTP 404.*attestations/'; then
     echo "Note: no build attestations found for ${asset} (older releases predate provenance) - continuing on checksum verification alone." >&2
     return 0
   fi

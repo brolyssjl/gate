@@ -108,7 +108,31 @@ pub struct RunPaths {
     pub retro: PathBuf,
 }
 
+/// Reduce a run id that failed [`validate_run_id`] to something that can be
+/// safely joined onto a directory without escaping it: strip everything but
+/// `[A-Za-z0-9_-]`, which by construction can contain no `/`, `\`, `..`, or
+/// absolute-path prefix. Used only as a defense-in-depth backstop inside
+/// [`run_paths`] itself - every legitimate caller validates the id *before*
+/// it gets here (gate report finding 4), so this only ever fires if one of
+/// them forgets, or a `run.json`'s own `id` field slips through somehow.
+fn defang_run_id(id: &str) -> String {
+    let sanitized: String = id
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+        .collect();
+    if sanitized.is_empty() {
+        "_invalid-run-id".to_string()
+    } else {
+        sanitized
+    }
+}
+
 pub fn run_paths(root: &Path, run_id: &str) -> RunPaths {
+    let run_id = if validate_run_id(run_id).is_ok() {
+        run_id.to_string()
+    } else {
+        defang_run_id(run_id)
+    };
     let dir = root.join(".gate").join("runs").join(run_id);
     RunPaths {
         run_json: dir.join("run.json"),

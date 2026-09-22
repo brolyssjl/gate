@@ -648,6 +648,11 @@ pub fn run(argv: Vec<String>) -> Result<(), UserError> {
         BranchKeyResolution::Key(key) => read_current_run_id(&root, key)?,
         BranchKeyResolution::Detached => None,
     };
+    // Gate report finding 4: `current_id` came from `.gate/current.json`,
+    // not free text already covered by the `validate_run_id` call above.
+    if let Some(id) = &current_id {
+        validate_run_id(id)?;
+    }
     let run_id = explicit_id
         .or(current_id)
         .or_else(|| most_recent_run_id(&root))

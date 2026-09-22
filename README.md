@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="docs/assets/gate-mascot.svg" width="150" alt="Gate's mascot: an umpire owl with a checkered flag">
+  <img src="docs/assets/gate-mascot.svg" width="150" alt="Gate's mascot: a traffic-officer owl with aviators and a stop paddle">
 
 # Gate
 

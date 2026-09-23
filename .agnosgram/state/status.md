@@ -2,10 +2,11 @@
 
 _Small and volatile. Overwrite freely; history lives in the journal._
 
-- **Focus:** `1.6.1` released 2026-09-06; both repos public since 2026-09-15.
-  Mascot + README polish merged 2026-09-22 (PR #51; agnosgram#47 on the
-  sister repo). Zero open issues; `gate doctor` and `agnosgram doctor` clean
-  on the released binaries; sister project agnosgram is at 1.5.1.
+- **Focus:** `1.7.0` released 2026-09-23 - the 2026-09-22 security-audit
+  remediation (PRs #54-#59: per-machine trust store, write containment,
+  stored-state validation, playbook confinement, scanner hardening, attested
+  releases + SECURITY.md) plus the install.sh sourcing-guard hotfix (#61).
+  Agnosgram shipped the matching `1.6.0`. Both repos public; zero open issues.
 - **In flight:** nothing.
 - **Next:** reviewer identity threading (the one open engineering item:
   the independence check stays advisory until a harness-provided session
@@ -14,4 +15,4 @@ _Small and volatile. Overwrite freely; history lives in the journal._
   item is its upgrade story, modeled on `gate doctor`/`gate update`.
 - **Blocked on:** nothing.
 
-_Last updated: 2026-09-22_
+_Last updated: 2026-09-23_

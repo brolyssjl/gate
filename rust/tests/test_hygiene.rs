@@ -37,7 +37,9 @@ fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) {
 
 /// `text` with every comment (`//` and `/* */`) and every string literal's
 /// contents (plain, escaped, raw `r#"..."#`, byte) blanked to spaces, so a
-/// needle only matches real code. Newlines are kept, so line numbers in the
+/// needle only matches real code. Block comments are treated as non-nesting:
+/// Rust nests them, so a nested one is blanked only up to its first `*/`,
+/// which can over-report (a false positive) but never hide a real call. Newlines are kept, so line numbers in the
 /// result still point at the source line. Char literals (`'"'`, `'\''`)
 /// are stepped over so a quote inside one cannot open a phantom string.
 fn code_only(text: &str) -> String {

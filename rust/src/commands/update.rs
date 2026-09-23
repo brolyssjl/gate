@@ -318,9 +318,7 @@ mod tests {
     use std::fs;
 
     fn tmp_dir(name: &str) -> std::path::PathBuf {
-        let dir =
-            std::env::temp_dir().join(format!("gate-update-rs-{name}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
+        let dir = crate::core::testutil::unique_temp_dir(&format!("update-rs-{name}"));
         fs::create_dir_all(dir.join(".gate")).unwrap();
         dir
     }

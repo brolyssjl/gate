@@ -369,9 +369,7 @@ mod tests {
     // `execute` never touches the process's actual cwd - safe to call
     // directly from parallel `cargo test` threads.
     fn tmp_repo(name: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!("gate-start-rs-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = crate::core::testutil::unique_temp_dir(&format!("start-rs-{name}"));
         let git = |args: &[&str]| {
             assert!(Command::new("git")
                 .args(args)

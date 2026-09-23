@@ -191,8 +191,7 @@ mod tests {
     use std::fs;
 
     fn tmp_dir(name: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!("gate-adapt-rs-{name}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
+        let dir = crate::core::testutil::unique_temp_dir(&format!("adapt-rs-{name}"));
         fs::create_dir_all(dir.join(".gate")).unwrap();
         dir
     }
@@ -242,10 +241,7 @@ mod tests {
     #[test]
     fn refuses_to_write_an_adapter_target_that_symlinks_outside_root() {
         let root = tmp_dir("symlink-escape");
-        let outside_dir =
-            std::env::temp_dir().join(format!("gate-adapt-rs-outside-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&outside_dir);
-        fs::create_dir_all(&outside_dir).unwrap();
+        let outside_dir = crate::core::testutil::unique_temp_dir("adapt-rs-outside");
         let outside_file = outside_dir.join("CLAUDE.md");
         fs::write(&outside_file, "not gate's business").unwrap();
         std::os::unix::fs::symlink(&outside_file, root.join("CLAUDE.md")).unwrap();

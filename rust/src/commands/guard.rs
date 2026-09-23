@@ -312,9 +312,7 @@ mod tests {
     use std::process::Command;
 
     fn tmp_repo(name: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!("gate-guard-rs-{name}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
+        let dir = crate::core::testutil::unique_temp_dir(&format!("guard-rs-{name}"));
         let git = |args: &[&str]| {
             Command::new("git")
                 .args(args)

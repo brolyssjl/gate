@@ -106,9 +106,7 @@ mod tests {
     use std::fs;
 
     fn tmp_dir(name: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!("gate-skip-rs-{name}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
+        let dir = crate::core::testutil::unique_temp_dir(&format!("skip-rs-{name}"));
         dir
     }
 

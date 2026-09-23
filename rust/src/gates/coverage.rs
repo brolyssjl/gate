@@ -484,10 +484,7 @@ mod tests {
     use std::fs as stdfs;
 
     fn tmp_dir(name: &str) -> std::path::PathBuf {
-        let dir =
-            std::env::temp_dir().join(format!("gate-coverage-rs-{name}-{}", std::process::id()));
-        let _ = stdfs::remove_dir_all(&dir);
-        stdfs::create_dir_all(&dir).unwrap();
+        let dir = crate::core::testutil::unique_temp_dir(&format!("coverage-rs-{name}"));
         dir
     }
 

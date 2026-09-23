@@ -80,7 +80,7 @@ mod tests {
     #[test]
     fn run_gate_on_done_passes_vacuously_with_an_explanatory_note() {
         let ctx = GateContext {
-            root: std::env::temp_dir(),
+            root: crate::core::testutil::unique_temp_dir("gates-mod-rs-done"),
             run: run_on(Phase::Done),
             config: GateConfig::default(),
         };
@@ -89,14 +89,12 @@ mod tests {
         assert_eq!(res.phase, Phase::Done);
         assert_eq!(res.checks.len(), 1);
         assert!(res.checks[0].detail.contains("DONE has no gate"));
+        std::fs::remove_dir_all(&ctx.root).unwrap();
     }
 
     #[test]
     fn run_gate_dispatches_plan_on_a_run_in_plan() {
-        let root =
-            std::env::temp_dir().join(format!("gate-gates-mod-rs-dispatch-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(&root).unwrap();
+        let root = crate::core::testutil::unique_temp_dir("gates-mod-rs-dispatch");
         let ctx = GateContext {
             root: root.clone(),
             run: run_on(Phase::Plan),

@@ -146,13 +146,18 @@ fn test_config_dir_for_env(gate_config_dir: Option<&str>) -> PathBuf {
 }
 
 /// The per-process temp directory every in-process unit test in this crate
-/// lands in when it never set `GATE_CONFIG_DIR` itself - one per `cargo
-/// test` process, so trust records written by unrelated test files in the
-/// same run still don't collide with anything real, and a rerun gets a
-/// fresh directory (a new pid).
+/// lands in when it never set `GATE_CONFIG_DIR` itself - created once per
+/// `cargo test` process (hence the `OnceLock`: every caller in the process
+/// must see the same store, or trust records written by one call would be
+/// invisible to the next), so records from unrelated test files still
+/// never collide with anything real, and a rerun gets a fresh directory.
+/// Named through `testutil::unique_temp_dir`, so unlike the earlier
+/// pid-only name nobody can pre-create it (2026-09-22 audit finding 11).
 #[cfg(test)]
 fn test_only_fallback_config_dir() -> PathBuf {
-    std::env::temp_dir().join(format!("gate-test-config-{}", std::process::id()))
+    static DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+    DIR.get_or_init(|| crate::core::testutil::unique_temp_dir("test-config"))
+        .clone()
 }
 
 /// Where trust records live under a resolved config directory.
@@ -310,9 +315,7 @@ mod tests {
     use std::fs as stdfs;
 
     fn tmp_dir(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("gate-trust-rs-{name}-{}", std::process::id()));
-        let _ = stdfs::remove_dir_all(&dir);
-        stdfs::create_dir_all(&dir).unwrap();
+        let dir = crate::core::testutil::unique_temp_dir(&format!("trust-rs-{name}"));
         dir
     }
 
@@ -384,13 +387,22 @@ mod tests {
     #[test]
     fn test_config_dir_for_env_falls_back_to_a_per_process_temp_dir_when_unset() {
         // The whole point: absent GATE_CONFIG_DIR, this must be a temp
-        // directory named by this process's pid - never anything derived
+        // directory private to this test process - never anything derived
         // from XDG_CONFIG_HOME or HOME (which this function doesn't even
-        // take as parameters, unlike `resolve_config_dir`).
-        let expected =
-            std::env::temp_dir().join(format!("gate-test-config-{}", std::process::id()));
-        assert_eq!(test_config_dir_for_env(None), expected);
-        assert_eq!(test_config_dir_for_env(Some("")), expected);
+        // take as parameters, unlike `resolve_config_dir`). It is created
+        // once and reused for the whole process, and its name carries an
+        // unguessable suffix after the pid (finding 11).
+        let dir = test_config_dir_for_env(None);
+        assert_eq!(test_config_dir_for_env(Some("")), dir);
+        assert_eq!(test_config_dir_for_env(None), dir);
+        assert!(dir.is_dir());
+        let name = dir.file_name().unwrap().to_string_lossy().into_owned();
+        let prefix = format!("gate-test-config-{}-", std::process::id());
+        assert!(
+            name.starts_with(&prefix),
+            "unexpected fallback dir name {name}"
+        );
+        assert!(name.len() > prefix.len(), "no unguessable suffix in {name}");
     }
 
     #[test]

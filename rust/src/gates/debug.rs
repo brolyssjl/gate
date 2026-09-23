@@ -127,7 +127,7 @@ fn triggering_test_check(
     if !is_commands_trusted(&ctx.root) {
         return fail_untrusted(
             name,
-            "test command not trusted - review .gate/config.yml and run `gate trust`",
+            "test command not trusted - trust is per machine, per checkout; review .gate/config.yml and run `gate trust`",
         );
     }
     let dir = run_paths(&ctx.root, &ctx.run.id).dir;
@@ -212,7 +212,7 @@ fn targeted_triggering_test_checks(
         if !trusted {
             checks.push(fail_untrusted(
                 name,
-                "test command not trusted - review .gate/config.yml and run `gate trust`",
+                "test command not trusted - trust is per machine, per checkout; review .gate/config.yml and run `gate trust`",
             ));
             continue;
         }

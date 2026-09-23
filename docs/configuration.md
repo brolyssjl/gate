@@ -113,9 +113,13 @@ same trust hash as `commands:` - see
 copy `gate init`/`gate update` materializes gets a version-stamped manifest
 entry (`.gate/playbooks.lock`) so a later `doctor`/`update` - on this machine
 or a teammate's - can tell "unchanged since materialized" apart from
-"hand-edited"; like `config.yml` and `trust.json`, it stays tracked so CI and
-every clone see the same picture. Both commands are idempotent: run either
-twice right after itself and the second run reports nothing to do.
+"hand-edited"; like `config.yml`, it stays tracked so CI and every clone see
+the same picture. Trust (`gate trust`) is the one exception - it lives in a
+machine-local store outside the repo (see
+[Integrity: command trust (TOFU)](integrity.md#command-trust-tofu)), not in
+`.gate/playbooks.lock` or anywhere else tracked, so it is never part of this
+picture. Both commands are idempotent: run either twice right after itself
+and the second run reports nothing to do.
 
 ## `gate guard` (opt-in pre-commit hook)
 

@@ -214,7 +214,7 @@ fn evidence_checks(ctx: &GateContext, current: Option<&str>, touched: &[String])
             if !trusted {
                 return fail_untrusted(
                     name,
-                    "code changed since the last gate passed and commands are untrusted - run `gate trust`",
+                    "code changed since the last gate passed and commands are untrusted - trust is per machine, per checkout; run `gate trust`",
                 );
             }
             let mut red: Vec<String> = Vec::new();

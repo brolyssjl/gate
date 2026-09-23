@@ -179,7 +179,9 @@ pub fn command_check(
     if !trusted {
         return fail_untrusted(
             name,
-            format!("{label} command not trusted - review .gate/config.yml and run `gate trust`"),
+            format!(
+                "{label} command not trusted - trust is per machine, per checkout; review .gate/config.yml and run `gate trust`"
+            ),
         );
     }
     let res = run_command(command, cwd.to_str().unwrap_or("."), None);

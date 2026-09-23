@@ -168,6 +168,15 @@ pub struct TrustFinding {
     pub reason: Option<MismatchReason>,
 }
 
+/// A `.gate/trust.json` still present in the repo (security audit
+/// 2026-09-22, finding 1: trust moved to a machine-local store; a
+/// repo-tracked copy is stale at best, and misleading - it looks like it
+/// still matters). `gate init` no longer creates this file; this finding is
+/// the migration path for a repo that predates that change.
+pub struct LegacyTrustFileFinding {
+    pub path: std::path::PathBuf,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConfigFinding {
     Missing,
@@ -181,6 +190,7 @@ pub struct DoctorReport {
     pub adapters: Vec<AdapterFinding>,
     pub playbooks: Vec<PlaybookFinding>,
     pub trust: Option<TrustFinding>,
+    pub legacy_trust_file: Option<LegacyTrustFileFinding>,
     pub config: Vec<ConfigFinding>,
 }
 
@@ -196,6 +206,7 @@ impl DoctorReport {
                 .filter(|f| f.status.severity() == Severity::Action)
                 .count()
             + self.trust.is_some() as usize
+            + self.legacy_trust_file.is_some() as usize
             + self.config.len()
     }
 }
@@ -213,6 +224,7 @@ pub fn diagnose(root: &Path) -> DoctorReport {
         adapters: diagnose_adapters(root, &body),
         playbooks: diagnose_playbooks(root),
         trust: diagnose_trust(root),
+        legacy_trust_file: diagnose_legacy_trust_file(root),
         config: diagnose_config(root),
     }
 }
@@ -297,6 +309,18 @@ fn diagnose_trust(root: &Path) -> Option<TrustFinding> {
     })
 }
 
+/// A `.gate/trust.json` in the repo is inert (finding 1) but still worth
+/// flagging: it's easy to mistake for the thing that matters. Read-only -
+/// existence check, never parsed or compared against anything.
+fn diagnose_legacy_trust_file(root: &Path) -> Option<LegacyTrustFileFinding> {
+    let path = gate_paths(root).gate.join("trust.json");
+    if path.exists() {
+        Some(LegacyTrustFileFinding { path })
+    } else {
+        None
+    }
+}
+
 fn diagnose_config(root: &Path) -> Vec<ConfigFinding> {
     let mut out = Vec::new();
     if !gate_paths(root).config.exists() {
@@ -315,6 +339,23 @@ fn trust_message(t: &TrustFinding) -> String {
         Some(MismatchReason::Changed) | None => {
             "commands block is not trusted (or has drifted) - run `gate trust`".to_string()
         }
+    }
+}
+
+/// `trust.legacy-file`: named so it can be grepped for/scripted against
+/// like the other finding kinds, even though this crate doesn't (yet) carry
+/// stable string ids on every finding.
+fn legacy_trust_file_message(f: &LegacyTrustFileFinding) -> String {
+    match crate::core::trust::env_config_dir() {
+        Some(dir) => format!(
+            "`{}` is tracked in the repo but no longer used for anything - trust is now stored per machine under `{}`; delete this file",
+            f.path.display(),
+            dir.display()
+        ),
+        None => format!(
+            "`{}` is tracked in the repo but no longer used for anything - trust is now stored per machine (set GATE_CONFIG_DIR, XDG_CONFIG_HOME, or HOME to see where); delete this file",
+            f.path.display()
+        ),
     }
 }
 
@@ -359,8 +400,12 @@ fn render_human(report: &DoctorReport, actionable: usize) -> String {
     lines.push(String::new());
     lines.push("Trust:".to_string());
     match &report.trust {
-        None => lines.push("  [info] commands block trusted".to_string()),
+        None => lines
+            .push("  [info] commands block trusted on this machine, for this checkout".to_string()),
         Some(t) => lines.push(format!("  [action] {}", trust_message(t))),
+    }
+    if let Some(f) = &report.legacy_trust_file {
+        lines.push(format!("  [action] {}", legacy_trust_file_message(f)));
     }
     if !report.config.is_empty() {
         lines.push(String::new());
@@ -437,6 +482,20 @@ fn report_to_json(report: &DoctorReport, actionable: usize) -> Value {
         }
     }
     data.insert("trust", trust);
+
+    data.insert(
+        "legacyTrustFile",
+        match &report.legacy_trust_file {
+            Some(f) => {
+                let mut o = Value::object();
+                o.insert("id", "trust.legacy-file");
+                o.insert("path", f.path.display().to_string());
+                o.insert("message", legacy_trust_file_message(f));
+                o
+            }
+            None => Value::Null,
+        },
+    );
 
     let mut config = Value::array();
     for c in &report.config {
@@ -639,6 +698,32 @@ mod tests {
 
         crate::core::trust::write_trust(&root, None).unwrap();
         assert!(diagnose(&root).trust.is_none());
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn legacy_trust_json_in_the_repo_is_flagged_and_absent_by_default() {
+        // Finding 1's migration path: `gate init` no longer creates
+        // `.gate/trust.json`, so a fresh project has no such finding at
+        // all; a repo that still carries one (pre-fix, or hand-restored)
+        // gets an actionable `trust.legacy-file` warning naming it.
+        let root = tmp_dir("legacy-trust-file");
+        fs::write(root.join(".gate/config.yml"), "commands: {}\n").unwrap();
+        let fresh = diagnose(&root);
+        assert!(fresh.legacy_trust_file.is_none());
+
+        fs::write(
+            root.join(".gate/trust.json"),
+            "{\n  \"commandsHash\": \"sha256:whatever\"\n}\n",
+        )
+        .unwrap();
+        let report = diagnose(&root);
+        assert!(report.legacy_trust_file.is_some());
+        assert!(report.actionable_count() > fresh.actionable_count());
+
+        let human = render_human(&report, report.actionable_count());
+        assert!(human.contains("trust.json"));
+        assert!(human.contains("per machine"));
         fs::remove_dir_all(&root).unwrap();
     }
 

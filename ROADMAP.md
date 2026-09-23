@@ -333,6 +333,46 @@ agnosgram#38/#39 (owner-only dogfooding posture; SEC-07 extension)._
       "Untrusted agent-facing inputs" posture; hostile-fixture
       conformance tests in rust/tests/untrusted.rs
 
+## Trust-time command review - "gatekeeper"
+
+_Owner decision 2026-09-23: `gate trust` is the one human consent point
+before anything in `commands:` runs through `sh -c`, yet it shows a hash
+and asks for a yes. The audit's finding-1 fix moved the consent record out
+of the repo; this makes the consent informed. Same posture as the injection
+scanner: a tripwire that makes lazy attacks loud, never a filter._
+
+- [ ] `gate trust` and `gate trust --check` print the full `commands:`
+      block verbatim before recording or reporting consent; the hash stays
+      as the identity, not the thing a human is asked to approve.
+- [ ] Command-risk scanner (`core::command_risk`, std-only, hand-rolled
+      matchers reusing `injection::normalize_char`), one stable id per
+      pattern family, prefixed `gatekeeper.`:
+      privilege escalation (`sudo`, `doas`, `su`, `pkexec`, setuid via
+      `chmod`); persistence and system writes (`/etc`, `~/.ssh`, shell rc
+      files, crontab, launchctl, systemctl, agent config dirs such as
+      `~/.claude`); remote or obfuscated code (`curl | sh` and `base64 -d`,
+      `eval`, `$(curl ...)`); destructive (`rm -rf` variants, `git push
+      --force`, `git reset --hard`, `dd of=/dev`, `mkfs`); exfiltration
+      (`env`/`printenv` piped to the network, `nc`, `curl -d @<secret-like
+      file>`); root escape (paths resolving outside the project root).
+- [ ] Follow the script: a command whose tokens name an in-repo file
+      (`./scripts/test-with-report.sh`) gets that file's contents scanned
+      too, one level deep, since that is where a real payload would live.
+      Files outside the root or beyond one level are reported as unscanned,
+      not silently skipped.
+- [ ] Trust-time gating: any hit blocks the record until `gate trust
+      --acknowledge <id,...>` names every hit family; acknowledged ids are
+      stored in the trust record and shown by `--check`. Doctor warns when
+      an already-trusted block (trusted before this shipped, or with new
+      pattern coverage) has unacknowledged hits, mirroring the
+      coverage-expanded path trust already has.
+- [ ] Threat-model docs state the non-goals up front: paraphrase, encoded
+      payloads, scripts more than one level deep, and anything a referenced
+      binary does at runtime all pass. Hostile-fixture conformance tests
+      in `rust/tests/` for each family plus the script-following path.
+- [ ] Sister item for agnosgram: the same check over hook commands it
+      installs into `.claude/settings.json` belongs there, not here.
+
 ## Deferred / v2
 
 - [ ] ~~Go port (startup-latency escape hatch)~~ superseded by Milestone 6

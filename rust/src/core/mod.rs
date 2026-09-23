@@ -25,6 +25,8 @@ pub mod run;
 pub mod sha256;
 pub mod state_machine;
 pub mod targets;
+#[cfg(test)]
+pub mod testutil;
 pub mod trust;
 pub mod version;
 pub mod yaml;

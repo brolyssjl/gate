@@ -92,7 +92,7 @@ pub fn confined_write_target(root: &Path, rel: &Path) -> io::Result<PathBuf> {
 /// back to the nanosecond clock, which is unique enough for one process's
 /// sequence of writes and costs nothing extra when urandom is fine anyway
 /// (both are mixed in together).
-fn unique_suffix() -> String {
+pub(crate) fn unique_suffix() -> String {
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos())
@@ -184,14 +184,7 @@ mod tests {
     use std::os::unix::fs::PermissionsExt;
 
     fn tmp_dir(name: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "gate-fsx-rs-{name}-{}-{}",
-            std::process::id(),
-            unique_suffix()
-        ));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        dir
+        crate::core::testutil::unique_temp_dir(&format!("fsx-rs-{name}"))
     }
 
     #[test]

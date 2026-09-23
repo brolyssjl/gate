@@ -102,11 +102,7 @@ mod tests {
     use std::fs;
 
     fn tmp_dir(name: &str) -> std::path::PathBuf {
-        let dir =
-            std::env::temp_dir().join(format!("gate-infer-stack-rs-{name}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        dir
+        crate::core::testutil::unique_temp_dir(&format!("infer-stack-rs-{name}"))
     }
 
     #[test]

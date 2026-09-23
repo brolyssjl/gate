@@ -149,11 +149,7 @@ mod tests {
     use std::fs;
 
     fn tmp_dir(name: &str) -> std::path::PathBuf {
-        let dir =
-            std::env::temp_dir().join(format!("gate-trust-cmd-rs-{name}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        dir
+        crate::core::testutil::unique_temp_dir(&format!("trust-cmd-rs-{name}"))
     }
 
     /// A machine-local config directory standing in for `env_config_dir()`,

@@ -264,9 +264,24 @@ pub fn write_journal_entry(
     entry: &str,
     when: Option<i64>,
 ) -> Result<JournalWriteResult, UserError> {
+    write_journal_entry_with(&agnosgram_bin(), root, entry, when)
+}
+
+/// [`write_journal_entry`] with the agnosgram binary passed in explicitly
+/// instead of resolved from `$GATE_AGNOSGRAM_BIN`. This is the seam the unit
+/// tests use to point at a stub, or at a path that does not exist to force
+/// the ENOENT fallback, without mutating process-global environment - which
+/// would race every other test in the same `cargo test` process (2026-09-22
+/// audit finding 11).
+fn write_journal_entry_with(
+    bin: &str,
+    root: &Path,
+    entry: &str,
+    when: Option<i64>,
+) -> Result<JournalWriteResult, UserError> {
     let epoch = when.unwrap_or_else(now_secs);
 
-    let mut child = match Command::new(agnosgram_bin())
+    let mut child = match Command::new(bin)
         .args(AGNOSGRAM_ARGS)
         .current_dir(root)
         .stdin(Stdio::piped())
@@ -338,34 +353,15 @@ mod tests {
     // `JournalEntryParams::tz_offset_secs`.
     const WHEN: i64 = 1785161100; // Date.UTC(2026, 6, 27, 14, 5)
 
-    static AGNOSGRAM_BIN_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-    /// Serializes tests that mutate the shared `GATE_AGNOSGRAM_BIN` env var.
-    /// `cargo test` runs a crate's tests in parallel threads within one
-    /// process; unlike `with_tz` (every caller here wants the same "UTC",
-    /// so a race is harmless), these tests want different values - a real,
-    /// observed flake where one test's stub path leaked into another's
-    /// `write_journal_entry` call.
-    fn with_agnosgram_bin<T>(bin: &str, f: impl FnOnce() -> T) -> T {
-        let _guard = AGNOSGRAM_BIN_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let prior = env::var("GATE_AGNOSGRAM_BIN").ok();
-        env::set_var("GATE_AGNOSGRAM_BIN", bin);
-        let result = f();
-        match prior {
-            Some(v) => env::set_var("GATE_AGNOSGRAM_BIN", v),
-            None => env::remove_var("GATE_AGNOSGRAM_BIN"),
-        }
-        result
-    }
+    /// A binary path that cannot exist, to force the ENOENT fallback. Passed
+    /// straight into `write_journal_entry_with` - earlier versions of these
+    /// tests set `GATE_AGNOSGRAM_BIN` in-process behind a mutex instead,
+    /// which still raced every other test reading env in the same `cargo
+    /// test` process (2026-09-22 audit finding 11).
+    const NO_SUCH_BIN: &str = "/nonexistent/gate-agnosgram-test-stub";
 
     fn tmp_repo(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "gate-agnosgramwrite-rs-{name}-{}",
-            std::process::id()
-        ));
-        let _ = stdfs::remove_dir_all(&dir);
-        stdfs::create_dir_all(&dir).unwrap();
-        dir
+        crate::core::testutil::unique_temp_dir(&format!("agnosgramwrite-rs-{name}"))
     }
 
     fn empty_retro() -> RetroLog {
@@ -492,9 +488,7 @@ mod tests {
             tz_offset_secs: Some(0),
         });
 
-        let result = with_agnosgram_bin("/nonexistent/gate-agnosgram-test-stub", || {
-            write_journal_entry(&root, &entry, Some(WHEN)).unwrap()
-        });
+        let result = write_journal_entry_with(NO_SUCH_BIN, &root, &entry, Some(WHEN)).unwrap();
         assert_eq!(result.method, JournalWriteMethod::Fallback);
         assert_eq!(result.journal_file, ".agnosgram/journal/2026-07.md");
 
@@ -540,12 +534,8 @@ mod tests {
             tz_offset_secs: None,
         });
 
-        let (r1, r2) = with_agnosgram_bin("/nonexistent/gate-agnosgram-test-stub", || {
-            (
-                write_journal_entry(&root, &first, Some(WHEN)).unwrap(),
-                write_journal_entry(&root, &second, Some(WHEN)).unwrap(),
-            )
-        });
+        let r1 = write_journal_entry_with(NO_SUCH_BIN, &root, &first, Some(WHEN)).unwrap();
+        let r2 = write_journal_entry_with(NO_SUCH_BIN, &root, &second, Some(WHEN)).unwrap();
         assert_eq!(r1.journal_file, r2.journal_file);
 
         let content = stdfs::read_to_string(root.join(&r1.journal_file)).unwrap();
@@ -557,9 +547,7 @@ mod tests {
     #[test]
     fn spawns_the_agnosgram_cli_with_the_entry_on_stdin_and_reports_method_agnosgram_cli() {
         let root = tmp_repo("cli-stub");
-        let record_dir =
-            std::env::temp_dir().join(format!("gate-agnosgram-record-{}", std::process::id()));
-        stdfs::create_dir_all(&record_dir).unwrap();
+        let record_dir = crate::core::testutil::unique_temp_dir("agnosgram-record");
         let record_path = record_dir.join("received.md");
         let stub = record_dir.join("agnosgram");
         stdfs::write(
@@ -590,9 +578,8 @@ mod tests {
             tz_offset_secs: None,
         });
 
-        let result = with_agnosgram_bin(stub.to_str().unwrap(), || {
-            write_journal_entry(&root, &entry, Some(WHEN)).unwrap()
-        });
+        let result =
+            write_journal_entry_with(stub.to_str().unwrap(), &root, &entry, Some(WHEN)).unwrap();
         assert_eq!(result.method, JournalWriteMethod::AgnosgramCli);
         assert_eq!(result.journal_file, ".agnosgram/journal/2026-07.md");
         assert_eq!(stdfs::read_to_string(&record_path).unwrap(), entry);

@@ -105,11 +105,7 @@ mod tests {
     use std::fs as stdfs;
 
     fn tmp_dir(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "gate-playbook-manifest-rs-{name}-{}",
-            std::process::id()
-        ));
-        let _ = stdfs::remove_dir_all(&dir);
+        let dir = crate::core::testutil::unique_temp_dir(&format!("playbook-manifest-rs-{name}"));
         stdfs::create_dir_all(root_gate(&dir)).unwrap();
         dir
     }

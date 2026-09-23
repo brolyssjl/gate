@@ -114,11 +114,7 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     fn tmp_dir(name: &str) -> PathBuf {
-        let dir =
-            std::env::temp_dir().join(format!("gate-retro-gate-rs-{name}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        dir
+        crate::core::testutil::unique_temp_dir(&format!("retro-gate-rs-{name}"))
     }
 
     fn write_file(root: &Path, rel: &str, content: &str) {

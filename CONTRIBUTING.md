@@ -120,7 +120,7 @@ cargo build --release --manifest-path rust/Cargo.toml
 GATE_BIN="$PWD/rust/target/release/gate" cargo test --manifest-path rust/Cargo.toml
 ```
 
-`cargo test` with no `$GATE_BIN` set runs both the crate's ~530 unit tests
+`cargo test` with no `$GATE_BIN` set runs both the crate's ~600 unit tests
 and this conformance suite against a freshly built debug binary in one pass.
 
 ### Test hermeticity
@@ -129,11 +129,26 @@ The suite must be green regardless of what happens to be installed on the
 machine running it - a real `agnosgram` binary on PATH must not change what
 the RETRO tests exercise. `write_journal_entry`
 (`rust/src/integrations/agnosgram_write.rs`) resolves the binary from
-`$GATE_AGNOSGRAM_BIN`, defaulting to `agnosgram` on PATH; the fallback
-(ENOENT) tests point it at a path that can't possibly resolve, and the
-CLI-success-path test points it at a throwaway stub script, so both exercise
-their intended path deterministically either way. This is a test-only
-override, not a user-facing config knob.
+`$GATE_AGNOSGRAM_BIN`, defaulting to `agnosgram` on PATH, and hands it to
+`write_journal_entry_with(bin, ...)`, which the unit tests call directly: the
+fallback (ENOENT) tests pass a path that can't possibly resolve, and the
+CLI-success-path test passes a throwaway stub script, so both exercise their
+intended path deterministically either way, without touching the process
+environment. `$GATE_AGNOSGRAM_BIN` is a hermeticity override for running the
+suite or a build under a pinned binary, not a user-facing config knob.
+
+Two hygiene rules keep the unit suite race-free and safe on a shared `/tmp`,
+and `rust/tests/test_hygiene.rs` lints `rust/src` for both (2026-09-22
+security audit finding 11):
+
+- never mutate process-global state in a unit test (`env::set_var`,
+  `env::remove_var`, `set_current_dir`) - `cargo test` runs a crate's tests
+  as threads in one process. Pass values through parameters, or set env on
+  a spawned `Command`;
+- create every unit-test temp dir through `core::testutil::unique_temp_dir`
+  (`rust/src/core/testutil.rs`), which gives it an unguessable name and
+  refuses to adopt a pre-existing entry, and remove it when the test is
+  done. Integration tests under `rust/tests/` use `common::make_temp_dir`.
 
 ## The gate crate
 

@@ -61,30 +61,28 @@ mod tests {
 
     #[test]
     fn captures_stdout_and_a_zero_exit_code_on_success() {
-        let dir = std::env::temp_dir().join(format!("gate-exec-rs-ok-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = crate::core::testutil::unique_temp_dir("exec-rs-ok");
         let res = run_command("echo hello", dir.to_str().unwrap(), None);
         assert_eq!(res.code, 0);
         assert_eq!(res.stdout, "hello\n");
         assert_eq!(res.stderr, "");
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
     fn captures_stderr_and_a_nonzero_exit_code_on_failure() {
         // An explicit absolute cwd, not "." - a relative cwd made this test
         // sensitive to unrelated tests' tempdir churn under parallel runs.
-        let dir = std::env::temp_dir().join(format!("gate-exec-rs-fail-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = crate::core::testutil::unique_temp_dir("exec-rs-fail");
         let res = run_command("echo oops 1>&2; exit 3", dir.to_str().unwrap(), None);
         assert_eq!(res.code, 3);
         assert_eq!(res.stderr, "oops\n");
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
     fn runs_from_the_given_cwd() {
-        let dir = std::env::temp_dir().join(format!("gate-exec-rs-cwd-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = crate::core::testutil::unique_temp_dir("exec-rs-cwd");
         let res = run_command("pwd", dir.to_str().unwrap(), None);
         // Compare canonicalized paths - macOS temp dirs are often a symlink
         // (/tmp -> /private/tmp), and `pwd` reports the resolved path.
@@ -101,9 +99,9 @@ mod tests {
             "GATE_TEST_REPORT".to_string(),
             "/tmp/report.json".to_string(),
         );
-        let dir = std::env::temp_dir().join(format!("gate-exec-rs-env-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = crate::core::testutil::unique_temp_dir("exec-rs-env");
         let res = run_command("echo $GATE_TEST_REPORT", dir.to_str().unwrap(), Some(&env));
         assert_eq!(res.stdout, "/tmp/report.json\n");
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

@@ -1,7 +1,7 @@
 //! Port of `src/core/config.ts`: `.gate/config.yml` loading and validation.
 
 use std::fs;
-use std::path::Path;
+use std::path::{Component, Path, PathBuf};
 
 use crate::cli::output::UserError;
 use crate::core::json::{self, Value as JsonValue};
@@ -288,11 +288,86 @@ fn extract_string_array(value: Option<&YamlValue>) -> Option<Vec<String>> {
     }
 }
 
+/// SEC-05: confinement check shared by config-parse-time validation
+/// (`validate_playbook_path`, below) and read-time confinement
+/// (`confined_playbook_content`) for a playbook path declared in a
+/// target's `playbooks:` overlay map. Without this, `root.join(rel)` joins
+/// an absolute path or a `../`-escaping one straight through - an absolute
+/// path discards `root` entirely (`Path::join`'s documented behavior) and
+/// `..` walks back out of it - so either reads an arbitrary file on the
+/// machine into the agent's context (`core::playbooks::resolve_playbook_with_overlays`)
+/// and into the TOFU trust hash (`target_playbooks_to_json`, below).
+///
+/// Requires: non-empty, relative (no absolute path), no `..` component.
+/// When the joined path exists, it must additionally canonicalize (résolve
+/// symlinks) to somewhere under the canonicalized root, and name a regular
+/// file - not a directory, not a FIFO/device (`fs::read_to_string` on a
+/// named pipe hangs the whole process). A path that does not exist yet is
+/// not itself a violation: nothing has been read, and the read side
+/// already treats a missing overlay file as "no overlay here", not an
+/// error - unrelated to this finding.
+fn resolve_confined_playbook_path(root: &Path, rel: &str) -> Result<PathBuf, String> {
+    if rel.trim().is_empty() {
+        return Err("must not be empty".to_string());
+    }
+    let rel_path = Path::new(rel);
+    if rel_path.is_absolute() {
+        return Err("must be a relative path, not absolute".to_string());
+    }
+    if rel_path.components().any(|c| c == Component::ParentDir) {
+        return Err("must not contain \"..\"".to_string());
+    }
+    let joined = root.join(rel_path);
+    if !joined.exists() {
+        return Ok(joined);
+    }
+    let canon_root =
+        fs::canonicalize(root).map_err(|e| format!("project root could not be resolved ({e})"))?;
+    let canon_joined =
+        fs::canonicalize(&joined).map_err(|e| format!("could not be resolved ({e})"))?;
+    if !canon_joined.starts_with(&canon_root) {
+        return Err("resolves outside the project root".to_string());
+    }
+    match fs::metadata(&canon_joined) {
+        Ok(meta) if meta.is_file() => Ok(canon_joined),
+        Ok(_) => Err("is not a regular file".to_string()),
+        Err(e) => Err(format!("could not be read ({e})")),
+    }
+}
+
+/// Config-parse-time half of the SEC-05 confinement check: `key` names the
+/// offending `.gate/config.yml` field so the `UserError` points straight
+/// at the fix.
+fn validate_playbook_path(root: &Path, key: &str, rel: &str) -> Result<(), UserError> {
+    resolve_confined_playbook_path(root, rel)
+        .map(|_| ())
+        .map_err(|reason| UserError::new(format!(".gate/config.yml: {key} = \"{rel}\" {reason}")))
+}
+
+/// Read-time half of the SEC-05 confinement check (defense in depth): a
+/// safe replacement for `fs::read_to_string(root.join(rel))` for a
+/// target's playbook overlay path. `None` for anything that fails
+/// confinement - the same outcome `validate_playbook_path` would already
+/// have refused at config-parse time for a config loaded through
+/// `load_config`, plus a backstop against a TOCTOU swap between validation
+/// and read, or a `GateConfig` built some other way. Callers treat `None`
+/// exactly like "file not found", the pre-existing fallback for an overlay
+/// that isn't there.
+pub fn confined_playbook_content(root: &Path, rel: &str) -> Option<String> {
+    let path = resolve_confined_playbook_path(root, rel).ok()?;
+    let meta = fs::metadata(&path).ok()?;
+    if !meta.is_file() {
+        return None;
+    }
+    fs::read_to_string(path).ok()
+}
+
 /// A malformed target block (most dangerously a missing/empty `match`) used
 /// to reach the gates and blow up deep inside glob matching. Fail fast and
 /// friendly here instead, naming the offending target so the fix is
 /// obvious.
 fn validate_and_extract_targets(
+    root: &Path,
     raw_targets: Option<&YamlValue>,
 ) -> Result<Vec<(String, TargetConfig)>, UserError> {
     let Some(YamlValue::Map(entries)) = raw_targets else {
@@ -347,6 +422,12 @@ fn validate_and_extract_targets(
                 )));
             }
         }
+        let playbooks = as_string_map(field("playbooks"));
+        // SEC-05: confine every declared overlay path to `root` before it
+        // can ever reach a read - see `validate_playbook_path`.
+        for (phase, rel) in &playbooks {
+            validate_playbook_path(root, &format!("targets.\"{name}\".playbooks.{phase}"), rel)?;
+        }
         let coverage_format = match field("coverage_format") {
             None => None,
             Some(v) => {
@@ -369,7 +450,7 @@ fn validate_and_extract_targets(
                 match_globs,
                 commands: extract_commands(field("commands")),
                 thresholds: extract_thresholds(field("thresholds")),
-                playbooks: as_string_map(field("playbooks")),
+                playbooks,
                 coverage_format,
             },
         ));
@@ -395,7 +476,7 @@ pub fn load_config(root: &Path) -> Result<GateConfig, UserError> {
         return Ok(GateConfig::default());
     };
 
-    let targets = validate_and_extract_targets(raw.get("targets"))?;
+    let targets = validate_and_extract_targets(root, raw.get("targets"))?;
 
     let coverage_format = match raw.get("coverage_format") {
         None => CoverageFormat::Auto,
@@ -545,7 +626,7 @@ fn target_playbooks_to_json(root: &Path, playbooks: &[(String, String)]) -> Json
         entry.insert("path", rel_path.as_str());
         entry.insert(
             "content",
-            fs::read_to_string(root.join(rel_path)).unwrap_or_default(),
+            confined_playbook_content(root, rel_path).unwrap_or_default(),
         );
         obj.insert(phase.as_str(), entry);
     }
@@ -591,7 +672,7 @@ pub fn trusted_playbook_paths(root: &Path) -> Vec<String> {
         .collect();
 
     if let Ok(Some(raw)) = read_raw_config(root) {
-        if let Ok(targets) = validate_and_extract_targets(raw.get("targets")) {
+        if let Ok(targets) = validate_and_extract_targets(root, raw.get("targets")) {
             for (_, t) in &targets {
                 for (_, rel_path) in &t.playbooks {
                     paths.push(rel_path.clone());
@@ -634,7 +715,7 @@ pub fn commands_block_hash_source_legacy(root: &Path) -> String {
         .unwrap_or(YamlValue::Null);
 
     let commands = extract_commands(raw.get("commands"));
-    let targets = validate_and_extract_targets(raw.get("targets")).unwrap_or_default();
+    let targets = validate_and_extract_targets(root, raw.get("targets")).unwrap_or_default();
     let scope_ignore = extract_string_array(raw.get("scope_ignore")).unwrap_or_default();
 
     let mut source = JsonValue::object();
@@ -673,7 +754,7 @@ pub fn commands_block_hash_source(root: &Path) -> String {
         .unwrap_or(YamlValue::Null);
 
     let commands = extract_commands(raw.get("commands"));
-    let targets = validate_and_extract_targets(raw.get("targets")).unwrap_or_default();
+    let targets = validate_and_extract_targets(root, raw.get("targets")).unwrap_or_default();
     let scope_ignore = extract_string_array(raw.get("scope_ignore")).unwrap_or_default();
     let playbook_overrides = playbook_override_entries(root);
 
@@ -1068,6 +1149,131 @@ mod tests {
         );
         let after = commands_block_hash_source(&root);
         assert_eq!(before, after);
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    // ---- Finding 5 (SEC-05): confining target `playbooks:` overlay
+    // paths to `root` at config-parse time -----------------------------
+
+    /// `root.join(rel)` with an absolute `rel` discards `root` entirely
+    /// (`Path::join`'s documented behavior) - the exact read the finding
+    /// reproduces. `load_config` must refuse it outright, naming the
+    /// offending key and path, and must never have read the file's
+    /// content to do so.
+    #[test]
+    fn load_config_rejects_an_absolute_target_playbook_overlay_path() {
+        let root = tmp_dir("overlay-path-absolute");
+        let outside = tmp_dir("overlay-path-absolute-secret");
+        let secret_file = outside.join("shadow.txt");
+        fs::write(&secret_file, "root:x:0:0::/root:/bin/sh\n").unwrap();
+        write_config(
+            &root,
+            &format!(
+                "targets:\n  api:\n    match: [apps/api/**]\n    playbooks: {{ test: \"{}\" }}\n",
+                secret_file.display()
+            ),
+        );
+
+        let err = load_config(&root).unwrap_err();
+        assert!(err.message().contains("targets.\"api\".playbooks.test"));
+        assert!(err.message().contains(&secret_file.display().to_string()));
+        assert!(err.message().contains("absolute"));
+        assert!(!err.message().contains("root:x:0:0"));
+        fs::remove_dir_all(&root).unwrap();
+        fs::remove_dir_all(&outside).unwrap();
+    }
+
+    /// Same finding, the other escape vector: a `..`-relative path walks
+    /// back out of `root` just as effectively as an absolute one.
+    #[test]
+    fn load_config_rejects_a_parent_dir_escaping_target_playbook_overlay_path() {
+        let root = tmp_dir("overlay-path-dotdot");
+        write_config(
+            &root,
+            "targets:\n  api:\n    match: [apps/api/**]\n    playbooks: { test: \"../../../etc/passwd\" }\n",
+        );
+
+        let err = load_config(&root).unwrap_err();
+        assert!(err.message().contains("targets.\"api\".playbooks.test"));
+        assert!(err.message().contains(".."));
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// Canonicalization, not just lexical form: a relative path that looks
+    /// confined but resolves through a symlink to somewhere outside root
+    /// must also be refused.
+    #[test]
+    fn load_config_rejects_a_target_playbook_overlay_path_that_escapes_root_via_a_symlink() {
+        let root = tmp_dir("overlay-path-symlink-escape");
+        let outside = tmp_dir("overlay-path-symlink-escape-secret");
+        fs::write(outside.join("secret.txt"), "TOP SECRET\n").unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(outside.join("secret.txt"), root.join("link.md")).unwrap();
+        write_config(
+            &root,
+            "targets:\n  api:\n    match: [apps/api/**]\n    playbooks: { test: link.md }\n",
+        );
+
+        let err = load_config(&root).unwrap_err();
+        assert!(err.message().contains("outside the project root"));
+        fs::remove_dir_all(&root).unwrap();
+        fs::remove_dir_all(&outside).unwrap();
+    }
+
+    /// `fs::read_to_string` on a FIFO with no writer hangs forever (the
+    /// finding's other named risk) - confinement must reject anything that
+    /// isn't a regular file before ever attempting a read.
+    #[test]
+    fn load_config_rejects_a_target_playbook_overlay_path_that_is_a_fifo() {
+        let root = tmp_dir("overlay-path-fifo");
+        let fifo = root.join("pipe.md");
+        let status = std::process::Command::new("mkfifo")
+            .arg(&fifo)
+            .status()
+            .expect("mkfifo must be available to run this test");
+        assert!(status.success(), "mkfifo failed");
+        write_config(
+            &root,
+            "targets:\n  api:\n    match: [apps/api/**]\n    playbooks: { test: pipe.md }\n",
+        );
+
+        let err = load_config(&root).unwrap_err();
+        assert!(err.message().contains("not a regular file"));
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// A path that doesn't exist yet is not itself a violation - only the
+    /// escape vectors are. The read side already treats a missing overlay
+    /// as "no overlay here" (`core::playbooks::resolve_playbook_with_overlays`),
+    /// unrelated to this finding.
+    #[test]
+    fn load_config_accepts_a_confined_target_playbook_overlay_path_that_does_not_exist_yet() {
+        let root = tmp_dir("overlay-path-not-yet-created");
+        write_config(
+            &root,
+            "targets:\n  api:\n    match: [apps/api/**]\n    playbooks: { test: not-yet.md }\n",
+        );
+        assert!(load_config(&root).is_ok());
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// `confined_playbook_content` (the read-time half) refuses the exact
+    /// same escapes, independent of whether `load_config` already ran.
+    #[test]
+    fn confined_playbook_content_refuses_an_absolute_path_and_reads_a_confined_one() {
+        let root = tmp_dir("confined-content-read-time");
+        fs::create_dir_all(&root).unwrap();
+        assert_eq!(confined_playbook_content(&root, "/etc/hosts"), None);
+        assert_eq!(
+            confined_playbook_content(&root, "../../../etc/passwd"),
+            None
+        );
+
+        fs::write(root.join("ok.md"), "hello\n").unwrap();
+        assert_eq!(
+            confined_playbook_content(&root, "ok.md"),
+            Some("hello\n".to_string())
+        );
         fs::remove_dir_all(&root).unwrap();
     }
 }

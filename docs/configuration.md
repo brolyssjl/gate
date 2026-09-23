@@ -27,6 +27,28 @@ identity:
   require_identity: false        # optional - see docs/integrity.md
 ```
 
+### Playbooks
+
+A target's `playbooks:` overlay path (see [Targets](runs-and-concurrency.md#targets-multi-stack-repos))
+must be **relative to the project root**: no absolute path, no `..`
+component, and it must resolve (after canonicalizing symlinks) to a regular
+file under the root - not a directory, FIFO, or device. `gate` refuses a
+config that violates this, naming the offending key and path, before it
+will run anything; a path that simply doesn't exist yet is not a violation.
+
+`.gate/playbooks/<phase>.md` overrides carry a provenance note wherever
+they're read (`gate playbook`, phase entry, the review rubric): a copy with
+no entry in `.gate/playbooks.lock` prints a loud **UNVERIFIED PLAYBOOK**
+note (it was never materialized by `gate init`/`update`), a copy whose
+content diverged from its lock entry prints a quieter advisory note, and a
+pristine copy prints nothing. See [Integrity: command trust
+(TOFU)](integrity.md#command-trust-tofu) for the full picture, including how
+trust and provenance interact.
+
+Both playbook overrides and target overlays are scanned for
+prompt-injection phrasing, same as the plan and diff (see [Threat
+model](threat-model.md)) - a hit is flagged inline, never dropped.
+
 Diff coverage understands five report formats, auto-detected under `coverage/`
 (point your configured `coverage` command at the matching path), or pinned
 explicitly with `coverage_format`:

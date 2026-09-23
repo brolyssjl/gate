@@ -17,7 +17,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::cli::output::UserError;
 use crate::core::fsx::write_file_atomic;
 use crate::core::json::{self, Value};
-use crate::core::paths::run_paths;
+use crate::core::paths::{run_paths, validate_run_id};
 use crate::core::state_machine::Phase;
 
 pub const CURRENT_SCHEMA: i64 = 4;
@@ -697,6 +697,48 @@ pub fn run_to_json(run: &Run) -> Value {
     o
 }
 
+/// Validate a `run.json` `baseRef` before it can ever reach a `git`
+/// invocation as a revision argument (gate report finding 2). `base_ref` is
+/// passed to `git diff` *before* the `--` that would otherwise stop option
+/// parsing, so an unvalidated value starting with `-` is parsed by git as a
+/// flag - e.g. `--output=<path>` makes `git diff` write to an
+/// attacker-chosen file. `git.rs` additionally inserts `--end-of-options`
+/// before every stored rev as defense in depth, but that alone doesn't stop
+/// a `..` path segment (syntactically a valid rev, not an option), so both
+/// layers reject the same narrow charset here.
+fn validate_base_ref(value: &str) -> Result<(), UserError> {
+    const MAX_LEN: usize = 255;
+    if value.is_empty() {
+        return Err(UserError::new(
+            "run.json field \"baseRef\" must not be empty".to_string(),
+        ));
+    }
+    if value.len() > MAX_LEN {
+        return Err(UserError::new(format!(
+            "run.json field \"baseRef\" is invalid: longer than {MAX_LEN} bytes"
+        )));
+    }
+    if value.starts_with('-') {
+        return Err(UserError::new(format!(
+            "run.json field \"baseRef\" is invalid: \"{value}\" must not start with '-'"
+        )));
+    }
+    let charset_ok = value
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '/' | '-'));
+    if !charset_ok {
+        return Err(UserError::new(format!(
+            "run.json field \"baseRef\" is invalid: \"{value}\" may only contain letters, digits, '.', '_', '/', '-'"
+        )));
+    }
+    if value.split('/').any(|segment| segment == "..") {
+        return Err(UserError::new(format!(
+            "run.json field \"baseRef\" is invalid: \"{value}\" must not contain a '..' path segment"
+        )));
+    }
+    Ok(())
+}
+
 /// Migrate + parse a raw `run.json` document into a `Run`. Schema 1
 /// (Milestone 1) predates profiles and review requests: it gains `profile:
 /// "feature"` and any `review.reviewer` becomes `review.requestedBy`.
@@ -741,6 +783,16 @@ fn parse_run(raw: &Value, run_id: &str) -> Result<Run, UserError> {
         .and_then(|v| v.as_str())
         .unwrap_or(run_id)
         .to_string();
+    // Gate report finding 4: `run.json`'s own `id` field, not the id it was
+    // looked up by, is what `write_run` persists with next - validate it
+    // here so a malicious/corrupt `id` can never reach `run_paths` (which
+    // joins it onto `.gate/runs/` unchecked) via a `Run` built from this.
+    validate_run_id(&id).map_err(|e| {
+        UserError::new(format!(
+            "run \"{run_id}\" has invalid field \"id\": {}",
+            e.message()
+        ))
+    })?;
     let title = raw
         .get("title")
         .and_then(|v| v.as_str())
@@ -769,10 +821,13 @@ fn parse_run(raw: &Value, run_id: &str) -> Result<Run, UserError> {
         .to_string();
     // branch ?? null (schema 2->3): missing/null both collapse to None here.
     let branch = raw.get("branch").and_then(|v| v.as_str()).map(String::from);
-    let base_ref = raw
-        .get("baseRef")
-        .and_then(|v| v.as_str())
-        .map(String::from);
+    let base_ref = match raw.get("baseRef").and_then(|v| v.as_str()) {
+        Some(v) => {
+            validate_base_ref(v)?;
+            Some(v.to_string())
+        }
+        None => None,
+    };
     let target_override = raw
         .get("targetOverride")
         .and_then(|v| v.as_array())
@@ -1341,6 +1396,121 @@ mod tests {
         );
         assert_eq!(OverrideAction::Skip.as_str(), "skip");
         assert_eq!(OverrideAction::StreakReset.as_str(), "streak_reset");
+    }
+
+    /// Gate report finding 2: `validate_base_ref` must accept every shape
+    /// of ref `gate start`/a human might actually record.
+    #[test]
+    fn validate_base_ref_accepts_ordinary_git_revisions() {
+        for good in [
+            "a35fa5966607d0c58338514db43cd97123f2bc5e",
+            "main",
+            "origin/main",
+            "feature/x.y",
+            "HEAD",
+            "v1.2.3",
+        ] {
+            assert!(
+                validate_base_ref(good).is_ok(),
+                "expected {good:?} to be accepted"
+            );
+        }
+    }
+
+    /// Gate report finding 2: a `baseRef` that would be parsed as a git
+    /// option (leading `-`), that escapes via `..`, or that carries
+    /// whitespace/control characters a shell-adjacent tool could exploit,
+    /// must be rejected before it ever reaches `git.rs`.
+    #[test]
+    fn validate_base_ref_rejects_option_like_and_escaping_values() {
+        for bad in [
+            "--output=/tmp/PWNED.txt",
+            "-x",
+            "..",
+            "../../etc/passwd",
+            "refs/../../etc",
+            "has spaces",
+            "control\u{0007}char",
+            "",
+        ] {
+            assert!(
+                validate_base_ref(bad).is_err(),
+                "expected {bad:?} to be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_base_ref_rejects_values_over_the_length_cap() {
+        let too_long = "a".repeat(256);
+        assert!(validate_base_ref(&too_long).is_err());
+        let at_cap = "a".repeat(255);
+        assert!(validate_base_ref(&at_cap).is_ok());
+    }
+
+    /// Gate report finding 2, reproduced at the `run.json`-parsing layer: a
+    /// malicious `baseRef` must be rejected by `read_run` itself, before any
+    /// caller can hand it to `git diff`.
+    #[test]
+    fn read_run_rejects_a_run_json_with_an_option_like_base_ref() {
+        let root = tmp_dir("bad-base-ref");
+        let legacy = r#"{
+            "schema": 4,
+            "id": "r1",
+            "title": "t",
+            "profile": "bugfix",
+            "phase": "IMPLEMENT",
+            "status": "active",
+            "createdAt": "2026-01-01T00:00:00.000Z",
+            "updatedAt": "2026-01-01T00:00:00.000Z",
+            "branch": null,
+            "baseRef": "--output=/tmp/PWNED.txt",
+            "sessionId": null,
+            "history": [],
+            "overrides": [],
+            "artifacts": {}
+        }"#;
+        write_run_json(&root, "r1", legacy);
+        let err = read_run(&root, "r1").unwrap_err();
+        assert!(err.message().contains("baseRef"), "{}", err.message());
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// Gate report finding 4: `run.json`'s own `id` field - not the id it
+    /// was looked up by - must be rejected by `read_run` when it's an
+    /// absolute path or contains a `..` segment, so it can never reach
+    /// `write_run`/`run_paths` unvalidated.
+    #[test]
+    fn read_run_rejects_a_run_json_whose_own_id_field_escapes() {
+        let root = tmp_dir("bad-id-field");
+        for bad_id in ["/tmp/gate-escape", "../escape", "a/../../b"] {
+            let legacy = format!(
+                r#"{{
+                "schema": 4,
+                "id": "{bad_id}",
+                "title": "t",
+                "profile": "bugfix",
+                "phase": "PLAN",
+                "status": "active",
+                "createdAt": "2026-01-01T00:00:00.000Z",
+                "updatedAt": "2026-01-01T00:00:00.000Z",
+                "branch": null,
+                "baseRef": null,
+                "sessionId": null,
+                "history": [],
+                "overrides": [],
+                "artifacts": {{}}
+            }}"#
+            );
+            write_run_json(&root, "lookup-id", &legacy);
+            let err = read_run(&root, "lookup-id").unwrap_err();
+            assert!(
+                err.message().contains("\"id\""),
+                "for {bad_id:?}: {}",
+                err.message()
+            );
+        }
+        fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]

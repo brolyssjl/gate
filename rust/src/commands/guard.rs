@@ -21,7 +21,7 @@ use crate::core::fsx::write_file_atomic;
 use crate::core::git::{git_hooks_dir, staged_files};
 use crate::core::glob::matches_any;
 use crate::core::json::Value;
-use crate::core::paths::run_paths;
+use crate::core::paths::{run_paths, validate_run_id};
 use crate::core::run::read_run;
 use crate::core::state_machine::Phase;
 
@@ -227,6 +227,19 @@ pub fn run_guard_checks(root: &Path) -> Result<GuardResult, UserError> {
             });
         }
     };
+
+    // Gate report finding 4: `id` came from `.gate/current.json`, not free
+    // text already validated elsewhere - reject an absolute/`..` id before
+    // it reaches `read_run`/`run_paths`.
+    if let Err(e) = validate_run_id(&id) {
+        return Ok(GuardResult {
+            ok: false,
+            reasons: vec![format!(
+                "active run id \"{id}\" is invalid: {}",
+                e.message()
+            )],
+        });
+    }
 
     let run = match read_run(root, &id) {
         Ok(r) => r,

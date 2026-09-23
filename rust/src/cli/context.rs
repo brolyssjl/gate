@@ -76,6 +76,10 @@ pub fn require_active_run(args: Option<&ParsedArgs>) -> Result<ActiveContext, Us
             format!("no active run on branch \"{key}\" - start one with `gate start \"<title>\"`")
         }));
     };
+    // Gate report finding 4: `id` came from `.gate/current.json`, not free
+    // text a caller already validated - reject an absolute/`..` id before
+    // it reaches `read_run`/`run_paths`.
+    validate_run_id(&id)?;
     let run = read_run(&root, &id)?;
     Ok(ActiveContext { root, run, config })
 }

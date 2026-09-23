@@ -49,6 +49,11 @@ for the `bash` side of the pipe:
 curl -fsSL https://raw.githubusercontent.com/brolyssjl/gate/main/install.sh | GATE_VERSION=1.6.1 bash
 ```
 
+Gate shells out to `git` for its diff/scope checks, so any repo it manages
+needs `git >= 2.24` on PATH (that's the version `--end-of-options` shipped
+in - gate passes it before every stored git revision as a defense-in-depth
+measure).
+
 Building from source needs only a stable Rust toolchain:
 
 ```bash

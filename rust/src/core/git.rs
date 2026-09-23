@@ -196,7 +196,17 @@ pub fn changed_files(root: &Path, base_ref: Option<&str>) -> Vec<String> {
         }
     };
     if let Some(base) = base_ref {
-        add(&git(root, &["diff", "--name-only", base, "--"]).stdout);
+        // `--end-of-options` (git >= 2.24) stops option parsing before
+        // `base`, a stored `run.json` value - without it a value starting
+        // with `-` (e.g. `--output=<path>`) is parsed as a git flag instead
+        // of a revision (gate report finding 2). `run.rs`'s
+        // `validate_base_ref` also rejects that charset outright; this is
+        // defense in depth for every git invocation that takes a stored rev.
+        add(&git(
+            root,
+            &["diff", "--name-only", "--end-of-options", base, "--"],
+        )
+        .stdout);
     }
     add(&git(root, &["diff", "--name-only", "--"]).stdout); // unstaged vs index
     add(&git(root, &["diff", "--name-only", "--cached", "--"]).stdout); // staged
@@ -214,10 +224,20 @@ pub fn diff_text(root: &Path, base_ref: Option<&str>) -> String {
         return String::new();
     }
     let base = base_ref.unwrap_or("HEAD");
+    // See `changed_files`'s comment on `--end-of-options` (gate report
+    // finding 2): `base` is a stored `run.json` value here too.
     let mut parts = vec![
         git(
             root,
-            &["diff", "--no-color", base, "--", ".", ":(exclude).gate/**"],
+            &[
+                "diff",
+                "--no-color",
+                "--end-of-options",
+                base,
+                "--",
+                ".",
+                ":(exclude).gate/**",
+            ],
         )
         .stdout,
     ];
@@ -351,7 +371,20 @@ fn count_lines(abs: &Path) -> i64 {
 pub fn changed_lines(root: &Path, base_ref: Option<&str>) -> Vec<(String, HashSet<i64>)> {
     let mut result: Vec<(String, HashSet<i64>)> = Vec::new();
     let base = base_ref.unwrap_or("HEAD");
-    let committed = git(root, &["diff", "--unified=0", "--no-color", base, "--"]).stdout;
+    // See `changed_files`'s comment on `--end-of-options` (gate report
+    // finding 2): `base` is a stored `run.json` value here too.
+    let committed = git(
+        root,
+        &[
+            "diff",
+            "--unified=0",
+            "--no-color",
+            "--end-of-options",
+            base,
+            "--",
+        ],
+    )
+    .stdout;
     parse_unified_diff(&committed, &mut result);
     // Untracked files: every line counts as added. Enumerated explicitly -
     // an empty set must keep meaning "no added lines", never double as a

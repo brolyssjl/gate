@@ -272,6 +272,9 @@ main() {
 # Only run on direct execution, not when sourced (e.g. to unit-test
 # verify_checksum in isolation without a network call - see
 # CONTRIBUTING.md's "Release checksums" section).
-if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
+# Run main on direct execution (./install.sh) and when piped (curl | bash),
+# where bash has no BASH_SOURCE at all - under `set -u` that unset element
+# used to abort the script before main ran. Sourcing (for tests) skips main.
+if [ -z "${BASH_SOURCE[0]:-}" ] || [ "${BASH_SOURCE[0]}" = "${0}" ]; then
   main "$@"
 fi

@@ -4,6 +4,14 @@
       "sourceHash": "sha256:ba80abbdf787a78c8a0049eae6c09eba2ffe2dd269faf073cd2625c27d87f1a8",
       "gateVersion": "1.5.0"
     },
+    "implement.md": {
+      "sourceHash": "sha256:49c07f310762ef72b935376870db221ac9ceea672b2845197f515dfd9dbe12ba",
+      "gateVersion": "1.7.0"
+    },
+    "plan.md": {
+      "sourceHash": "sha256:f223921a4a2f7ae3b619776f6cdbb431ac4cc78ba2ad23f673620d4d6384a63e",
+      "gateVersion": "1.7.0"
+    },
     "retro.md": {
       "sourceHash": "sha256:54de6ebdf398a4a505419ca8a275e304ac57b27897cefeda5f404f01e1834442",
       "gateVersion": "1.5.0"
@@ -11,6 +19,10 @@
     "review.md": {
       "sourceHash": "sha256:57933a86140de7983058339037978ee02152ad27e4f9222a4e63c77b4a53b01c",
       "gateVersion": "1.5.0"
+    },
+    "test.md": {
+      "sourceHash": "sha256:03190efd9bae0a9f33426361c3609eb20b7f4de970301795a39b4b9fe4c05e58",
+      "gateVersion": "1.7.0"
     }
   }
 }

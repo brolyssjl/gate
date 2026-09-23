@@ -9,9 +9,15 @@ test/humanReview.test.ts test/prune.test.ts test/guard.test.ts
 test/amend.test.ts`) - 68/68 passed, confirming the port's baseline.
 
 This map is deliberately scoped to those ported cases. Suites added after
-the TS retirement have no TS counterpart and are intentionally absent:
-`streak.rs` and `doctor_update.rs` (post-port features), and `identity.rs`
-(issues #29/#33) - their file-level doc comments say so in place.
+the TS retirement have no TS counterpart and are intentionally absent -
+their file-level doc comments say so in place: `streak.rs` and
+`doctor_update.rs` (post-port features), `identity.rs` (issues #29/#33),
+`untrusted.rs` (issue #39, untrusted agent-facing inputs), the 2026-09-22
+security-audit remediation suites `trust_local_store.rs` (finding 1),
+`stored_state_validation.rs` (findings 2 and 4) and `write_containment.rs`
+(findings 3 and 10), `install_guard.rs` (the post-release install.sh
+sourcing-guard hotfix), and `test_hygiene.rs` (finding 11, a source lint
+over the crate's own unit tests).
 
 ## test/amend.test.ts -> rust/tests/amend.rs
 

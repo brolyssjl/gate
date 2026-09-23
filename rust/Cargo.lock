@@ -4,4 +4,4 @@ version = 4
 
 [[package]]
 name = "gate"
-version = "1.6.1"
+version = "1.7.0"

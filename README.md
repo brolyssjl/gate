@@ -23,10 +23,10 @@ instead of trusting what it's told, and refuses to advance until that
 evidence is real.
 
 Every override - a skip, a re-trust, a streak reset - is a distinct, reasoned,
-recorded act, so a run's audit trail shows what actually happened, not a log
-an agent could edit into looking clean. And because Gate is the one thing
-standing between an agent and "just keep retrying," it caps consecutive
-failures on the same gate and stops evaluating until a human clears it.
+recorded act, so a run's audit trail shows what actually happened. And
+because Gate is the one thing standing between an agent and "just keep
+retrying," it caps consecutive failures on the same gate and stops
+evaluating until a human clears it.
 
 Gate is an **umpire, not a driver.** It never invokes agents or LLMs, makes no
 network calls, and has no telemetry. It holds state, verifies evidence, and

@@ -77,9 +77,32 @@ fn trim_trailing_slashes(s: &str) -> &str {
     s.trim_end_matches('/')
 }
 
+/// Cap on how many `**` segments a single pattern may contain (2026-09-22
+/// audit, finding 8). `matches_from`'s `**` arm tries every split of the
+/// remaining path for each `**` it sees; nested `**`s compound that into
+/// backtracking that can blow up exponentially, and plan-declared `files:`
+/// globs come from attacker-controllable `plan.md`. Real patterns need at
+/// most a couple of `**`s - this leaves headroom without leaving the door
+/// open.
+const MAX_DOUBLE_STAR: usize = 4;
+
+fn count_double_star(glob: &str) -> usize {
+    glob.matches("**").count()
+}
+
+/// `matches_any` is the only function other modules call, so the `**` cap
+/// lives here rather than as a `Result`-returning API change that would
+/// ripple into every caller: a pattern beyond the cap is refused (treated
+/// as matching nothing) and noted on stderr rather than evaluated.
 pub fn matches_any(path: &str, globs: &[String]) -> bool {
     for g in globs {
         let norm = trim_trailing_slashes(g);
+        if count_double_star(norm) > MAX_DOUBLE_STAR {
+            eprintln!(
+                "gate: glob pattern rejected (more than {MAX_DOUBLE_STAR} \"**\" wildcards): {norm}"
+            );
+            continue;
+        }
         if glob_matches(norm, path) {
             return true;
         }
@@ -155,5 +178,38 @@ mod tests {
     #[test]
     fn no_globs_never_matches() {
         assert!(!matches_any("anything", &globs(&[])));
+    }
+
+    // ---- finding 8: bounding ** backtracking --------------------------
+
+    #[test]
+    fn allows_double_star_occurrences_at_the_cap() {
+        let at_cap = "a/**/b/**/c/**/d/**/e"; // 4 "**"s
+        assert!(matches_any("a/x/b/x/c/x/d/x/e", &globs(&[at_cap])));
+    }
+
+    #[test]
+    fn rejects_a_pattern_with_more_double_stars_than_the_cap() {
+        let too_many = "a/**/b/**/c/**/d/**/e/**/f"; // 5 "**"s
+        assert!(!matches_any("a/x/b/x/c/x/d/x/e/x/f", &globs(&[too_many])));
+    }
+
+    #[test]
+    fn a_rejected_pattern_does_not_block_a_later_valid_one() {
+        let too_many = "a/**/b/**/c/**/d/**/e/**/f"; // 5 "**"s
+        assert!(matches_any("src/a.ts", &globs(&[too_many, "src/*.ts"])));
+    }
+
+    #[test]
+    fn matches_from_finishes_on_a_pathologically_nested_double_star_pattern() {
+        // Timing-insensitive (finding 8): this only asserts the call
+        // returns. Without the cap, `matches_from`'s `**` backtracking on
+        // a path with no trailing match is exponential in the number of
+        // `**` segments.
+        let pattern = "**/**/**/**/**/**/**/**/**/**/**/**/**/**/**/**/x";
+        assert!(!matches_any(
+            "a/b/c/d/e/f/g/h/i/j/k/l/m/n/o",
+            &globs(&[pattern])
+        ));
     }
 }

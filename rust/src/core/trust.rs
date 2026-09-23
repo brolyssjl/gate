@@ -106,12 +106,53 @@ pub fn resolve_config_dir(
 /// function in this module that reads `std::env` directly - every other
 /// function here takes the config directory as a parameter, so tests never
 /// need to mutate process-global environment to control it.
+///
+/// In a `cfg(test)` build only, an absent `GATE_CONFIG_DIR` falls back to a
+/// per-process temp directory instead of consulting `XDG_CONFIG_HOME`/
+/// `HOME` at all. Without this, every in-process unit test elsewhere in
+/// this crate that calls the public `read_trust`/`write_trust`/
+/// `is_commands_trusted` directly (`playbooks.rs`, `gates/*.rs`,
+/// `commands/update.rs`, `core/git.rs`) - none of which set
+/// `GATE_CONFIG_DIR` themselves, since they predate this module's local
+/// store - would resolve to the real `$HOME/.config/gate` and leave stray
+/// trust records there on every `cargo test` run. Production (non-test)
+/// builds are unaffected: this whole branch compiles out.
 pub fn env_config_dir() -> Option<PathBuf> {
-    resolve_config_dir(
-        std::env::var("GATE_CONFIG_DIR").ok().as_deref(),
-        std::env::var("XDG_CONFIG_HOME").ok().as_deref(),
-        std::env::var("HOME").ok().as_deref(),
-    )
+    let gate_config_dir = std::env::var("GATE_CONFIG_DIR").ok();
+    #[cfg(test)]
+    {
+        Some(test_config_dir_for_env(gate_config_dir.as_deref()))
+    }
+    #[cfg(not(test))]
+    {
+        resolve_config_dir(
+            gate_config_dir.as_deref(),
+            std::env::var("XDG_CONFIG_HOME").ok().as_deref(),
+            std::env::var("HOME").ok().as_deref(),
+        )
+    }
+}
+
+/// `cfg(test)`-only resolution: `GATE_CONFIG_DIR` when set, else a
+/// per-process temp directory - never the real `XDG_CONFIG_HOME`/`HOME`.
+/// Pure function of its input (mirrors `resolve_config_dir`'s shape) so the
+/// fallback itself is unit-testable without touching `std::env`.
+#[cfg(test)]
+fn test_config_dir_for_env(gate_config_dir: Option<&str>) -> PathBuf {
+    match non_empty(gate_config_dir) {
+        Some(dir) => PathBuf::from(dir),
+        None => test_only_fallback_config_dir(),
+    }
+}
+
+/// The per-process temp directory every in-process unit test in this crate
+/// lands in when it never set `GATE_CONFIG_DIR` itself - one per `cargo
+/// test` process, so trust records written by unrelated test files in the
+/// same run still don't collide with anything real, and a rerun gets a
+/// fresh directory (a new pid).
+#[cfg(test)]
+fn test_only_fallback_config_dir() -> PathBuf {
+    std::env::temp_dir().join(format!("gate-test-config-{}", std::process::id()))
 }
 
 /// Where trust records live under a resolved config directory.
@@ -328,6 +369,43 @@ mod tests {
             Some(PathBuf::from("/home/alice/.config/gate"))
         );
         assert_eq!(resolve_config_dir(Some(""), Some(""), Some("")), None);
+    }
+
+    // ---- cfg(test)-only fallback: never the real XDG_CONFIG_HOME/HOME --
+
+    #[test]
+    fn test_config_dir_for_env_uses_gate_config_dir_when_set() {
+        assert_eq!(
+            test_config_dir_for_env(Some("/explicit")),
+            PathBuf::from("/explicit")
+        );
+    }
+
+    #[test]
+    fn test_config_dir_for_env_falls_back_to_a_per_process_temp_dir_when_unset() {
+        // The whole point: absent GATE_CONFIG_DIR, this must be a temp
+        // directory named by this process's pid - never anything derived
+        // from XDG_CONFIG_HOME or HOME (which this function doesn't even
+        // take as parameters, unlike `resolve_config_dir`).
+        let expected =
+            std::env::temp_dir().join(format!("gate-test-config-{}", std::process::id()));
+        assert_eq!(test_config_dir_for_env(None), expected);
+        assert_eq!(test_config_dir_for_env(Some("")), expected);
+    }
+
+    #[test]
+    fn env_config_dir_in_this_cfg_test_build_matches_the_test_only_fallback_shape() {
+        // `env_config_dir()` itself reads the real `GATE_CONFIG_DIR` - if
+        // the process running this test happens to have one set (e.g. this
+        // suite's own test harness sets one for hygiene), that value wins,
+        // same as production. Either way the result must never be under
+        // the real `$HOME/.config/gate` unless `GATE_CONFIG_DIR` itself was
+        // explicitly pointed there.
+        let dir = env_config_dir().expect("cfg(test) build always resolves to something");
+        match std::env::var("GATE_CONFIG_DIR") {
+            Ok(explicit) if !explicit.is_empty() => assert_eq!(dir, PathBuf::from(explicit)),
+            _ => assert_eq!(dir, test_only_fallback_config_dir()),
+        }
     }
 
     // ---- trivially-trusted short-circuit (no config dir touched) ------

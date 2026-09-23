@@ -200,8 +200,7 @@ mod tests {
     use std::fs;
 
     fn tmp_dir(name: &str) -> std::path::PathBuf {
-        let dir = crate::core::testutil::unique_temp_dir(&format!("streak-rs-{name}"));
-        dir
+        crate::core::testutil::unique_temp_dir(&format!("streak-rs-{name}"))
     }
 
     fn setup_run(root: &Path) -> Run {
@@ -251,6 +250,7 @@ mod tests {
         run.record_gate_evaluation(Phase::Plan, false);
         let err = reset(&root, run, &args(&["reset"])).unwrap_err();
         assert_eq!(err.exit_code(), 2);
+        fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]

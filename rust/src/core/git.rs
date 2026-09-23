@@ -407,8 +407,7 @@ mod tests {
     use std::process::Command as StdCommand;
 
     fn tmp_dir(name: &str) -> PathBuf {
-        let dir = crate::core::testutil::unique_temp_dir(&format!("git-rs-{name}"));
-        dir
+        crate::core::testutil::unique_temp_dir(&format!("git-rs-{name}"))
     }
 
     fn run_git(root: &Path, args: &[&str]) {

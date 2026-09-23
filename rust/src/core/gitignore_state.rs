@@ -57,8 +57,7 @@ mod tests {
     use std::fs as stdfs;
 
     fn tmp_dir(name: &str) -> std::path::PathBuf {
-        let dir = crate::core::testutil::unique_temp_dir(&format!("gitignorestate-rs-{name}"));
-        dir
+        crate::core::testutil::unique_temp_dir(&format!("gitignorestate-rs-{name}"))
     }
 
     #[test]

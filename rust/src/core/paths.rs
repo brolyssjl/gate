@@ -154,8 +154,7 @@ mod tests {
     use std::fs;
 
     fn tmp_dir(name: &str) -> PathBuf {
-        let dir = crate::core::testutil::unique_temp_dir(&format!("paths-rs-{name}"));
-        dir
+        crate::core::testutil::unique_temp_dir(&format!("paths-rs-{name}"))
     }
 
     #[test]

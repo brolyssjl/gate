@@ -16,7 +16,8 @@
 //!   an entry without complaint.
 
 use std::fs;
-use std::path::PathBuf;
+use std::io;
+use std::path::{Path, PathBuf};
 
 use crate::core::fsx::unique_suffix;
 
@@ -25,27 +26,34 @@ use crate::core::fsx::unique_suffix;
 ///
 /// The suffix mixes `/dev/urandom` bytes with the nanosecond clock (see
 /// `fsx::unique_suffix`), so no other process can predict the path, and
-/// the directory is created with `fs::create_dir` - not `create_dir_all` -
-/// so any entry already sitting at that path (a pre-planted symlink
-/// included) makes this panic instead of being silently adopted.
+/// the directory is created exclusively (see [`unique_temp_dir_in`]) so any
+/// entry already sitting at that path - a pre-planted symlink included -
+/// makes this panic instead of being silently adopted.
 ///
 /// Callers own the directory: remove it with `fs::remove_dir_all` when the
 /// test is done, as the modules here already do. Nothing is removed up
 /// front, because a path that could already exist is exactly the property
 /// this helper rules out.
 pub fn unique_temp_dir(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "gate-{name}-{}-{}",
-        std::process::id(),
-        unique_suffix()
-    ));
-    fs::create_dir(&dir).unwrap_or_else(|e| {
+    let base = std::env::temp_dir();
+    unique_temp_dir_in(&base, name, &unique_suffix()).unwrap_or_else(|e| {
         panic!(
-            "unique_temp_dir: refusing to reuse or adopt {}: {e}",
-            dir.display()
+            "unique_temp_dir: could not create a fresh dir for {name} under {}: {e}",
+            base.display()
         )
-    });
-    dir
+    })
+}
+
+/// The seam behind [`unique_temp_dir`]: `base/gate-<name>-<pid>-<suffix>`,
+/// created with `fs::create_dir` - never `create_dir_all`, which would
+/// succeed on (and then write through) an entry someone planted at that
+/// path first. Split out with `base` and `suffix` as parameters so the
+/// test below can plant an entry at the exact path and prove the refusal
+/// against this function, not against `std`.
+fn unique_temp_dir_in(base: &Path, name: &str, suffix: &str) -> io::Result<PathBuf> {
+    let dir = base.join(format!("gate-{name}-{}-{suffix}", std::process::id()));
+    fs::create_dir(&dir)?;
+    Ok(dir)
 }
 
 #[cfg(test)]
@@ -71,24 +79,36 @@ mod tests {
     }
 
     /// Finding 11(b): a pre-existing entry at the chosen path is an error,
-    /// never something the helper writes into. Exercised by racing the
-    /// helper against a path we plant first: `create_dir` is `O_EXCL`, so
-    /// planting anything - here a symlink to a sibling dir - must panic.
+    /// never something the helper writes into. Uses the seam with a fixed
+    /// suffix inside a scratch dir of our own, plants a symlink at exactly
+    /// the path the helper will pick (pointing at a directory that must
+    /// stay untouched), and asserts the refusal. Flipping the helper to
+    /// `create_dir_all` makes this fail: that call returns Ok on an
+    /// existing symlink-to-directory.
     #[test]
     fn unique_temp_dir_refuses_a_preexisting_entry() {
         let scratch = unique_temp_dir("testutil-plant");
-        let planted = scratch.join("planted");
-        std::os::unix::fs::symlink(&scratch, &planted).unwrap();
-        // The helper only exposes its own naming, so drive the same
-        // primitive it uses against the planted path to prove the
-        // guarantee it relies on: create_dir refuses an existing entry,
-        // symlink or not, where create_dir_all would have "succeeded".
-        let err = fs::create_dir(&planted).unwrap_err();
-        assert_eq!(err.kind(), std::io::ErrorKind::AlreadyExists);
-        assert!(
-            fs::create_dir_all(&planted).is_ok(),
-            "the hazard this guards against"
+        let victim = scratch.join("victim");
+        fs::create_dir(&victim).unwrap();
+        let planted = scratch.join(format!("gate-planted-{}-fixed", std::process::id()));
+        std::os::unix::fs::symlink(&victim, &planted).unwrap();
+
+        let err = unique_temp_dir_in(&scratch, "planted", "fixed").unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::AlreadyExists);
+        assert_eq!(
+            fs::read_dir(&victim).unwrap().count(),
+            0,
+            "victim was written into"
         );
+
+        // The same call on an unplanted path is the normal, working case.
+        let fresh = unique_temp_dir_in(&scratch, "fresh", "fixed").unwrap();
+        assert!(fresh.is_dir());
+        assert_eq!(
+            fresh,
+            scratch.join(format!("gate-fresh-{}-fixed", std::process::id()))
+        );
+
         fs::remove_dir_all(&scratch).unwrap();
     }
 }

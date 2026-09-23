@@ -272,8 +272,7 @@ mod tests {
     use std::process::Command as StdCommand;
 
     fn tmp_dir(name: &str) -> std::path::PathBuf {
-        let dir = crate::core::testutil::unique_temp_dir(&format!("current-rs-{name}"));
-        dir
+        crate::core::testutil::unique_temp_dir(&format!("current-rs-{name}"))
     }
 
     fn run_git(root: &Path, args: &[&str]) {

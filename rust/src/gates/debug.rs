@@ -304,8 +304,7 @@ mod tests {
     use std::process::Command as StdCommand;
 
     fn tmp_dir(name: &str) -> PathBuf {
-        let dir = crate::core::testutil::unique_temp_dir(&format!("debug-rs-{name}"));
-        dir
+        crate::core::testutil::unique_temp_dir(&format!("debug-rs-{name}"))
     }
 
     fn write_file(root: &Path, rel: &str, content: &str) {

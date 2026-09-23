@@ -41,8 +41,7 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     fn tmp_dir(name: &str) -> PathBuf {
-        let dir = crate::core::testutil::unique_temp_dir(&format!("plandrift-rs-{name}"));
-        dir
+        crate::core::testutil::unique_temp_dir(&format!("plandrift-rs-{name}"))
     }
 
     fn write_plan(root: &Path, run_id: &str, content: &str) {

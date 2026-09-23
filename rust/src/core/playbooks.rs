@@ -298,8 +298,7 @@ mod tests {
     use std::fs as stdfs;
 
     fn tmp_dir(name: &str) -> PathBuf {
-        let dir = crate::core::testutil::unique_temp_dir(&format!("playbooks-rs-{name}"));
-        dir
+        crate::core::testutil::unique_temp_dir(&format!("playbooks-rs-{name}"))
     }
 
     fn write_config(root: &Path, content: &str) {

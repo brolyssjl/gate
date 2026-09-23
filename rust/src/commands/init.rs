@@ -315,8 +315,7 @@ mod tests {
     use crate::core::json;
 
     fn tmp_dir(name: &str) -> std::path::PathBuf {
-        let dir = crate::core::testutil::unique_temp_dir(&format!("init-rs-{name}"));
-        dir
+        crate::core::testutil::unique_temp_dir(&format!("init-rs-{name}"))
     }
 
     fn args(items: &[&str]) -> ParsedArgs {

@@ -119,8 +119,7 @@ mod tests {
     use std::fs;
 
     fn tmp_dir(name: &str) -> std::path::PathBuf {
-        let dir = crate::core::testutil::unique_temp_dir(&format!("log-rs-{name}"));
-        dir
+        crate::core::testutil::unique_temp_dir(&format!("log-rs-{name}"))
     }
 
     fn setup_run(root: &Path) -> Run {

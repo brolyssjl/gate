@@ -82,8 +82,7 @@ mod tests {
     use std::fs;
 
     fn tmp_repo(name: &str) -> std::path::PathBuf {
-        let dir = crate::core::testutil::unique_temp_dir(&format!("advance-rs-{name}"));
-        dir
+        crate::core::testutil::unique_temp_dir(&format!("advance-rs-{name}"))
     }
 
     fn run_with_phase(phase: Phase) -> Run {

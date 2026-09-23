@@ -153,6 +153,9 @@ fn test_config_dir_for_env(gate_config_dir: Option<&str>) -> PathBuf {
 /// never collide with anything real, and a rerun gets a fresh directory.
 /// Named through `testutil::unique_temp_dir`, so unlike the earlier
 /// pid-only name nobody can pre-create it (2026-09-22 audit finding 11).
+/// It is never removed: with one directory per process there is no last
+/// caller to do it, so each `cargo test` run leaves this one behind (the
+/// pid-named version did too, just under a reusable name).
 #[cfg(test)]
 fn test_only_fallback_config_dir() -> PathBuf {
     static DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
@@ -315,8 +318,7 @@ mod tests {
     use std::fs as stdfs;
 
     fn tmp_dir(name: &str) -> PathBuf {
-        let dir = crate::core::testutil::unique_temp_dir(&format!("trust-rs-{name}"));
-        dir
+        crate::core::testutil::unique_temp_dir(&format!("trust-rs-{name}"))
     }
 
     /// A config directory, distinct from any repo root, standing in for

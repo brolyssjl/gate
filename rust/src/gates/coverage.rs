@@ -484,8 +484,7 @@ mod tests {
     use std::fs as stdfs;
 
     fn tmp_dir(name: &str) -> std::path::PathBuf {
-        let dir = crate::core::testutil::unique_temp_dir(&format!("coverage-rs-{name}"));
-        dir
+        crate::core::testutil::unique_temp_dir(&format!("coverage-rs-{name}"))
     }
 
     fn with_coverage_file(name: &str, filename: &str, content: &str) -> std::path::PathBuf {

@@ -997,8 +997,7 @@ mod tests {
     use std::fs;
 
     fn tmp_dir(name: &str) -> std::path::PathBuf {
-        let dir = crate::core::testutil::unique_temp_dir(&format!("run-rs-{name}"));
-        dir
+        crate::core::testutil::unique_temp_dir(&format!("run-rs-{name}"))
     }
 
     fn write_run_json(root: &Path, run_id: &str, content: &str) {

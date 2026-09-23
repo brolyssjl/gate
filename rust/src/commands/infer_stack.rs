@@ -102,8 +102,7 @@ mod tests {
     use std::fs;
 
     fn tmp_dir(name: &str) -> std::path::PathBuf {
-        let dir = crate::core::testutil::unique_temp_dir(&format!("infer-stack-rs-{name}"));
-        dir
+        crate::core::testutil::unique_temp_dir(&format!("infer-stack-rs-{name}"))
     }
 
     #[test]

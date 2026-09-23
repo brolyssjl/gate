@@ -361,8 +361,7 @@ mod tests {
     const NO_SUCH_BIN: &str = "/nonexistent/gate-agnosgram-test-stub";
 
     fn tmp_repo(name: &str) -> PathBuf {
-        let dir = crate::core::testutil::unique_temp_dir(&format!("agnosgramwrite-rs-{name}"));
-        dir
+        crate::core::testutil::unique_temp_dir(&format!("agnosgramwrite-rs-{name}"))
     }
 
     fn empty_retro() -> RetroLog {

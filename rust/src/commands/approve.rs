@@ -167,8 +167,7 @@ mod tests {
     const VALID_PLAN: &str = "---\ngoal: g\nfiles:\n  - a.ts\ncriteria:\n  - id: c1\n    text: t\n    verify: manual\n---\n# Plan\n";
 
     fn tmp_dir(name: &str) -> std::path::PathBuf {
-        let dir = crate::core::testutil::unique_temp_dir(&format!("approve-rs-{name}"));
-        dir
+        crate::core::testutil::unique_temp_dir(&format!("approve-rs-{name}"))
     }
 
     fn setup_run(root: &Path, plan: &str) -> Run {

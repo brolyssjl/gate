@@ -8,8 +8,44 @@ use crate::adapters::{adapter_keys, get_adapter, resolve_pointer_body, Adapter};
 use crate::cli::args::{parse_args, ParsedArgs};
 use crate::cli::context::require_root;
 use crate::cli::output::{emit, UserError};
+use crate::core::fsx::{confined_write_target, write_file_atomic};
 use crate::core::json::Value;
 use crate::core::markers::upsert_managed_block;
+
+/// Resolve the real path `gate adapt` should write for this adapter's
+/// target (report finding 3(c)). A plain, non-symlink target goes through
+/// `confined_write_target` like any other write under `root`. A target that
+/// is *itself* a symlink is only followed if it resolves inside `root` -
+/// e.g. a repo that keeps `CLAUDE.md` as a symlink to `docs/CLAUDE.md` -
+/// anything resolving outside (`CLAUDE.md -> ~/.claude/CLAUDE.md`, the
+/// scope-escape the report reproduced) is refused, naming the path.
+fn resolve_adapter_target(
+    root: &Path,
+    adapter: &'static Adapter,
+) -> Result<std::path::PathBuf, UserError> {
+    let rel = Path::new(adapter.target_path);
+    let target = root.join(rel);
+    if let Ok(meta) = fs::symlink_metadata(&target) {
+        if meta.file_type().is_symlink() {
+            let root_canon = fs::canonicalize(root).map_err(|e| UserError::new(e.to_string()))?;
+            let resolved = fs::canonicalize(&target).map_err(|e| {
+                UserError::new(format!(
+                    "refusing to write adapter target through a broken symlink at {}: {e}",
+                    target.display()
+                ))
+            })?;
+            if !resolved.starts_with(&root_canon) {
+                return Err(UserError::new(format!(
+                    "refusing to write adapter target through a symlink that escapes the project root: {} resolves to {}",
+                    target.display(),
+                    resolved.display()
+                )));
+            }
+            return Ok(resolved);
+        }
+    }
+    confined_write_target(root, rel).map_err(|e| UserError::new(e.to_string()))
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AdaptAction {
@@ -44,7 +80,7 @@ pub fn apply_adapter(
     adapter: &'static Adapter,
     body: &str,
 ) -> Result<AdaptResult, UserError> {
-    let target = root.join(adapter.target_path);
+    let target = resolve_adapter_target(root, adapter)?;
 
     let existed_before = target.exists();
     let existing = if existed_before {
@@ -65,10 +101,7 @@ pub fn apply_adapter(
         });
     }
 
-    if let Some(parent) = target.parent() {
-        fs::create_dir_all(parent).map_err(|e| UserError::new(e.to_string()))?;
-    }
-    fs::write(&target, &next).map_err(|e| UserError::new(e.to_string()))?;
+    write_file_atomic(&target, &next).map_err(|e| UserError::new(e.to_string()))?;
     Ok(AdaptResult {
         adapter: adapter.key,
         path: adapter.target_path,
@@ -201,6 +234,64 @@ mod tests {
         apply_adapter(&root, adapter, &body).unwrap();
         let result = apply_adapter(&root, adapter, &body).unwrap();
         assert_eq!(result.action, AdaptAction::Unchanged);
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// Report finding 3(c): `CLAUDE.md` (or any adapter target) as a
+    /// committed symlink pointing outside the project must not be followed.
+    #[test]
+    fn refuses_to_write_an_adapter_target_that_symlinks_outside_root() {
+        let root = tmp_dir("symlink-escape");
+        let outside_dir =
+            std::env::temp_dir().join(format!("gate-adapt-rs-outside-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&outside_dir);
+        fs::create_dir_all(&outside_dir).unwrap();
+        let outside_file = outside_dir.join("CLAUDE.md");
+        fs::write(&outside_file, "not gate's business").unwrap();
+        std::os::unix::fs::symlink(&outside_file, root.join("CLAUDE.md")).unwrap();
+
+        let adapter = get_adapter("claude").unwrap();
+        let body = resolve_pointer_body(&root);
+        let err = apply_adapter(&root, adapter, &body)
+            .map(|_| ())
+            .unwrap_err();
+        assert!(
+            err.message().contains("CLAUDE.md")
+                || err.message().contains(&root.display().to_string()),
+            "error should name the offending path: {}",
+            err.message()
+        );
+        assert_eq!(
+            fs::read_to_string(&outside_file).unwrap(),
+            "not gate's business"
+        );
+        fs::remove_dir_all(&root).unwrap();
+        fs::remove_dir_all(&outside_dir).unwrap();
+    }
+
+    /// A symlink that resolves *inside* the project root is a legitimate
+    /// repo layout (e.g. `CLAUDE.md -> docs/CLAUDE.md`) and should still be
+    /// followed.
+    #[test]
+    fn follows_an_adapter_target_that_symlinks_inside_root() {
+        let root = tmp_dir("symlink-inside");
+        fs::create_dir_all(root.join("docs")).unwrap();
+        let real = root.join("docs").join("CLAUDE.md");
+        fs::write(&real, "existing content\n").unwrap();
+        std::os::unix::fs::symlink(&real, root.join("CLAUDE.md")).unwrap();
+
+        let adapter = get_adapter("claude").unwrap();
+        let body = resolve_pointer_body(&root);
+        let result = apply_adapter(&root, adapter, &body).unwrap();
+        assert_eq!(result.action, AdaptAction::Updated);
+        let content = fs::read_to_string(&real).unwrap();
+        assert!(content.contains("existing content"));
+        assert!(content.contains("Gate quality flow"));
+        // The symlink itself is untouched, still pointing at the real file.
+        assert!(fs::symlink_metadata(root.join("CLAUDE.md"))
+            .unwrap()
+            .file_type()
+            .is_symlink());
         fs::remove_dir_all(&root).unwrap();
     }
 

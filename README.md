@@ -42,6 +42,10 @@ PATH - no Node required:
 curl -fsSL https://raw.githubusercontent.com/brolyssjl/gate/main/install.sh | bash
 ```
 
+The script verifies the download's checksum, then (if `gh` is installed)
+its build-provenance attestation - see [SECURITY.md](SECURITY.md) for how
+to check either by hand.
+
 To pin an exact version instead of the latest release, set `GATE_VERSION`
 for the `bash` side of the pipe:
 
@@ -131,6 +135,8 @@ which phases each profile (`feature`, `bugfix`, `refactor`, `docs`) runs.
 - [Threat model](docs/threat-model.md) - what Gate defends against, what it
   doesn't, and how it treats agent-facing text as data, not instructions.
   Read this before relying on Gate for anything security-sensitive.
+- [SECURITY.md](SECURITY.md) - supported versions, how to report a
+  vulnerability, and how to verify a release's checksum and provenance.
 - [Configuration](docs/configuration.md) - the full `config.yml` reference,
   output formats, agent adapters, `gate doctor`/`gate update`, and the
   optional `gate guard` pre-commit hook. Read this to customize your setup.
